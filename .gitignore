@@ -53,3 +53,8 @@ wandb/
 # durable across sessions without committing 11 MB every 100 iterations; the finished
 # adapter is promoted to models/adapters/<name>/ by scripts/finish-design-adapter.sh.
 models/adapters/*-work/
+
+# Scratch workspace: the MLX training venv, a vendored vercel CLI, deploy tarballs and
+# throwaway geometry. Tooling and outputs, not source — and the venv in particular should be
+# reinstalled onto local disk rather than read from here (see docs/training-guide.md).
+work/

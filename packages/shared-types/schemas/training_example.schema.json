@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "KaleTrainingExample",
+  "type": "object",
+  "required": ["instruction", "input", "output", "metadata"],
+  "properties": {
+    "instruction": { "type": "string" },
+    "input": {
+      "type": "object",
+      "properties": {
+        "project": { "type": "object" },
+        "components": { "type": "array", "items": { "type": "object" } },
+        "nets": { "type": "array", "items": { "type": "object" } },
+        "rule_findings": { "type": "array", "items": { "type": "object" } },
+        "power_tree": { "type": ["object", "null"] },
+        "question": { "type": ["string", "null"] }
+      }
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "summary": { "type": "string" },
+        "confirmed_findings": { "type": "array" },
+        "possible_findings": { "type": "array" },
+        "recommendations": { "type": "array" },
+        "evidence": { "type": "array" },
+        "questions_for_engineer": { "type": "array", "items": { "type": "string" } },
+        "confidence": { "type": "number" },
+        "limitations": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["summary", "confirmed_findings", "possible_findings", "recommendations", "confidence"]
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["source", "license", "reviewed"],
+      "properties": {
+        "id": { "type": "string" },
+        "source": { "enum": ["synthetic", "manual", "rules", "expert", "public", "user_feedback"] },
+        "license": { "type": "string" },
+        "reviewed": { "type": "boolean" },
+        "safety_class": { "enum": ["general", "power", "safety_critical"] },
+        "assumptions": { "type": "array", "items": { "type": "string" } },
+        "missing_information": { "type": "array", "items": { "type": "string" } },
+        "created_at": { "type": "string" },
+        "dataset_version": { "type": ["string", "null"] }
+      }
+    }
+  }
+}
