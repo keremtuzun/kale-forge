@@ -189,7 +189,8 @@ def run(adapter: Path | None, repo: Path, max_tokens: int,
     sys.path.insert(0, str(repo / "apps" / "kale-demo"))
     from app.services.frc_cad import SYSTEM_CAD, STRUCTURE
     from app.services.robot_spec import (ARM_TYPES, CLIMBER_TYPES, ELEVATOR_TYPES,
-                                         INTAKE_TYPES, SHOOTER_TYPES, SYSTEM_DESIGN)
+                                         INTAKE_TYPES, SHOOTER_TYPES, SYSTEM_DESIGN,
+                                         intent_user_message)
     STOCK_SECTIONS.clear()
     for key, part in STRUCTURE.items():
         if key.startswith("tube_") and "section_in" in part:
@@ -215,8 +216,10 @@ def run(adapter: Path | None, repo: Path, max_tokens: int,
 
     intent_results, signatures = [], set()
     for prompt in intent_prompts:
-        out = ask(SYSTEM_DESIGN, f"Design an FRC robot for this request.\n\n{prompt}",
-                  intent_tokens)
+        # Build the message exactly as training and the Design Studio do; scoring a model on
+        # a prompt shape it was never trained on measures the harness, not the model.
+        stated = {"frame_in": [28, 28], "drive_type": None, "subsystems_stated": {}}
+        out = ask(SYSTEM_DESIGN, intent_user_message(prompt, stated), intent_tokens)
         result = score_intent(_first_json(out), vocab)
         result["prompt"] = prompt[:70]
         if result.get("signature"):

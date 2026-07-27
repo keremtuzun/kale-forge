@@ -1,0 +1,792 @@
+{
+  "model": "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+  "runs": [
+    {
+      "adapter": "/private/tmp/adapters/v7",
+      "elapsed_s": 133.8,
+      "intent": {
+        "prompts": 8,
+        "valid_json": 8,
+        "enum_clean": 8,
+        "distinct_designs": 8,
+        "detail": [
+          {
+            "parsed": true,
+            "has_subsystems": true,
+            "enum_violations": [],
+            "clean": true,
+            "prompt": "We are a rookie team. Design a 2026 robot on a 28 x 28 inch frame that"
+          },
+          {
+            "parsed": true,
+            "has_subsystems": true,
+            "enum_violations": [],
+            "clean": true,
+            "prompt": "MK5i swerve on Krakens at R2 with a ground-to-feeder tunnel intake and"
+          },
+          {
+            "parsed": true,
+            "has_subsystems": true,
+            "enum_violations": [],
+            "clean": true,
+            "prompt": "27 inch REEFSCAPE robot, three-stage cascade elevator, wristed carriag"
+          },
+          {
+            "parsed": true,
+            "has_subsystems": true,
+            "enum_violations": [],
+            "clean": true,
+            "prompt": "30x30 west-coast drivebase on six Krakens. Defence bot, nothing else."
+          },
+          {
+            "parsed": true,
+            "has_subsystems": true,
+            "enum_violations": [],
+            "clean": true,
+            "prompt": "Experienced team, 28 inch swerve, turreted dual flywheel hooded shoote"
+          },
+          {
+            "parsed": true,
+            "has_subsystems": true,
+            "enum_violations": [],
+            "clean": true,
+            "prompt": "Just an MK4n swerve module on a Kraken X60."
+          },
+          {
+            "parsed": true,
+            "has_subsystems": true,
+            "enum_violations": [],
+            "clean": true,
+            "prompt": "Resource-limited team, 26x26, horizontal series-roller intake and a fo"
+          },
+          {
+            "parsed": true,
+            "has_subsystems": true,
+            "enum_violations": [],
+            "clean": true,
+            "prompt": "29 inch robot with a staged accelerator-and-flywheel shooter and dual "
+          }
+        ]
+      },
+      "cad_held_out": {
+        "prompts": 5,
+        "valid_json": 5,
+        "schema_clean": 0,
+        "mean_features": 1.0,
+        "detail": [
+          {
+            "parsed": true,
+            "has_features": true,
+            "feature_count": 1,
+            "schema_keys": true,
+            "unknown_types": [],
+            "non_stock_sections": [
+              null
+            ],
+            "inconsistent_pitch_diameters": [],
+            "positioned_fraction": 1.0,
+            "clean": false,
+            "subsystem": "intake",
+            "prompt": "26x26 robot with a ground-to-feeder tunnel intake."
+          },
+          {
+            "parsed": true,
+            "has_features": true,
+            "feature_count": 1,
+            "schema_keys": true,
+            "unknown_types": [
+              "2x2x0.125"
+            ],
+            "non_stock_sections": [],
+            "inconsistent_pitch_diameters": [],
+            "positioned_fraction": 1.0,
+            "clean": false,
+            "subsystem": "shooter",
+            "prompt": "28 inch robot with a variable-hood flywheel shooter."
+          },
+          {
+            "parsed": true,
+            "has_features": true,
+            "feature_count": 1,
+            "schema_keys": true,
+            "unknown_types": [],
+            "non_stock_sections": [
+              null
+            ],
+            "inconsistent_pitch_diameters": [],
+            "positioned_fraction": 1.0,
+            "clean": false,
+            "subsystem": "elevator",
+            "prompt": "28x28 robot with a 2 stage telescoping box elevator."
+          },
+          {
+            "parsed": true,
+            "has_features": true,
+            "feature_count": 1,
+            "schema_keys": true,
+            "unknown_types": [],
+            "non_stock_sections": [
+              null
+            ],
+            "inconsistent_pitch_diameters": [],
+            "positioned_fraction": 1.0,
+            "clean": false,
+            "subsystem": "arm",
+            "prompt": "27 inch robot with a four-bar linkage arm reaching 22 in."
+          },
+          {
+            "parsed": true,
+            "has_features": true,
+            "feature_count": 1,
+            "schema_keys": true,
+            "unknown_types": [
+              "2x1x0.1"
+            ],
+            "non_stock_sections": [],
+            "inconsistent_pitch_diameters": [],
+            "positioned_fraction": 1.0,
+            "clean": false,
+            "subsystem": "climber",
+            "prompt": "29 inch robot with a winch-driven carriage climb."
+          }
+        ]
+      },
+      "cad": {
+        "prompts": 8,
+        "valid_json": 7,
+        "has_features": 7,
+        "schema_clean": 1,
+        "mean_features": 1.0,
+        "detail": [
+          {
+            "parsed": true,
+            "has_features": true,
+            "feature_count": 1,
+            "schema_keys": true,
+            "unknown_types": [],
+            "non_stock_sections": [
+              null
+            ],
+            "inconsistent_pitch_diameters": [],
+            "positioned_fraction": 1.0,
+            "clean": false,
+            "subsystem": "intake",
+            "prompt": "28x28 swerve robot built around a dual-roller over-bumper intake."
+          },
+          {
+            "parsed": true,
+            "has_features": true,
+            "feature_count": 1,
+            "schema_keys": true,
+            "unknown_types": [],
+            "non_stock_sections": [
+              null
+            ],
+            "inconsistent_pitch_diameters": [],
+            "positioned_fraction": 1.0,
+            "clean": false,
+            "subsystem": "elevator",
+            "prompt": "28x28 REEFSCAPE robot with a 3 stage belt-rigged cascade tower."
+          },
+          {
+            "parsed": true,
+            "has_features": true,
+            "feature_count": 1,
+            "schema_keys": true,
+            "unknown_types": [
+              "structural"
+            ],
+            "non_stock_sections": [],
+            "inconsistent_pitch_diameters": [],
+            "positioned_fraction": 1.0,
+            "clean": false,
+            "subsystem": "shooter",
+            "prompt": "27 inch robot with a turreted dual flywheel hooded shooter on Krakens."
+          },
+          {
+            "parsed": true,
+            "has_features": true,
+            "feature_count": 2,
+            "schema_keys": true,
+            "unknown_types": [],
+            "non_stock_sections": [
+              null,
+              null
+            ],
+            "inconsistent_pitch_diameters": [],
+            "positioned_fraction": 1.0,
+            "clean": false,
+            "subsystem": "arm",
+            "prompt": "28x28 robot with a double-jointed arm reaching 24 in."
+          },
+          {
+            "parsed": false,
+            "subsystem": "climber",
+            "prompt": "28 inch robot with dual telescoping winch hooks."
+          },
+          {
+            "parsed": true,
+            "has_features": true,
+            "feature_count": 1,
+            "schema_keys": true,
+            "unknown_types": [],
+            "non_stock_sections": [],
+            "inconsistent_pitch_diameters": [],
+            "positioned_fraction": 1.0,
+            "clean": true,
+            "subsystem": "chassis",
+            "prompt": "30x28 swerve robot, bolted 2x1 tube frame."
+          },
+          {
+            "parsed": true,
+            "has_features": true,
+            "feature_count": 1,
+            "schema_keys": true,
+            "unknown_types": [],
+            "non_stock_sections": [
+              null
+            ],
+            "inconsistent_pitch_diameters": [],
+            "positioned_fraction": 1.0,
+            "clean": false,
+            "subsystem": "swerve module",
+            "prompt": "Just an MK4i swerve module on a Kraken X60 at L2."
+          },
+          {
+            "parsed": true,
+            "has_features": true,
+            "feature_count": 1,
+            "schema_keys": true,
+            "unknown_types": [],
+            "non_stock_sections": [
+              null
+            ],
+            "inconsistent_pitch_diameters": [],
+            "positioned_fraction": 1.0,
+            "clean": false,
+            "subsystem": "intake",
+            "prompt": "26x26 robot with a horizontal series-roller intake."
+          }
+        ]
+      }
+    },
+    {
+      "adapter": "/private/tmp/adapters/v9",
+      "elapsed_s": 994.2,
+      "intent": {
+        "prompts": 8,
+        "valid_json": 5,
+        "enum_clean": 5,
+        "distinct_designs": 5,
+        "detail": [
+          {
+            "parsed": true,
+            "has_subsystems": true,
+            "enum_violations": [],
+            "clean": true,
+            "prompt": "We are a rookie team. Design a 2026 robot on a 28 x 28 inch frame that"
+          },
+          {
+            "parsed": true,
+            "has_subsystems": true,
+            "enum_violations": [],
+            "clean": true,
+            "prompt": "MK5i swerve on Krakens at R2 with a ground-to-feeder tunnel intake and"
+          },
+          {
+            "parsed": true,
+            "has_subsystems": true,
+            "enum_violations": [],
+            "clean": true,
+            "prompt": "27 inch REEFSCAPE robot, three-stage cascade elevator, wristed carriag"
+          },
+          {
+            "parsed": true,
+            "has_subsystems": true,
+            "enum_violations": [],
+            "clean": true,
+            "prompt": "30x30 west-coast drivebase on six Krakens. Defence bot, nothing else."
+          },
+          {
+            "parsed": true,
+            "has_subsystems": true,
+            "enum_violations": [],
+            "clean": true,
+            "prompt": "Experienced team, 28 inch swerve, turreted dual flywheel hooded shoote"
+          },
+          {
+            "parsed": false,
+            "prompt": "Just an MK4n swerve module on a Kraken X60."
+          },
+          {
+            "parsed": false,
+            "prompt": "Resource-limited team, 26x26, horizontal series-roller intake and a fo"
+          },
+          {
+            "parsed": false,
+            "prompt": "29 inch robot with a staged accelerator-and-flywheel shooter and dual "
+          }
+        ]
+      },
+      "cad_held_out": {
+        "prompts": 5,
+        "valid_json": 5,
+        "schema_clean": 2,
+        "mean_features": 9.6,
+        "detail": [
+          {
+            "parsed": true,
+            "has_features": true,
+            "feature_count": 9,
+            "schema_keys": true,
+            "unknown_types": [
+              "telescope"
+            ],
+            "non_stock_sections": [
+              [
+                2.0,
+                1.5
+              ]
+            ],
+            "inconsistent_pitch_diameters": [],
+            "positioned_fraction": 1.0,
+            "clean": false,
+            "subsystem": "intake",
+            "prompt": "26x26 robot with a ground-to-feeder tunnel intake."
+          },
+          {
+            "parsed": true,
+            "has_features": true,
+            "feature_count": 6,
+            "schema_keys": true,
+            "unknown_types": [],
+            "non_stock_sections": [],
+            "inconsistent_pitch_diameters": [],
+            "positioned_fraction": 1.0,
+            "clean": true,
+            "subsystem": "shooter",
+            "prompt": "28 inch robot with a variable-hood flywheel shooter."
+          },
+          {
+            "parsed": true,
+            "has_features": true,
+            "feature_count": 8,
+            "schema_keys": true,
+            "unknown_types": [],
+            "non_stock_sections": [],
+            "inconsistent_pitch_diameters": [],
+            "positioned_fraction": 1.0,
+            "clean": true,
+            "subsystem": "elevator",
+            "prompt": "28x28 robot with a 2 stage telescoping box elevator."
+          },
+          {
+            "parsed": true,
+            "has_features": true,
+            "feature_count": 16,
+            "schema_keys": true,
+            "unknown_types": [],
+            "non_stock_sections": [
+              [
+                1.5,
+                1.5,
+                0.0625
+              ],
+              [
+                1.5,
+                1.5,
+                0.0625
+              ],
+              [
+                1.5,
+                1.5,
+                0.0625
+              ],
+              [
+                1.5,
+                1.5,
+                0.0625
+              ]
+            ],
+            "inconsistent_pitch_diameters": [],
+            "positioned_fraction": 1.0,
+            "clean": false,
+            "subsystem": "arm",
+            "prompt": "27 inch robot with a four-bar linkage arm reaching 22 in."
+          },
+          {
+            "parsed": true,
+            "has_features": true,
+            "feature_count": 9,
+            "schema_keys": true,
+            "unknown_types": [],
+            "non_stock_sections": [
+              [
+                1.5,
+                1.5,
+                0.0625
+              ],
+              [
+                1.5,
+                1.5,
+                0.0625
+              ],
+              [
+                1.5,
+                1.0,
+                0.0625
+              ]
+            ],
+            "inconsistent_pitch_diameters": [],
+            "positioned_fraction": 1.0,
+            "clean": false,
+            "subsystem": "climber",
+            "prompt": "29 inch robot with a winch-driven carriage climb."
+          }
+        ]
+      },
+      "cad": {
+        "prompts": 8,
+        "valid_json": 3,
+        "has_features": 3,
+        "schema_clean": 2,
+        "mean_features": 4.2,
+        "detail": [
+          {
+            "parsed": false,
+            "subsystem": "intake",
+            "prompt": "28x28 swerve robot built around a dual-roller over-bumper intake."
+          },
+          {
+            "parsed": true,
+            "has_features": true,
+            "feature_count": 15,
+            "schema_keys": true,
+            "unknown_types": [],
+            "non_stock_sections": [],
+            "inconsistent_pitch_diameters": [
+              {
+                "teeth": 12,
+                "dp": 20,
+                "pd": 1.5
+              },
+              {
+                "teeth": 12,
+                "dp": 20,
+                "pd": 1.5
+              },
+              {
+                "teeth": 12,
+                "dp": 20,
+                "pd": 1.5
+              }
+            ],
+            "positioned_fraction": 1.0,
+            "clean": false,
+            "subsystem": "elevator",
+            "prompt": "28x28 REEFSCAPE robot with a 3 stage belt-rigged cascade tower."
+          },
+          {
+            "parsed": false,
+            "subsystem": "shooter",
+            "prompt": "27 inch robot with a turreted dual flywheel hooded shooter on Krakens."
+          },
+          {
+            "parsed": false,
+            "subsystem": "arm",
+            "prompt": "28x28 robot with a double-jointed arm reaching 24 in."
+          },
+          {
+            "parsed": true,
+            "has_features": true,
+            "feature_count": 11,
+            "schema_keys": true,
+            "unknown_types": [],
+            "non_stock_sections": [],
+            "inconsistent_pitch_diameters": [],
+            "positioned_fraction": 1.0,
+            "clean": true,
+            "subsystem": "climber",
+            "prompt": "28 inch robot with dual telescoping winch hooks."
+          },
+          {
+            "parsed": true,
+            "has_features": true,
+            "feature_count": 8,
+            "schema_keys": true,
+            "unknown_types": [],
+            "non_stock_sections": [],
+            "inconsistent_pitch_diameters": [],
+            "positioned_fraction": 1.0,
+            "clean": true,
+            "subsystem": "chassis",
+            "prompt": "30x28 swerve robot, bolted 2x1 tube frame."
+          },
+          {
+            "parsed": false,
+            "subsystem": "swerve module",
+            "prompt": "Just an MK4i swerve module on a Kraken X60 at L2."
+          },
+          {
+            "parsed": false,
+            "subsystem": "intake",
+            "prompt": "26x26 robot with a horizontal series-roller intake."
+          }
+        ]
+      }
+    },
+    {
+      "adapter": "/private/tmp/adapters/v10",
+      "elapsed_s": 771.9,
+      "intent": {
+        "prompts": 8,
+        "valid_json": 7,
+        "enum_clean": 7,
+        "distinct_designs": 7,
+        "detail": [
+          {
+            "parsed": true,
+            "has_subsystems": true,
+            "enum_violations": [],
+            "clean": true,
+            "prompt": "We are a rookie team. Design a 2026 robot on a 28 x 28 inch frame that"
+          },
+          {
+            "parsed": true,
+            "has_subsystems": true,
+            "enum_violations": [],
+            "clean": true,
+            "prompt": "MK5i swerve on Krakens at R2 with a ground-to-feeder tunnel intake and"
+          },
+          {
+            "parsed": true,
+            "has_subsystems": true,
+            "enum_violations": [],
+            "clean": true,
+            "prompt": "27 inch REEFSCAPE robot, three-stage cascade elevator, wristed carriag"
+          },
+          {
+            "parsed": false,
+            "prompt": "30x30 west-coast drivebase on six Krakens. Defence bot, nothing else."
+          },
+          {
+            "parsed": true,
+            "has_subsystems": true,
+            "enum_violations": [],
+            "clean": true,
+            "prompt": "Experienced team, 28 inch swerve, turreted dual flywheel hooded shoote"
+          },
+          {
+            "parsed": true,
+            "has_subsystems": true,
+            "enum_violations": [],
+            "clean": true,
+            "prompt": "Just an MK4n swerve module on a Kraken X60."
+          },
+          {
+            "parsed": true,
+            "has_subsystems": true,
+            "enum_violations": [],
+            "clean": true,
+            "prompt": "Resource-limited team, 26x26, horizontal series-roller intake and a fo"
+          },
+          {
+            "parsed": true,
+            "has_subsystems": true,
+            "enum_violations": [],
+            "clean": true,
+            "prompt": "29 inch robot with a staged accelerator-and-flywheel shooter and dual "
+          }
+        ]
+      },
+      "cad_held_out": {
+        "prompts": 5,
+        "valid_json": 2,
+        "schema_clean": 0,
+        "mean_features": 5.2,
+        "detail": [
+          {
+            "parsed": true,
+            "has_features": true,
+            "feature_count": 13,
+            "schema_keys": true,
+            "unknown_types": [
+              "pocket",
+              "pocket"
+            ],
+            "non_stock_sections": [],
+            "inconsistent_pitch_diameters": [],
+            "positioned_fraction": 1.0,
+            "clean": false,
+            "subsystem": "intake",
+            "prompt": "26x26 robot with a ground-to-feeder tunnel intake."
+          },
+          {
+            "parsed": false,
+            "subsystem": "shooter",
+            "prompt": "28 inch robot with a variable-hood flywheel shooter."
+          },
+          {
+            "parsed": true,
+            "has_features": true,
+            "feature_count": 13,
+            "schema_keys": true,
+            "unknown_types": [
+              "tub",
+              "tub",
+              "tub",
+              "tub"
+            ],
+            "non_stock_sections": [],
+            "inconsistent_pitch_diameters": [],
+            "positioned_fraction": 1.0,
+            "clean": false,
+            "subsystem": "elevator",
+            "prompt": "28x28 robot with a 2 stage telescoping box elevator."
+          },
+          {
+            "parsed": false,
+            "subsystem": "arm",
+            "prompt": "27 inch robot with a four-bar linkage arm reaching 22 in."
+          },
+          {
+            "parsed": false,
+            "subsystem": "climber",
+            "prompt": "29 inch robot with a winch-driven carriage climb."
+          }
+        ]
+      },
+      "cad": {
+        "prompts": 8,
+        "valid_json": 5,
+        "has_features": 5,
+        "schema_clean": 1,
+        "mean_features": 7.0,
+        "detail": [
+          {
+            "parsed": true,
+            "has_features": true,
+            "feature_count": 11,
+            "schema_keys": true,
+            "unknown_types": [],
+            "non_stock_sections": [
+              null,
+              null
+            ],
+            "inconsistent_pitch_diameters": [],
+            "positioned_fraction": 1.0,
+            "clean": false,
+            "subsystem": "intake",
+            "prompt": "28x28 swerve robot built around a dual-roller over-bumper intake."
+          },
+          {
+            "parsed": false,
+            "subsystem": "elevator",
+            "prompt": "28x28 REEFSCAPE robot with a 3 stage belt-rigged cascade tower."
+          },
+          {
+            "parsed": false,
+            "subsystem": "shooter",
+            "prompt": "27 inch robot with a turreted dual flywheel hooded shooter on Krakens."
+          },
+          {
+            "parsed": false,
+            "subsystem": "arm",
+            "prompt": "28x28 robot with a double-jointed arm reaching 24 in."
+          },
+          {
+            "parsed": true,
+            "has_features": true,
+            "feature_count": 13,
+            "schema_keys": true,
+            "unknown_types": [],
+            "non_stock_sections": [],
+            "inconsistent_pitch_diameters": [],
+            "positioned_fraction": 1.0,
+            "clean": true,
+            "subsystem": "climber",
+            "prompt": "28 inch robot with dual telescoping winch hooks."
+          },
+          {
+            "parsed": true,
+            "has_features": true,
+            "feature_count": 6,
+            "schema_keys": true,
+            "unknown_types": [],
+            "non_stock_sections": [
+              [
+                2,
+                1,
+                0.1
+              ],
+              [
+                2,
+                1,
+                0.1
+              ],
+              [
+                2,
+                1,
+                0.1
+              ],
+              [
+                2,
+                1,
+                0.1
+              ],
+              [
+                2,
+                2,
+                0.125
+              ],
+              [
+                1,
+                1,
+                0.1
+              ]
+            ],
+            "inconsistent_pitch_diameters": [],
+            "positioned_fraction": 1.0,
+            "clean": false,
+            "subsystem": "chassis",
+            "prompt": "30x28 swerve robot, bolted 2x1 tube frame."
+          },
+          {
+            "parsed": true,
+            "has_features": true,
+            "feature_count": 17,
+            "schema_keys": true,
+            "unknown_types": [],
+            "non_stock_sections": [],
+            "inconsistent_pitch_diameters": [
+              {
+                "teeth": 20,
+                "dp": 20.0,
+                "pd": 0.95
+              }
+            ],
+            "positioned_fraction": 1.0,
+            "clean": false,
+            "subsystem": "swerve module",
+            "prompt": "Just an MK4i swerve module on a Kraken X60 at L2."
+          },
+          {
+            "parsed": true,
+            "has_features": true,
+            "feature_count": 9,
+            "schema_keys": true,
+            "unknown_types": [
+              "fastened"
+            ],
+            "non_stock_sections": [],
+            "inconsistent_pitch_diameters": [],
+            "positioned_fraction": 1.0,
+            "clean": false,
+            "subsystem": "intake",
+            "prompt": "26x26 robot with a horizontal series-roller intake."
+          }
+        ]
+      }
+    }
+  ]
+}

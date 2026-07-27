@@ -164,6 +164,22 @@ def intent_vocabulary_block() -> str:
     return "\n".join(lines)
 
 
+def intent_user_message(prompt: str, stated: dict[str, Any]) -> str:
+    """The exact user message for the design-intent task.
+
+    One function so training, inference and evaluation cannot disagree about the prompt. They
+    already did once: the vocabulary block was added to the corpus and to the Design Studio but
+    not to the eval harness, so v10 was trained with it and scored without it. Its intent
+    output looked like a collapse and was actually a prompt it had never been trained on.
+    Anything that asks the model for a design intent must build the message here.
+    """
+    from app.services.security import fence_user_content
+    return ("Design an FRC robot for this request. Fields already fixed by the team are given "
+            "as 'stated', repeat them unchanged and decide only the rest.\n\n"
+            + intent_vocabulary_block()
+            + f"\n\nstated: {stated}\n\nTeam request:\n" + fence_user_content(prompt))
+
+
 def _model_intent(prompt: str, parsed: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     """Ask the self-hosted model to fill the gaps. Returns (intent, provenance)."""
     from app.services.inference_client import InferenceClient, InferenceUnavailable
@@ -173,12 +189,7 @@ def _model_intent(prompt: str, parsed: dict[str, Any]) -> tuple[dict[str, Any], 
     provenance: dict[str, Any] = {"used": False, "provider": "", "model_version": "", "reason": ""}
     client = InferenceClient(settings.inference_url, settings.inference_timeout_seconds)
     stated = {key: value for key, value in parsed.items() if value is not None}
-    user = (
-        "Design an FRC robot for this request. Fields already fixed by the team are given as "
-        "'stated', repeat them unchanged and decide only the rest.\n\n"
-        + intent_vocabulary_block()
-        + f"\n\nstated: {stated}\n\nTeam request:\n" + fence_user_content(prompt)
-    )
+    user = intent_user_message(prompt, stated)
     try:
         # Temperature is deliberately non-zero: two similar prompts should still explore
         # different architectures rather than collapsing onto one answer.

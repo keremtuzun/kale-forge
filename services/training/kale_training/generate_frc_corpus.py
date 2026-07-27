@@ -49,7 +49,7 @@ from app.services.robot_spec import (  # noqa: E402
     SHOOTER_TYPES,
     SYSTEM_DESIGN,
     build_robot_spec,
-    intent_vocabulary_block,
+    intent_user_message,
 )
 
 SYSTEM_KNOWLEDGE = (
@@ -272,10 +272,7 @@ def _intent_example(rng: random.Random, index: int) -> dict[str, Any]:
     stated = {"frame_in": [width, length], "drive_type": None, "subsystems_stated": {}}
     # The vocabulary block comes from robot_spec so training and inference present the model
     # with byte-identical options; it is the same function the Design Studio calls.
-    user = ("Design an FRC robot for this request. Fields already fixed by the team are given as "
-            "'stated', repeat them unchanged and decide only the rest.\n\n"
-            + intent_vocabulary_block()
-            + f"\n\nstated: {stated}\n\nTeam request:\n" + _fenced(prompt))
+    user = intent_user_message(prompt, stated)
     return _row(SYSTEM_DESIGN, user, json.dumps(intent, separators=(",", ":"), sort_keys=True),
                 "design_intent", index)
 
