@@ -1,32 +1,45 @@
 #!/bin/bash
-# Promote the v9 adapter and score it against v7.
+# Promote a freshly trained design adapter and score it against the incumbents.
 #
-# Run only after training has stopped — MLX inference and MLX training contend for the same
-# GPU, and running them together stalls both (it cost this session 16 minutes).
-set -e
-REPO="$HOME/Desktop/Kale"
-WORK=/private/tmp/kale-train-v9
-OUT="$REPO/models/adapters/kale-design-qwen3-4b-v9"
+# Two hard rules on this host, both learned the expensive way:
+#
+#   1. Never run MLX inference while MLX training is running. They contend for the same GPU
+#      and both stall; it cost one session 16 minutes of a training run.
+#   2. /private/tmp is not durable. It was wiped between sessions and took a whole training
+#      run with it, so the adapter is copied back into the repo as soon as it exists — before
+#      the eval, not after.
+#
+# Usage: scripts/finish-design-adapter.sh <version> [checkpoint]
+#        scripts/finish-design-adapter.sh v10 0000800
+set -euo pipefail
+
+VERSION="${1:?usage: finish-design-adapter.sh <version> [checkpoint]}"
+CKPT="${2:-}"
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+WORK="/private/tmp/kale-train-$VERSION"
+OUT="$REPO/models/adapters/kale-design-qwen3-4b-$VERSION"
 
 if pgrep -f "mlx_lm.lora" > /dev/null; then
-  echo "training still running — refusing to start inference"; exit 1
+  echo "training is still running — refusing to start inference (see rule 1)" >&2
+  exit 1
 fi
 
-# Promote the iter-800 checkpoint as the adapter weights.
-mkdir -p /private/tmp/adapters/v9
-cp "$WORK/adapter/adapter_config.json" /private/tmp/adapters/v9/
-cp "$WORK/adapter/0000800_adapters.safetensors" /private/tmp/adapters/v9/adapters.safetensors
-echo "promoted iter-800 checkpoint"
+weights="$WORK/adapter/adapters.safetensors"
+[ -n "$CKPT" ] && weights="$WORK/adapter/${CKPT}_adapters.safetensors"
+[ -f "$weights" ] || { echo "no weights at $weights" >&2; exit 1; }
+
+# Copy back first: the repo is the durable location, /private/tmp is not.
+mkdir -p "$OUT" "/private/tmp/adapters/$VERSION"
+cp "$WORK/adapter/adapter_config.json" "$OUT/"
+cp "$weights" "$OUT/adapters.safetensors"
+cp "$OUT"/* "/private/tmp/adapters/$VERSION/"
+echo "promoted $(basename "$weights") → $OUT"
 
 cd /private/tmp
 /usr/local/bin/python3 eval_cad_adapter.py \
-  --adapters /private/tmp/adapters/v7 /private/tmp/adapters/v9 \
+  --adapters /private/tmp/adapters/v7 /private/tmp/adapters/v9 "/private/tmp/adapters/$VERSION" \
   --repo /private/tmp/evalrepo \
-  --intent-prompts 6 --cad-prompts 6 --max-tokens 1100 \
-  --out /private/tmp/kale-design-v9-cad.json
+  --out "/private/tmp/kale-design-$VERSION-cad.json"
 
-# Copy the adapter back into the repo only once the eval has produced a scorecard.
-mkdir -p "$OUT"
-cp /private/tmp/adapters/v9/* "$OUT/"
-cp /private/tmp/kale-design-v9-cad.json "$REPO/models/evaluations/kale-design-v9-cad.json"
-echo "adapter and scorecard copied into the repo"
+cp "/private/tmp/kale-design-$VERSION-cad.json" "$REPO/models/evaluations/"
+echo "scorecard → $REPO/models/evaluations/kale-design-$VERSION-cad.json"
