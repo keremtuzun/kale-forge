@@ -1,0 +1,57 @@
+{
+  "version": "frc-parts-v1",
+  "created_at": "2026-07-23T20:32:24.879140+00:00",
+  "generator": "kale_training.generate_frc_corpus",
+  "seed": 1701,
+  "row_count": 508,
+  "family_counts": {
+    "design_intent": 320,
+    "parts_qa": 58,
+    "electrical": 90,
+    "technique": 28,
+    "diagnosis": 12
+  },
+  "merged_from": [],
+  "split_counts": {
+    "train": 406,
+    "valid": 51,
+    "test": 51
+  },
+  "sha256": {
+    "train": "f7f4e6cfe8a47b4bb22a19575c4e05e5cc1132bfe234d9554a3eb0e833e2a2f7",
+    "valid": "d2c5d957c13d6dde0642ad4c03feda0c440e4781384f97c22a8c72c2e77393c6",
+    "test": "f1638d539144fe6167b5e63ad1b7bc07b6031c4b92ff62913aa94b38da462d08"
+  },
+  "catalog": {
+    "parts_version": "frc-parts-2026.07",
+    "counts": {
+      "electronics": 15,
+      "motors": 8,
+      "swerve_modules": 6,
+      "structure": 10,
+      "transmission": 7
+    },
+    "swerve_modules": [
+      "maxswerve",
+      "mk4",
+      "mk4i",
+      "mk4n",
+      "thrifty",
+      "wcp_x"
+    ],
+    "motors": [
+      "cim",
+      "falcon_500",
+      "kraken_x44",
+      "kraken_x60",
+      "minion",
+      "neo",
+      "neo_550",
+      "neo_vortex"
+    ],
+    "disclaimer": "Envelopes and ratios are nominal published figures for packaging and first-order sizing. Confirm every one against the vendor drawing."
+  },
+  "license": "internal",
+  "provenance": "Derived from Kale's own FRC parts catalog and technique library. No vendor prose, CAD, meshes or user data copied. Published specifications are restated as engineering facts with verification caveats attached.",
+  "reference_policy": "Public manuals and design libraries inform topic coverage only; exact rules and vendor dimensions must be checked at use time."
+}

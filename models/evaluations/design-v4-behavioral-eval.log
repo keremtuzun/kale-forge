@@ -1,0 +1,101 @@
+=== eval start 20:22:03 ===
+corpus design_intent outputs: 1400
+
+loading FINE-TUNED model (base + adapter)...
+Fetching 11 files:   0%|          | 0/11 [00:00<?, ?it/s]Fetching 11 files: 100%|██████████| 11/11 [00:00<00:00, 21824.67it/s]
+
+========================================================================
+FINE-TUNED (Kale Forge design adapter v4)
+========================================================================
+
+[1] frame [28, 28] :: Veteran team, REEFSCAPE. We want to score coral at every level fast an...
+    subsystems : ['intake', 'elevator', 'arm', 'climber']
+    drive/intake/shooter: swerve | fixed over-bumper roller | variable-hood flywheel shooter
+    arm/climber/elev    : telescoping dead-axle shoulder arm | deep-cage hook climb | telescoping box (3 st)
+    nearest-corpus similarity: 0.945  exact-copy: False
+
+[2] frame [26, 26] :: Rookie team, six students, tight budget. We want to do ONE job reliabl...
+    subsystems : ['intake', 'shooter', 'arm']
+    drive/intake/shooter: swerve-ready | four-bar over-bumper | fixed-angle flywheel shooter
+    arm/climber/elev    : four-bar linkage arm | single pivoting hook | continuous (1 st)
+    nearest-corpus similarity: 0.957  exact-copy: False
+
+[3] frame [30, 28] :: Experienced team. Pure defense bot that can still hang a shallow climb...
+    subsystems : ['intake', 'shooter']
+    drive/intake/shooter: west-coast | fixed over-bumper roller | dual independent flywheel hooded shooter
+    arm/climber/elev    : double-jointed arm | deep-cage hook climb | telescoping box (1 st)
+    nearest-corpus similarity: 0.950  exact-copy: False
+
+[4] frame [27, 27] :: Second-year team, CRESCENDO. Fast note cycler from the floor, no shoot...
+    subsystems : ['intake', 'arm', 'climber']
+    drive/intake/shooter: swerve | four-bar over-bumper | turreted dual flywheel hooded shooter
+    arm/climber/elev    : double-jointed arm | dual telescoping winch hooks | continuous (3 st)
+    nearest-corpus similarity: 0.916  exact-copy: False
+
+[5] frame [28, 28] :: Well-resourced team. Long-range shooter that never touches the floor, ...
+    subsystems : ['intake', 'shooter', 'climber']
+    drive/intake/shooter: swerve | four-bar over-bumper | single flywheel backspin shooter
+    arm/climber/elev    : double-jointed arm | single pivoting hook | continuous (1 st)
+    nearest-corpus similarity: 0.996  exact-copy: False
+
+[6] frame [26, 30] :: Resource-limited team. Ground intake plus a mid-height scorer on an el...
+    subsystems : ['intake', 'elevator']
+    drive/intake/shooter: west-coast | ground roller | turreted dual flywheel hooded shooter
+    arm/climber/elev    : telescoping dead-axle shoulder arm | single pivoting hook | cascade (1 st)
+    nearest-corpus similarity: 0.909  exact-copy: False
+
+-- FINE-TUNED (Kale Forge design adapter v4) summary --
+   valid JSON: 6/6
+   distinct design configurations: 6/6
+   max nearest-corpus similarity: 0.996  (1.000 would mean verbatim copy)
+   mean nearest-corpus similarity: 0.945
+
+loading BASE model (no adapter)...
+Fetching 11 files:   0%|          | 0/11 [00:00<?, ?it/s]Fetching 11 files: 100%|██████████| 11/11 [00:00<00:00, 13353.79it/s]
+
+========================================================================
+BASE Qwen3-4B (no fine-tune)
+========================================================================
+
+[1] frame [28, 28] :: Veteran team, REEFSCAPE. We want to score coral at every level fast an...
+    subsystems : None
+    drive/intake/shooter: None | None | None
+    arm/climber/elev    : None | None | None (None st)
+    nearest-corpus similarity: 0.065  exact-copy: False
+
+[2] frame [26, 26] :: Rookie team, six students, tight budget. We want to do ONE job reliabl...
+    subsystems : None
+    drive/intake/shooter: None | None | None
+    arm/climber/elev    : None | None | None (None st)
+    nearest-corpus similarity: 0.081  exact-copy: False
+
+[3] frame [30, 28] :: Experienced team. Pure defense bot that can still hang a shallow climb...
+    subsystems : None
+    drive/intake/shooter: None | None | None
+    arm/climber/elev    : None | None | None (None st)
+    nearest-corpus similarity: 0.043  exact-copy: False
+
+[4] frame [27, 27] :: Second-year team, CRESCENDO. Fast note cycler from the floor, no shoot...
+    subsystems : {'intake': {'type': 'conveyor', 'configuration': 'single-vertical-rotating-axle', 'mechanism': 'belted-pulley', 'power': '2000rpm-1000rpm', 'design_notes': 'Simple, serviceable, and directly accessible from the floor. Belted pulley allows for quick maintenance and reduces gear wear.', 'risks': 'May not provide consistent grip on fast-moving notes; belt slippage under high loads'}, 'feed': {'type': 'continuous-feed', 'configuration': 'side-mounted-roller', 'mechanism': 'direct-rotation-plate', 'power': '1200rpm', 'design_notes': 'Mounted on the frame side to minimize obstruction during floor feeding. Direct rotation ensures minimal lag during fast cycling.', 'risks': 'Vulnerable to jamming if debris enters the feed path; requires clear floor access'}}
+    drive/intake/shooter: tank | None | None
+    arm/climber/elev    : None | None | None (None st)
+    nearest-corpus similarity: 0.071  exact-copy: False
+
+[5] frame [28, 28] :: Well-resourced team. Long-range shooter that never touches the floor, ...
+    subsystems : None
+    drive/intake/shooter: None | None | None
+    arm/climber/elev    : None | None | None (None st)
+    nearest-corpus similarity: 0.078  exact-copy: False
+
+[6] frame [26, 30] :: Resource-limited team. Ground intake plus a mid-height scorer on an el...
+    subsystems : None
+    drive/intake/shooter: None | None | None
+    arm/climber/elev    : None | None | None (None st)
+    nearest-corpus similarity: 0.052  exact-copy: False
+
+-- BASE Qwen3-4B (no fine-tune) summary --
+   valid JSON: 6/6
+   distinct design configurations: 2/6
+   max nearest-corpus similarity: 0.081  (1.000 would mean verbatim copy)
+   mean nearest-corpus similarity: 0.065
+=== eval exited code 0 at 20:27:01 ===

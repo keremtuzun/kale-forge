@@ -1,0 +1,51 @@
+# Node
+node_modules/
+.next/
+out/
+dist/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Env & secrets
+.env
+.env.local
+.env.*.local
+
+# Data & models (tracked via DVC / object storage, not git)
+storage/
+*.db
+*.sqlite
+# SQLite write-ahead log and shared-memory files are live runtime state, not source.
+*.db-wal
+*.db-shm
+models/checkpoints/*
+models/adapters/*
+!models/checkpoints/.gitkeep
+!models/adapters/.gitkeep
+datasets/raw/*
+!datasets/raw/.gitkeep
+# Processed corpora are regenerated from the runtime modules by
+# kale_training.generate_frc_corpus and verified byte-identical by their manifest sha256,
+# so the generator and its seed are the source of truth, not 76 MB of checked-in jsonl.
+# The manifest is kept: it carries the seed, row counts and split sha256s that make a
+# corpus reproducible. Git cannot re-include a file inside an excluded directory, so the
+# directories themselves have to stay walkable.
+datasets/processed/**
+!datasets/processed/**/
+!datasets/processed/*/manifest.json
+mlruns/
+wandb/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

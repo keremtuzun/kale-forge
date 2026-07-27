@@ -1,0 +1,24 @@
+# Laptop smoke-test config: tiny Qwen model + LoRA, runs on CPU/Metal for pipeline validation.
+base_model: Qwen/Qwen2.5-0.5B-Instruct
+dataset_dir: datasets/processed/latest
+dataset_version: latest
+seed: 42
+lr: 0.0002
+epochs: 1
+per_device_batch: 1
+grad_accum: 4
+max_seq_len: 2048
+lora:
+  r: 8
+  alpha: 16
+  dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj]
+quantization:
+  enabled: false
+  bits: 16
+  type: none
+tracking:
+  backend: mlflow          # mlflow | wandb | none
+  uri: file:./mlruns
+output_dir: models/adapters/small-local
+eval_per_epoch: true

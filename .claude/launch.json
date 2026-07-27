@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "apps/web",
+      "port": 3000
+    },
+    {
+      "name": "kale-demo",
+      "runtimeExecutable": "/usr/local/bin/python3",
+      "runtimeArgs": ["serve_local.py", "8787"],
+      "cwd": "apps/kale-demo",
+      "port": 8787
+    }
+  ]
+}

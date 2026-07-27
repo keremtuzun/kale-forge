@@ -1,0 +1,32 @@
+# Kale Forge Design Model — adapter v9 (MLX LoRA)
+# Trained on design-v9, which adds the two CAD families (cad_geometry, cad_qa) on top of the
+# v8 intent recipe: the model is taught to emit a subsystem as dimensioned parts in Kale's
+# CAD schema, not just to name a mechanism. Targets are generated from frc_cad, so what the
+# model learns to emit is byte-identical to what the viewer, the BOM and the cut list read.
+#
+# Iterations are up from v6/v7's 600: the corpus is ~1.5x larger and the CAD family has a
+# much longer, more structured target than an intent JSON, so it needs more passes before
+# the schema discipline holds.
+#
+# NOTE: on this host the run happens off the iCloud Desktop, on local disk (/private/tmp),
+# with the non-Anaconda MLX env at work/mlx-training-env — iCloud read latency otherwise
+# stalls imports for tens of minutes. Paths below are the repo-canonical locations; the
+# launch copies dataset + adapter to /private/tmp and copies the adapter back here.
+model: mlx-community/Qwen3-4B-Instruct-2507-4bit
+train: true
+data: datasets/processed/design-v9
+fine_tune_type: lora
+adapter_path: models/adapters/kale-design-qwen3-4b-v9
+seed: 42
+iters: 900
+batch_size: 1
+grad_accumulation_steps: 4
+learning_rate: 0.0001
+num_layers: 6
+max_seq_length: 2048
+mask_prompt: true
+grad_checkpoint: true
+steps_per_report: 20
+steps_per_eval: 200
+save_every: 200
+val_batches: 8

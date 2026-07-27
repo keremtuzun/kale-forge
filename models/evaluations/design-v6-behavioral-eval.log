@@ -1,0 +1,71 @@
+corpus design_intent outputs: 1800
+
+loading FINE-TUNED model (base + adapter)...
+Fetching 11 files:   0%|          | 0/11 [00:00<?, ?it/s]Fetching 11 files: 100%|██████████| 11/11 [00:00<00:00, 5658.25it/s]
+
+========================================================================
+FINE-TUNED (Kale Forge design adapter v4)
+========================================================================
+
+[1] frame [28, 28] :: Veteran team, REEFSCAPE. We want to score coral at every level fast an...
+    subsystems : ['intake', 'shooter']
+    drive/intake/shooter: swerve | four-bar over-bumper | single flywheel backspin shooter
+    arm/climber/elev    : double-jointed arm | dual telescoping winch hooks | telescoping box (1 st)
+    enum violations: none
+    nearest-corpus similarity: 0.838  exact-copy: False
+
+[2] frame [26, 26] :: Rookie team, six students, tight budget. We want to do ONE job reliabl...
+    subsystems : ['intake', 'shooter', 'arm', 'climber']
+    drive/intake/shooter: swerve | under-bumper roller | dual independent flywheel hooded shooter
+    arm/climber/elev    : telescoping dead-axle shoulder arm | single pivoting hook | continuous (3 st)
+    enum violations: none
+    nearest-corpus similarity: 0.820  exact-copy: False
+
+[3] frame [30, 28] :: Experienced team. Pure defense bot that can still hang a shallow climb...
+    subsystems : ['intake', 'shooter', 'arm', 'climber']
+    drive/intake/shooter: swerve | under-bumper roller | single flywheel backspin shooter
+    arm/climber/elev    : telescoping dead-axle shoulder arm | single pivoting hook | cascade (1 st)
+    enum violations: none
+    nearest-corpus similarity: 0.814  exact-copy: False
+
+[4] frame [27, 27] :: Second-year team, CRESCENDO. Fast note cycler from the floor, no shoot...
+    subsystems : ['intake', 'arm', 'climber']
+    drive/intake/shooter: swerve | coaxial slapdown | single flywheel backspin shooter
+    arm/climber/elev    : four-bar linkage arm | dual telescoping winch hooks | telescoping box (2 st)
+    enum violations: none
+    nearest-corpus similarity: 0.882  exact-copy: False
+
+[5] frame [28, 28] :: Well-resourced team. Long-range shooter that never touches the floor, ...
+    subsystems : ['intake', 'shooter', 'arm', 'climber']
+    drive/intake/shooter: swerve | under-bumper roller | turreted dual flywheel hooded shooter
+    arm/climber/elev    : wristed carriage arm | single pivoting hook | continuous (2 st)
+    enum violations: none
+    nearest-corpus similarity: 0.825  exact-copy: False
+
+[6] frame [26, 30] :: Resource-limited team. Ground intake plus a mid-height scorer on an el...
+    subsystems : ['intake', 'elevator']
+    drive/intake/shooter: tank | under-bumper roller | dual independent flywheel hooded shooter
+    arm/climber/elev    : wristed elevator | single pivoting hook | telescoping box (2 st)
+    enum violations: ["arm_type='wristed elevator'"]
+    nearest-corpus similarity: 0.738  exact-copy: False
+
+[7] frame [28, 28] :: Experienced team on MK5i modules with Krakens at R3. We want a turrete...
+    subsystems : ['intake', 'shooter']
+    drive/intake/shooter: swerve | under-bumper roller | turreted dual flywheel hooded shooter
+    arm/climber/elev    : telescoping dead-axle shoulder arm | deep-cage hook climb | telescoping box (2 st)
+    enum violations: none
+    nearest-corpus similarity: 0.764  exact-copy: False
+
+[8] frame [27, 27] :: Veteran team. Deep-cage climb specialist: get on the cage fast at the ...
+    subsystems : ['intake', 'elevator', 'arm', 'climber']
+    drive/intake/shooter: swerve | under-bumper roller | single flywheel backspin shooter
+    arm/climber/elev    : dead-axle shoulder arm | deep-cage hook climb | cascade (3 st)
+    enum violations: none
+    nearest-corpus similarity: 0.757  exact-copy: False
+
+-- FINE-TUNED (Kale Forge design adapter v4) summary --
+   valid JSON: 8/8
+   distinct design configurations: 8/8
+   enum violations across all outputs: 1
+   max nearest-corpus similarity: 0.882  (1.000 would mean verbatim copy)
+   mean nearest-corpus similarity: 0.805

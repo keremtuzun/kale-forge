@@ -1,0 +1,32 @@
+# FRC parts-and-techniques fine-tune.
+#
+# Dataset: datasets/processed/design-v3 — the FRC catalog corpus merged with the general
+# design corpus, so the model gains part numbers, module ratios, breaker/wire rules and
+# build techniques WITHOUT losing the broader hardware-design ability it already has.
+#
+# Build the dataset first:
+#   .venv/bin/python -m services.training.kale_training.generate_frc_corpus \
+#       --out datasets/processed/design-v3 --merge datasets/processed/design-v2
+#
+# The design_intent family in this corpus mirrors, byte for byte, the call the Design Studio
+# makes at inference time (app.services.robot_spec.SYSTEM_DESIGN + INTENT_SCHEMA). That is
+# the family that teaches the model to answer different prompts differently.
+model: mlx-community/Qwen3-4B-Instruct-2507-4bit
+train: true
+data: datasets/processed/design-v3
+fine_tune_type: lora
+adapter_path: models/adapters/kale-design-frc-v1
+seed: 42
+# ~4x the design-v2 corpus, so more iterations before the loss flattens.
+iters: 400
+batch_size: 1
+grad_accumulation_steps: 4
+learning_rate: 0.0001
+num_layers: 8
+max_seq_length: 2048
+mask_prompt: true
+grad_checkpoint: true
+steps_per_report: 10
+steps_per_eval: 50
+save_every: 100
+val_batches: 8

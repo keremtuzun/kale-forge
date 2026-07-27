@@ -1,0 +1,65 @@
+{
+  "version": "design-v10",
+  "created_at": "2026-07-27T08:19:34.411703+00:00",
+  "generator": "kale_training.generate_frc_corpus",
+  "seed": 10001,
+  "row_count": 4067,
+  "family_counts": {
+    "design_intent": 2600,
+    "parts_qa": 71,
+    "electrical": 380,
+    "technique": 57,
+    "diagnosis": 15,
+    "cad_geometry": 289,
+    "cad_qa": 175,
+    "merged:design-v2": 480
+  },
+  "merged_from": [
+    "/Users/kerem/Desktop/Kale/datasets/processed/design-v2"
+  ],
+  "split_counts": {
+    "train": 3254,
+    "valid": 406,
+    "test": 407
+  },
+  "sha256": {
+    "train": "472dd1bf849a6fe73539599e8d2a92c916bb796b6865c020e7b5414b2400729b",
+    "valid": "869d0ce6049e7f635292066399b6b0c7b44de2125577baced7dd58dddd213ab2",
+    "test": "e536c0549b473b4a77573949f8d591e7d915b7ad35cacda2bf005e0a8bcb55f6"
+  },
+  "catalog": {
+    "parts_version": "frc-parts-2026.07.25",
+    "counts": {
+      "electronics": 17,
+      "motors": 8,
+      "swerve_modules": 8,
+      "structure": 16,
+      "transmission": 7
+    },
+    "swerve_modules": [
+      "maxswerve",
+      "mk4",
+      "mk4i",
+      "mk4n",
+      "mk5i",
+      "mk5n",
+      "thrifty",
+      "wcp_x"
+    ],
+    "motors": [
+      "cim",
+      "falcon_500",
+      "kraken_x44",
+      "kraken_x60",
+      "minion",
+      "neo",
+      "neo_550",
+      "neo_vortex"
+    ],
+    "disclaimer": "Envelopes and ratios are nominal published figures for packaging and first-order sizing. Confirm every one against the vendor drawing."
+  },
+  "cad_schema": "kale-cad-2.0",
+  "license": "internal",
+  "provenance": "Derived from Kale's own FRC parts catalog and technique library. No vendor prose, CAD, meshes or user data copied. Published specifications are restated as engineering facts with verification caveats attached.",
+  "reference_policy": "Public manuals and design libraries inform topic coverage only; exact rules and vendor dimensions must be checked at use time."
+}

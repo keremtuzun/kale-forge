@@ -1,0 +1,7 @@
+* Simple RC low-pass filter
+V1 IN 0 DC 5
+R1 IN OUT 10k
+C1 OUT 0 100n
++ ; continuation comment test
+.model NOTHING D
+.end

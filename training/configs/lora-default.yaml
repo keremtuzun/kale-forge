@@ -1,0 +1,24 @@
+# Default LoRA SFT on Qwen2.5-7B-Instruct — fits a single 24 GB GPU in bf16.
+base_model: Qwen/Qwen2.5-7B-Instruct
+dataset_dir: datasets/processed/latest
+dataset_version: latest
+seed: 42
+lr: 0.0002
+epochs: 3
+per_device_batch: 2
+grad_accum: 8
+max_seq_len: 4096
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+quantization:
+  enabled: false
+  bits: 16
+  type: bf16
+tracking:
+  backend: mlflow
+  uri: file:./mlruns
+output_dir: models/adapters/lora-default
+eval_per_epoch: true

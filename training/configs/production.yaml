@@ -1,0 +1,28 @@
+# Production LoRA SFT: Qwen2.5-7B-Instruct with packing, cosine LR, eval per epoch.
+base_model: Qwen/Qwen2.5-7B-Instruct
+dataset_dir: datasets/processed/latest
+dataset_version: latest
+seed: 42
+lr: 0.0001
+lr_scheduler: cosine
+warmup_ratio: 0.03
+epochs: 4
+per_device_batch: 4
+grad_accum: 8
+max_seq_len: 8192
+packing: true
+lora:
+  r: 32
+  alpha: 64
+  dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+quantization:
+  enabled: false
+  bits: 16
+  type: bf16
+tracking:
+  backend: mlflow
+  uri: file:./mlruns
+output_dir: models/adapters/production
+eval_per_epoch: true
+save_total_limit: 3
