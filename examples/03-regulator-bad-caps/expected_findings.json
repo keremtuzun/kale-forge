@@ -1,0 +1,12 @@
+[
+  {
+    "rule_id": "COMP-011",
+    "severity": "error",
+    "affected_components": [
+      "U1"
+    ],
+    "affected_nets": [
+      "+5V"
+    ]
+  }
+]

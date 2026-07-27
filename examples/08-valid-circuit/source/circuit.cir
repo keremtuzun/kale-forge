@@ -1,0 +1,6 @@
+* valid_circuit — Kale.ai example (provenance only; see normalized.json)
+J1 +5V 0 PWR_IN
+C1 +5V 0 100nF
+R1 +5V MID 10k
+R2 MID 0 10k
+.end

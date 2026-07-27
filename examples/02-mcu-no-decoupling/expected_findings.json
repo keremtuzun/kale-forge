@@ -1,0 +1,22 @@
+[
+  {
+    "rule_id": "COMP-012",
+    "severity": "warning",
+    "affected_components": [
+      "U1"
+    ],
+    "affected_nets": [
+      "+3V3"
+    ]
+  },
+  {
+    "rule_id": "COMP-012",
+    "severity": "warning",
+    "affected_components": [
+      "U2"
+    ],
+    "affected_nets": [
+      "+5V"
+    ]
+  }
+]

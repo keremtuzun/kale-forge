@@ -10,9 +10,11 @@ import math
 
 import pytest
 
-from app.services.frc_cad import CAD_VERSION, build_cad, cut_list
+from app.services.frc_cad import (CAD_VERSION, LADDER_HEAVY, LADDER_LIGHT, build_cad,
+                                  cut_list)
 from app.services.frc_parts import STRUCTURE
-from app.services.robot_spec import build_robot_spec
+from app.services.robot_spec import (ARM_TYPES, CLIMBER_TYPES, ELEVATOR_TYPES, INTAKE_TYPES,
+                                     SHOOTER_TYPES, build_robot_spec)
 
 STOCK_SECTIONS = {
     tuple(STRUCTURE[key]["section_in"]) for key in
@@ -109,12 +111,51 @@ def test_build_cad_is_pure(spec):
     assert again["version"] == CAD_VERSION
 
 
-def test_cut_list_is_entirely_orderable(spec):
-    """Every member comes off the nesting ladder, so nothing should be flagged fabricated.
+MECHANISM_TYPES = [(kind, name) for kind, names in
+                   (("intake", INTAKE_TYPES), ("shooter", SHOOTER_TYPES), ("arm", ARM_TYPES),
+                    ("climber", CLIMBER_TYPES), ("elevator", ELEVATOR_TYPES))
+                   for name in names]
 
-    This is the test that would have caught `cut_list` keeping a stale stock set after the
-    ladder was added: the geometry was right and the cut list still told teams to source a
-    section it had itself just stopped producing.
+
+@pytest.mark.parametrize("kind,mechanism", MECHANISM_TYPES)
+def test_every_mechanism_type_is_built_from_stock(kind, mechanism):
+    """PROMPTS does not reach every mechanism the spec can name, and the gap hid a bug.
+
+    A stacked-barrel shooter is the only thing that builds a barrel side rail, and no prompt
+    in PROMPTS builds one — so a hardcoded 0.8x0.6 rail sat behind the orderability test
+    while it passed. Walking the enums is what closes that gap; the corpus already walks
+    them, so anything the enums reach is something the model gets trained on.
     """
-    fabricated = [row for row in cut_list(spec["cad"]) if not row["stock"]]
-    assert not fabricated, f"not orderable: {[r['section_in'] for r in fabricated]}"
+    spec = build_robot_spec(f"28x28 robot with a {mechanism}", use_model=False)
+    for assembly in spec["cad"]["assemblies"]:
+        for feature in assembly["features"]:
+            if feature["t"] == "tube":
+                assert tuple(feature["sec"]) in STOCK_SECTIONS, (
+                    f"{kind} '{mechanism}' → {feature['n']}: "
+                    f"{tuple(feature['sec'])} is not stock")
+
+
+@pytest.mark.parametrize("name,ladder", [("heavy", LADDER_HEAVY), ("light", LADDER_LIGHT)])
+def test_nesting_ladders_actually_nest(name, ladder):
+    """A stage that will not pass through the tube outboard of it is not a telescoping stage.
+
+    Checking the outside dimension against the *bore* of the section before it is the whole
+    point of a ladder — a list of stock sections that happen to get smaller is not one.
+    """
+    for (outer, outer_wall), (inner, _) in zip(ladder, ladder[1:]):
+        bore = (outer[0] - 2 * outer_wall, outer[1] - 2 * outer_wall)
+        assert inner[0] < bore[0] and inner[1] < bore[1], (
+            f"{name} ladder: {inner} does not fit the "
+            f"{bore[0]:g}x{bore[1]:g} bore of {outer[0]:g}x{outer[1]:g}")
+
+
+def test_cut_list_is_entirely_orderable(spec):
+    """Every member comes off the nesting ladder, so every cut-list row is orderable.
+
+    Checked against the catalog rather than against a flag the cut list sets on itself:
+    `cut_list` no longer carries a stock/fabricated split, and a split it computed for its
+    own rows could only ever agree with itself anyway.
+    """
+    unstocked = [row for row in cut_list(spec["cad"])
+                 if tuple(row["section_in"]) not in STOCK_SECTIONS]
+    assert not unstocked, f"not orderable: {[r['section_in'] for r in unstocked]}"

@@ -52,6 +52,27 @@ LADDER_HEAVY = [(TUBE_2X2, 0.125),
 LADDER_LIGHT = [(TUBE_2X1, 0.100),
                 (STRUCTURE["tube_1_5x0_5"]["section_in"], 0.0625)]
 
+def ladder_for(moving_stages: int) -> list[tuple[tuple[float, float], float]]:
+    """The nesting ladder deep enough for this many moving stages."""
+    ladder = LADDER_HEAVY if moving_stages >= 2 else LADDER_LIGHT
+    if moving_stages + 1 > len(ladder):
+        # No ladder goes deeper than three. Cap the geometry rather than invent a section.
+        return ladder
+    return ladder[:moving_stages + 1]
+
+
+def ladder_label(moving_stages: int) -> str:
+    """The ladder written out for a spec sheet, e.g. '2x2 → 1.5x1.5 → 1x1 nesting ladder'.
+
+    The spec block and the CAD tree have to name the same stock. This used to be a hardcoded
+    "2x1 tube", which stopped being true for a three-stage tower the moment stages started
+    coming off the heavy ladder — and both strings are trained on.
+    """
+    rungs = ladder_for(moving_stages)
+    text = " → ".join(f"{sec[0]:g}x{sec[1]:g}" for sec, _ in rungs)
+    return f"{text} nesting ladder" if len(rungs) > 1 else f"{text} tube"
+
+
 def cad_section_vocabulary() -> str:
     """The stock sections a member is allowed to be, written out for the model.
 
@@ -274,11 +295,7 @@ class Choices:
 
     def ladder(self, moving_stages: int) -> list[tuple[tuple[float, float], float]]:
         """The nesting ladder deep enough for this many moving stages."""
-        ladder = LADDER_HEAVY if moving_stages >= 2 else LADDER_LIGHT
-        if moving_stages + 1 > len(ladder):
-            # No ladder goes deeper than three. Cap the geometry rather than invent a section.
-            return ladder
-        return ladder[:moving_stages + 1]
+        return ladder_for(moving_stages)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -574,9 +591,11 @@ def _shooter(spec: dict[str, Any], lane_x: float, c: Choices) -> dict[str, Any] 
 
     if stacked and barrel > 4:
         # Two side rails carry every flywheel shaft; a polycarb floor guides the gamepiece.
+        # 1x1 is the smallest square stock the catalog carries, so the rail is orderable; it
+        # is centred to keep the original inner face at fw + 0.5, clear of the flywheel.
         for sx in (-1, 1):
-            features.append(tube("barrel side rail", (0.8, 0.6), barrel,
-                                 _at(sx * (fw + 0.9), pivot_y, 0), _rot(-36, 0, 0), bolts=2.0))
+            features.append(tube("barrel side rail", TUBE_1X1, barrel,
+                                 _at(sx * (fw + 1.0), pivot_y, 0), _rot(-36, 0, 0), bolts=2.0))
         features.append(polycarb("barrel guide", (fw * 1.8, 0.093, barrel),
                                  _at(0, pivot_y - fw * 0.9, 0), _rot(-36, 0, 0)))
         for s in range(stages):

@@ -1,0 +1,205 @@
+{
+  "summary": "The voltage regulator is missing a required capacitor, which can cause instability or oscillation. The rule engine confirms 6 finding(s).",
+  "confirmed_findings": [
+    {
+      "title": "Regulator missing input capacitor",
+      "detail": "Regulator U1 (AMS1117-3.3) has no capacitor on its input net '+5V'. Most regulators oscillate or overshoot without it.",
+      "severity": "error",
+      "components": [
+        "U1"
+      ],
+      "nets": [
+        "+5V"
+      ],
+      "rule_id": "COMP-011",
+      "evidence": [
+        "no capacitor attached to input net",
+        "regulator identified by part-name heuristic"
+      ]
+    },
+    {
+      "title": "Missing footprint",
+      "detail": "U1 (AMS1117-3.3) has no footprint assigned.",
+      "severity": "warning",
+      "components": [
+        "U1"
+      ],
+      "nets": [],
+      "rule_id": "COMP-002",
+      "evidence": [
+        "footprint field empty"
+      ]
+    },
+    {
+      "title": "Missing footprint",
+      "detail": "J1 (DC_IN) has no footprint assigned.",
+      "severity": "warning",
+      "components": [
+        "J1"
+      ],
+      "nets": [],
+      "rule_id": "COMP-002",
+      "evidence": [
+        "footprint field empty"
+      ]
+    },
+    {
+      "title": "Missing footprint",
+      "detail": "C2 (10uF) has no footprint assigned.",
+      "severity": "warning",
+      "components": [
+        "C2"
+      ],
+      "nets": [],
+      "rule_id": "COMP-002",
+      "evidence": [
+        "footprint field empty"
+      ]
+    },
+    {
+      "title": "IC without decoupling capacitor",
+      "detail": "IC U1 (AMS1117-3.3) has supply pins without any decoupling capacitor to ground: pin 3 (+5V)",
+      "severity": "warning",
+      "components": [
+        "U1"
+      ],
+      "nets": [
+        "+5V"
+      ],
+      "rule_id": "COMP-012",
+      "evidence": [
+        "supply pin on '+5V' with no cap-to-ground on that rail"
+      ]
+    },
+    {
+      "title": "Power rail without any capacitance",
+      "detail": "Power rail '+5V' feeds 2 components (J1, U1) but has no capacitors at all.",
+      "severity": "warning",
+      "components": [
+        "J1",
+        "U1"
+      ],
+      "nets": [
+        "+5V"
+      ],
+      "rule_id": "PWR-003",
+      "evidence": [
+        "0 capacitors, 2 loads (threshold rail_min_loads=2)"
+      ]
+    }
+  ],
+  "possible_findings": [],
+  "recommendations": [
+    {
+      "title": "Fix for COMP-011",
+      "detail": "Add the datasheet-recommended input capacitor close to the pin (commonly 1–10 µF plus 100 nF; check the specific regulator's requirements).",
+      "severity": null,
+      "components": [
+        "U1"
+      ],
+      "nets": [
+        "+5V"
+      ],
+      "rule_id": "COMP-011",
+      "evidence": []
+    },
+    {
+      "title": "Fix for COMP-002",
+      "detail": "Assign the correct footprint before layout.",
+      "severity": null,
+      "components": [
+        "U1"
+      ],
+      "nets": [],
+      "rule_id": "COMP-002",
+      "evidence": []
+    },
+    {
+      "title": "Fix for COMP-002",
+      "detail": "Assign the correct footprint before layout.",
+      "severity": null,
+      "components": [
+        "J1"
+      ],
+      "nets": [],
+      "rule_id": "COMP-002",
+      "evidence": []
+    },
+    {
+      "title": "Fix for COMP-002",
+      "detail": "Assign the correct footprint before layout.",
+      "severity": null,
+      "components": [
+        "C2"
+      ],
+      "nets": [],
+      "rule_id": "COMP-002",
+      "evidence": []
+    },
+    {
+      "title": "Fix for COMP-012",
+      "detail": "Add a 100 nF ceramic per supply pin (plus bulk capacitance per rail), placed close to the pin during layout.",
+      "severity": null,
+      "components": [
+        "U1"
+      ],
+      "nets": [
+        "+5V"
+      ],
+      "rule_id": "COMP-012",
+      "evidence": []
+    },
+    {
+      "title": "Fix for PWR-003",
+      "detail": "Add bulk capacitance (e.g. 10–100 µF) plus per-IC 100 nF decoupling on this rail.",
+      "severity": null,
+      "components": [
+        "J1",
+        "U1"
+      ],
+      "nets": [
+        "+5V"
+      ],
+      "rule_id": "PWR-003",
+      "evidence": []
+    }
+  ],
+  "questions_for_engineer": [],
+  "evidence": [
+    {
+      "kind": "rule",
+      "description": "Regulator missing input capacitor",
+      "reference": "COMP-011"
+    },
+    {
+      "kind": "rule",
+      "description": "Missing footprint",
+      "reference": "COMP-002"
+    },
+    {
+      "kind": "rule",
+      "description": "Missing footprint",
+      "reference": "COMP-002"
+    },
+    {
+      "kind": "rule",
+      "description": "Missing footprint",
+      "reference": "COMP-002"
+    },
+    {
+      "kind": "rule",
+      "description": "IC without decoupling capacitor",
+      "reference": "COMP-012"
+    },
+    {
+      "kind": "rule",
+      "description": "Power rail without any capacitance",
+      "reference": "PWR-003"
+    }
+  ],
+  "confidence": 0.85,
+  "limitations": [
+    "Elevated-risk (power) design — have a professional review it.",
+    "Automated review; not a substitute for professional electrical engineering review."
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "category": "incorrect_footprint",
+  "safety_class": "general",
+  "primary_rule": "COMP-002",
+  "rule_engine_version": "0.1.0"
+}

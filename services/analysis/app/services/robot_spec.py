@@ -25,7 +25,7 @@ import re
 from typing import Any
 
 from app.config import get_settings
-from app.services.frc_cad import CAD_VERSION, build_cad, cut_list
+from app.services.frc_cad import CAD_VERSION, build_cad, cut_list, ladder_label
 from app.services.frc_parts import (
     ELECTRONICS,
     MOTORS,
@@ -631,7 +631,8 @@ def build_robot_spec(prompt: str, *, use_model: bool = True) -> dict[str, Any]:
                                              if shooter_stacked else
                                              ["feeder", "left flywheel", "right flywheel", "hood"]),
         "elevator": block("elevator", architecture=elevator_arch, stages=int(stages),
-                          max_height_in=height_in, rail="2x1 tube", reduction="12:1",
+                          max_height_in=height_in, rail=ladder_label(int(stages) - 1),
+                          reduction="12:1",
                           rigged=elevator_rigged, rigging=elevator_rigging,
                           bearing_blocks="opposed, preloaded at every stage interface",
                           tower_uprights=2, carriage="bolted carriage on the final stage",

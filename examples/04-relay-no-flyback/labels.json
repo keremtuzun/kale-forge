@@ -1,0 +1,6 @@
+{
+  "category": "relay_flyback",
+  "safety_class": "power",
+  "primary_rule": "COMP-009",
+  "rule_engine_version": "0.1.0"
+}

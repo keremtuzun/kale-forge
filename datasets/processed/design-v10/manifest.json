@@ -1,6 +1,6 @@
 {
   "version": "design-v10",
-  "created_at": "2026-07-27T08:19:34.411703+00:00",
+  "created_at": "2026-07-27T09:10:06.861413+00:00",
   "generator": "kale_training.generate_frc_corpus",
   "seed": 10001,
   "row_count": 4067,
@@ -23,7 +23,7 @@
     "test": 407
   },
   "sha256": {
-    "train": "472dd1bf849a6fe73539599e8d2a92c916bb796b6865c020e7b5414b2400729b",
+    "train": "92ea24454497849518663e0fd9495e8452c3c593939c1ead773a112324aa12e6",
     "valid": "869d0ce6049e7f635292066399b6b0c7b44de2125577baced7dd58dddd213ab2",
     "test": "e536c0549b473b4a77573949f8d591e7d915b7ad35cacda2bf005e0a8bcb55f6"
   },

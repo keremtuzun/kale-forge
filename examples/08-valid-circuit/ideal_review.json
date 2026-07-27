@@ -1,0 +1,12 @@
+{
+  "summary": "A simple, correctly-formed resistive divider with input bypassing. No rule-level issues are expected. The rule engine reports no issues; this is not a guarantee of correctness.",
+  "confirmed_findings": [],
+  "possible_findings": [],
+  "recommendations": [],
+  "questions_for_engineer": [],
+  "evidence": [],
+  "confidence": 0.6,
+  "limitations": [
+    "Automated review; not a substitute for professional electrical engineering review."
+  ]
+}

@@ -1,0 +1,14 @@
+[
+  {
+    "rule_id": "PWR-007",
+    "severity": "error",
+    "affected_components": [
+      "C1",
+      "R1",
+      "U1"
+    ],
+    "affected_nets": [
+      "+3V3"
+    ]
+  }
+]

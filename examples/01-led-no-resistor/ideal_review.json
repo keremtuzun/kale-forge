@@ -1,0 +1,145 @@
+{
+  "summary": "This LED circuit drives an LED directly between a supply rail and ground with no series current-limiting resistor, so the LED current is uncontrolled. The rule engine confirms 4 finding(s).",
+  "confirmed_findings": [
+    {
+      "title": "LED without current-limiting resistor",
+      "detail": "LED D1 (LED) on nets +3V / GND has no series current-limiting resistor: both LED pins connect directly to supply rails.",
+      "severity": "error",
+      "components": [
+        "D1"
+      ],
+      "nets": [
+        "+3V",
+        "GND"
+      ],
+      "rule_id": "COMP-008",
+      "evidence": [
+        "both LED pins connect directly to supply rails",
+        "no resistor found on either LED net"
+      ]
+    },
+    {
+      "title": "Polarized component with unclear polarity",
+      "detail": "BT1 (3V) looks polarized but its pin names (?) do not mark +/− or A/K.",
+      "severity": "warning",
+      "components": [
+        "BT1"
+      ],
+      "nets": [],
+      "rule_id": "COMP-004",
+      "evidence": [
+        "polarized part heuristic matched; no polarity-marked pins"
+      ]
+    },
+    {
+      "title": "Polarized component with unclear polarity",
+      "detail": "D1 (LED) looks polarized but its pin names (?) do not mark +/− or A/K.",
+      "severity": "warning",
+      "components": [
+        "D1"
+      ],
+      "nets": [],
+      "rule_id": "COMP-004",
+      "evidence": [
+        "polarized part heuristic matched; no polarity-marked pins"
+      ]
+    },
+    {
+      "title": "Power rail without any capacitance",
+      "detail": "Power rail '+3V' feeds 2 components (BT1, D1) but has no capacitors at all.",
+      "severity": "warning",
+      "components": [
+        "BT1",
+        "D1"
+      ],
+      "nets": [
+        "+3V"
+      ],
+      "rule_id": "PWR-003",
+      "evidence": [
+        "0 capacitors, 2 loads (threshold rail_min_loads=2)"
+      ]
+    }
+  ],
+  "possible_findings": [],
+  "recommendations": [
+    {
+      "title": "Fix for COMP-008",
+      "detail": "Add a series resistor sized as R = (V_supply − V_f) / I_led (e.g. ~330 Ω for 5 V, 2 V V_f, 10 mA), or use a current-regulated driver.",
+      "severity": null,
+      "components": [
+        "D1"
+      ],
+      "nets": [
+        "+3V",
+        "GND"
+      ],
+      "rule_id": "COMP-008",
+      "evidence": []
+    },
+    {
+      "title": "Fix for COMP-004",
+      "detail": "Use a symbol with explicit polarity markings and verify orientation.",
+      "severity": null,
+      "components": [
+        "BT1"
+      ],
+      "nets": [],
+      "rule_id": "COMP-004",
+      "evidence": []
+    },
+    {
+      "title": "Fix for COMP-004",
+      "detail": "Use a symbol with explicit polarity markings and verify orientation.",
+      "severity": null,
+      "components": [
+        "D1"
+      ],
+      "nets": [],
+      "rule_id": "COMP-004",
+      "evidence": []
+    },
+    {
+      "title": "Fix for PWR-003",
+      "detail": "Add bulk capacitance (e.g. 10–100 µF) plus per-IC 100 nF decoupling on this rail.",
+      "severity": null,
+      "components": [
+        "BT1",
+        "D1"
+      ],
+      "nets": [
+        "+3V"
+      ],
+      "rule_id": "PWR-003",
+      "evidence": []
+    }
+  ],
+  "questions_for_engineer": [],
+  "evidence": [
+    {
+      "kind": "rule",
+      "description": "LED without current-limiting resistor",
+      "reference": "COMP-008"
+    },
+    {
+      "kind": "rule",
+      "description": "Polarized component with unclear polarity",
+      "reference": "COMP-004"
+    },
+    {
+      "kind": "rule",
+      "description": "Polarized component with unclear polarity",
+      "reference": "COMP-004"
+    },
+    {
+      "kind": "rule",
+      "description": "Power rail without any capacitance",
+      "reference": "PWR-003"
+    }
+  ],
+  "confidence": 0.85,
+  "limitations": [
+    "Elevated-risk (power) design — have a professional review it.",
+    "Automated review; not a substitute for professional electrical engineering review."
+  ]
+}

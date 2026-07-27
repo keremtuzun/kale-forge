@@ -1,0 +1,37 @@
+services:
+  kale-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: kale-ai:oracle
+    restart: unless-stopped
+    env_file:
+      - .env.oracle
+    volumes:
+      - kale-data:/data/kale
+    expose:
+      - "7860"
+      - "8000"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - kale-ai
+    env_file:
+      - .env.oracle
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  kale-data:
+    external: true
+    name: kale_kale-data
+  caddy-data:
+  caddy-config:

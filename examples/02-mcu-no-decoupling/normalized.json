@@ -1,0 +1,180 @@
+{
+  "project": {
+    "name": "mcu_circuit",
+    "source_format": "synthetic",
+    "kicad_version": null,
+    "files": [],
+    "parser_warnings": []
+  },
+  "components": [
+    {
+      "reference": "U1",
+      "value": "ATmega328P",
+      "footprint": "",
+      "mpn": null,
+      "lib_id": "MCU:ATmega328P",
+      "dnp": false,
+      "in_bom": true,
+      "position": null,
+      "layer": null,
+      "pins": [
+        {
+          "number": "7",
+          "name": "VCC",
+          "type": "power_in",
+          "net": "+3V3"
+        },
+        {
+          "number": "8",
+          "name": "GND",
+          "type": "power_in",
+          "net": "GND"
+        },
+        {
+          "number": "1",
+          "name": "RESET",
+          "type": "input",
+          "net": "RESET"
+        }
+      ],
+      "fields": {},
+      "source_file": ""
+    },
+    {
+      "reference": "R1",
+      "value": "10k",
+      "footprint": "R_0603",
+      "mpn": null,
+      "lib_id": "",
+      "dnp": false,
+      "in_bom": true,
+      "position": null,
+      "layer": null,
+      "pins": [
+        {
+          "number": "1",
+          "name": "",
+          "type": "passive",
+          "net": "+3V3"
+        },
+        {
+          "number": "2",
+          "name": "",
+          "type": "passive",
+          "net": "RESET"
+        }
+      ],
+      "fields": {},
+      "source_file": ""
+    },
+    {
+      "reference": "U2",
+      "value": "AMS1117-3.3",
+      "footprint": "",
+      "mpn": null,
+      "lib_id": "",
+      "dnp": false,
+      "in_bom": true,
+      "position": null,
+      "layer": null,
+      "pins": [
+        {
+          "number": "1",
+          "name": "GND",
+          "type": "power_in",
+          "net": "GND"
+        },
+        {
+          "number": "2",
+          "name": "VOUT",
+          "type": "power_out",
+          "net": "+3V3"
+        },
+        {
+          "number": "3",
+          "name": "VIN",
+          "type": "power_in",
+          "net": "+5V"
+        }
+      ],
+      "fields": {},
+      "source_file": ""
+    }
+  ],
+  "nets": [
+    {
+      "name": "+3V3",
+      "pins": [
+        {
+          "component": "U1",
+          "pin": "7"
+        },
+        {
+          "component": "R1",
+          "pin": "1"
+        },
+        {
+          "component": "U2",
+          "pin": "2"
+        }
+      ],
+      "is_power": true,
+      "is_ground": false,
+      "inferred_voltage": 3.3,
+      "net_class": null
+    },
+    {
+      "name": "+5V",
+      "pins": [
+        {
+          "component": "U2",
+          "pin": "3"
+        }
+      ],
+      "is_power": true,
+      "is_ground": false,
+      "inferred_voltage": 5.0,
+      "net_class": null
+    },
+    {
+      "name": "RESET",
+      "pins": [
+        {
+          "component": "U1",
+          "pin": "1"
+        },
+        {
+          "component": "R1",
+          "pin": "2"
+        }
+      ],
+      "is_power": false,
+      "is_ground": false,
+      "inferred_voltage": null,
+      "net_class": null
+    },
+    {
+      "name": "GND",
+      "pins": [
+        {
+          "component": "U1",
+          "pin": "8"
+        },
+        {
+          "component": "U2",
+          "pin": "1"
+        }
+      ],
+      "is_power": false,
+      "is_ground": true,
+      "inferred_voltage": null,
+      "net_class": null
+    }
+  ],
+  "board": null,
+  "power_symbols": [],
+  "global_labels": [],
+  "hierarchical_labels": [],
+  "differential_pairs": [],
+  "unconnected_pins": []
+}

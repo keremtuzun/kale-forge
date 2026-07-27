@@ -1,0 +1,22 @@
+{
+  "versions": [
+    {
+      "version": "qwen2.5-1.5b-instruct-q4-k-m",
+      "base_model": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
+      "adapter_path": "",
+      "provider": "local_llamacpp",
+      "status": "available",
+      "created_at": "2026-07-22T00:00:00Z",
+      "notes": "CPU-friendly hosted model for the Hugging Face Spaces deployment."
+    },
+    {
+      "version": "dev-stub",
+      "base_model": "none",
+      "adapter_path": "",
+      "provider": "stub",
+      "status": "active",
+      "created_at": "1970-01-01T00:00:00Z",
+      "notes": "Default development stub; no weights loaded."
+    }
+  ]
+}

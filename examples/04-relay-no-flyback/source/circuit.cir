@@ -1,0 +1,5 @@
+* relay_circuit — Kale.ai example (provenance only; see normalized.json)
+K1 +5V COIL_SW RELAY-5V
+Q1 GATE 0 COIL_SW 2N7002
+U1 GATE MCU
+.end

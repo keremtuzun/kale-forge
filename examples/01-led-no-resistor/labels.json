@@ -1,0 +1,6 @@
+{
+  "category": "led_resistor",
+  "safety_class": "power",
+  "primary_rule": "COMP-008",
+  "rule_engine_version": "0.1.0"
+}

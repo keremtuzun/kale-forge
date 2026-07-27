@@ -1,0 +1,6 @@
+{
+  "category": "power_tree_explanation",
+  "safety_class": "power",
+  "primary_rule": "PWR-007",
+  "rule_engine_version": "0.1.0"
+}

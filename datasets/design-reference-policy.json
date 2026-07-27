@@ -1,0 +1,36 @@
+{
+  "policy_version": "1.1",
+  "training_use": "internal synthetic templates and Kale's own FRC parts catalog only",
+  "copied_third_party_text": false,
+  "copied_third_party_cad_or_meshes": false,
+  "user_uploads_used": false,
+  "cots_part_data": {
+    "what_is_used": "Published outside dimensions, mass, channel counts, gear ratios and electrical ratings, restated as nominal engineering facts.",
+    "what_is_not_used": "Vendor CAD, meshes, drawings, marketing prose and documentation text. Geometry is procedurally rebuilt from published dimensions.",
+    "accuracy_stance": "Every catalog entry carries a `verify` field and every generated BOM repeats it. Envelopes are for packaging and first-order sizing, not for machining.",
+    "catalog": "services/analysis/app/services/frc_parts.py"
+  },
+  "references": [
+    {
+      "name": "FIRST Robotics Competition season materials",
+      "url": "https://www.firstinspires.org/resources/library/frc/season-materials",
+      "usage": "topic and constraint coverage; rules are not copied into training examples"
+    },
+    {
+      "name": "FRCDesign Design Handbook and Mechanism Examples",
+      "url": "https://frcdesign.org/design-handbook/",
+      "usage": "mechanism vocabulary and review checklist coverage; prose and CAD are not copied"
+    },
+    {
+      "name": "Qwen2.5-1.5B-Instruct",
+      "url": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct",
+      "license": "Apache-2.0",
+      "usage": "base model family"
+    },
+    {
+      "name": "MLX-LM LoRA",
+      "url": "https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md",
+      "usage": "local QLoRA training procedure"
+    }
+  ]
+}

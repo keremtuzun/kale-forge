@@ -1,0 +1,6 @@
+{
+  "category": "floating_input",
+  "safety_class": "general",
+  "primary_rule": "CONN-004",
+  "rule_engine_version": "0.1.0"
+}

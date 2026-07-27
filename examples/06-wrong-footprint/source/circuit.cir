@@ -1,0 +1,6 @@
+* wrong_footprint — Kale.ai example (provenance only; see normalized.json)
+U1 +3V3 0 RESET ATmega328P
+C1 +3V3 0 100nF
+R1 +3V3 RESET 10k
+U2 0 +3V3 +5V AMS1117-3.3
+.end

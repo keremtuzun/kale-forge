@@ -1,0 +1,5 @@
+* rail_no_source — Kale.ai example (provenance only; see normalized.json)
+U1 +3V3 0 RESET ATmega328P
+C1 +3V3 0 100nF
+R1 +3V3 RESET 10k
+.end

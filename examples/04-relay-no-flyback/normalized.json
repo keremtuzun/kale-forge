@@ -1,0 +1,160 @@
+{
+  "project": {
+    "name": "relay_circuit",
+    "source_format": "synthetic",
+    "kicad_version": null,
+    "files": [],
+    "parser_warnings": []
+  },
+  "components": [
+    {
+      "reference": "K1",
+      "value": "RELAY-5V",
+      "footprint": "",
+      "mpn": null,
+      "lib_id": "Relay:G5V-1",
+      "dnp": false,
+      "in_bom": true,
+      "position": null,
+      "layer": null,
+      "pins": [
+        {
+          "number": "1",
+          "name": "COIL",
+          "type": "passive",
+          "net": "+5V"
+        },
+        {
+          "number": "2",
+          "name": "COIL",
+          "type": "passive",
+          "net": "COIL_SW"
+        }
+      ],
+      "fields": {},
+      "source_file": ""
+    },
+    {
+      "reference": "Q1",
+      "value": "2N7002",
+      "footprint": "",
+      "mpn": null,
+      "lib_id": "",
+      "dnp": false,
+      "in_bom": true,
+      "position": null,
+      "layer": null,
+      "pins": [
+        {
+          "number": "1",
+          "name": "G",
+          "type": "input",
+          "net": "GATE"
+        },
+        {
+          "number": "2",
+          "name": "S",
+          "type": "passive",
+          "net": "GND"
+        },
+        {
+          "number": "3",
+          "name": "D",
+          "type": "passive",
+          "net": "COIL_SW"
+        }
+      ],
+      "fields": {},
+      "source_file": ""
+    },
+    {
+      "reference": "U1",
+      "value": "MCU",
+      "footprint": "",
+      "mpn": null,
+      "lib_id": "",
+      "dnp": false,
+      "in_bom": true,
+      "position": null,
+      "layer": null,
+      "pins": [
+        {
+          "number": "1",
+          "name": "OUT",
+          "type": "output",
+          "net": "GATE"
+        }
+      ],
+      "fields": {},
+      "source_file": ""
+    }
+  ],
+  "nets": [
+    {
+      "name": "+5V",
+      "pins": [
+        {
+          "component": "K1",
+          "pin": "1"
+        }
+      ],
+      "is_power": true,
+      "is_ground": false,
+      "inferred_voltage": 5.0,
+      "net_class": null
+    },
+    {
+      "name": "COIL_SW",
+      "pins": [
+        {
+          "component": "K1",
+          "pin": "2"
+        },
+        {
+          "component": "Q1",
+          "pin": "3"
+        }
+      ],
+      "is_power": false,
+      "is_ground": false,
+      "inferred_voltage": null,
+      "net_class": null
+    },
+    {
+      "name": "GATE",
+      "pins": [
+        {
+          "component": "Q1",
+          "pin": "1"
+        },
+        {
+          "component": "U1",
+          "pin": "1"
+        }
+      ],
+      "is_power": false,
+      "is_ground": false,
+      "inferred_voltage": null,
+      "net_class": null
+    },
+    {
+      "name": "GND",
+      "pins": [
+        {
+          "component": "Q1",
+          "pin": "2"
+        }
+      ],
+      "is_power": false,
+      "is_ground": true,
+      "inferred_voltage": null,
+      "net_class": null
+    }
+  ],
+  "board": null,
+  "power_symbols": [],
+  "global_labels": [],
+  "hierarchical_labels": [],
+  "differential_pairs": [],
+  "unconnected_pins": []
+}

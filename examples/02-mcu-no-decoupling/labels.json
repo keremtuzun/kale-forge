@@ -1,0 +1,6 @@
+{
+  "category": "missing_decoupling",
+  "safety_class": "general",
+  "primary_rule": "COMP-012",
+  "rule_engine_version": "0.1.0"
+}

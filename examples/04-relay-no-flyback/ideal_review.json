@@ -1,0 +1,239 @@
+{
+  "summary": "The relay coil is switched by a transistor but has no flyback diode; the inductive spike at turn-off can destroy the driver. The rule engine confirms 7 finding(s).",
+  "confirmed_findings": [
+    {
+      "title": "Relay coil without flyback diode",
+      "detail": "Relay K1 (RELAY-5V) coil nets +5V / COIL_SW have no anti-parallel diode across them.",
+      "severity": "error",
+      "components": [
+        "K1"
+      ],
+      "nets": [
+        "+5V",
+        "COIL_SW"
+      ],
+      "rule_id": "COMP-009",
+      "evidence": [
+        "no diode found spanning both coil nets"
+      ]
+    },
+    {
+      "title": "Power rail with no source",
+      "detail": "Power net '+5V' connects 1 components (K1) but no regulator output, connector, battery, or supply pin feeds it.",
+      "severity": "error",
+      "components": [
+        "K1"
+      ],
+      "nets": [
+        "+5V"
+      ],
+      "rule_id": "PWR-007",
+      "evidence": [
+        "no source-type component (regulator/connector/battery/power_out pin) on net"
+      ]
+    },
+    {
+      "title": "Missing footprint",
+      "detail": "K1 (RELAY-5V) has no footprint assigned.",
+      "severity": "warning",
+      "components": [
+        "K1"
+      ],
+      "nets": [],
+      "rule_id": "COMP-002",
+      "evidence": [
+        "footprint field empty"
+      ]
+    },
+    {
+      "title": "Missing footprint",
+      "detail": "Q1 (2N7002) has no footprint assigned.",
+      "severity": "warning",
+      "components": [
+        "Q1"
+      ],
+      "nets": [],
+      "rule_id": "COMP-002",
+      "evidence": [
+        "footprint field empty"
+      ]
+    },
+    {
+      "title": "Missing footprint",
+      "detail": "U1 (MCU) has no footprint assigned.",
+      "severity": "warning",
+      "components": [
+        "U1"
+      ],
+      "nets": [],
+      "rule_id": "COMP-002",
+      "evidence": [
+        "footprint field empty"
+      ]
+    },
+    {
+      "title": "Net with only one connected pin",
+      "detail": "Net '+5V' connects only K1.1. Check for a typo in a label or a missing wire.",
+      "severity": "warning",
+      "components": [
+        "K1"
+      ],
+      "nets": [
+        "+5V"
+      ],
+      "rule_id": "CONN-005",
+      "evidence": [
+        "net has exactly one pin",
+        "only member"
+      ]
+    },
+    {
+      "title": "Net with only one connected pin",
+      "detail": "Net 'GND' connects only Q1.2. Check for a typo in a label or a missing wire.",
+      "severity": "warning",
+      "components": [
+        "Q1"
+      ],
+      "nets": [
+        "GND"
+      ],
+      "rule_id": "CONN-005",
+      "evidence": [
+        "net has exactly one pin",
+        "only member"
+      ]
+    }
+  ],
+  "possible_findings": [],
+  "recommendations": [
+    {
+      "title": "Fix for COMP-009",
+      "detail": "Add a flyback diode (e.g. 1N4007/1N4148 per coil rating) across the coil, cathode to the supply side.",
+      "severity": null,
+      "components": [
+        "K1"
+      ],
+      "nets": [
+        "+5V",
+        "COIL_SW"
+      ],
+      "rule_id": "COMP-009",
+      "evidence": []
+    },
+    {
+      "title": "Fix for PWR-007",
+      "detail": "Connect the rail to its supply (regulator output, connector, or battery).",
+      "severity": null,
+      "components": [
+        "K1"
+      ],
+      "nets": [
+        "+5V"
+      ],
+      "rule_id": "PWR-007",
+      "evidence": []
+    },
+    {
+      "title": "Fix for COMP-002",
+      "detail": "Assign the correct footprint before layout.",
+      "severity": null,
+      "components": [
+        "K1"
+      ],
+      "nets": [],
+      "rule_id": "COMP-002",
+      "evidence": []
+    },
+    {
+      "title": "Fix for COMP-002",
+      "detail": "Assign the correct footprint before layout.",
+      "severity": null,
+      "components": [
+        "Q1"
+      ],
+      "nets": [],
+      "rule_id": "COMP-002",
+      "evidence": []
+    },
+    {
+      "title": "Fix for COMP-002",
+      "detail": "Assign the correct footprint before layout.",
+      "severity": null,
+      "components": [
+        "U1"
+      ],
+      "nets": [],
+      "rule_id": "COMP-002",
+      "evidence": []
+    },
+    {
+      "title": "Fix for CONN-005",
+      "detail": "Connect the intended second endpoint or remove the stray label.",
+      "severity": null,
+      "components": [
+        "K1"
+      ],
+      "nets": [
+        "+5V"
+      ],
+      "rule_id": "CONN-005",
+      "evidence": []
+    },
+    {
+      "title": "Fix for CONN-005",
+      "detail": "Connect the intended second endpoint or remove the stray label.",
+      "severity": null,
+      "components": [
+        "Q1"
+      ],
+      "nets": [
+        "GND"
+      ],
+      "rule_id": "CONN-005",
+      "evidence": []
+    }
+  ],
+  "questions_for_engineer": [],
+  "evidence": [
+    {
+      "kind": "rule",
+      "description": "Relay coil without flyback diode",
+      "reference": "COMP-009"
+    },
+    {
+      "kind": "rule",
+      "description": "Power rail with no source",
+      "reference": "PWR-007"
+    },
+    {
+      "kind": "rule",
+      "description": "Missing footprint",
+      "reference": "COMP-002"
+    },
+    {
+      "kind": "rule",
+      "description": "Missing footprint",
+      "reference": "COMP-002"
+    },
+    {
+      "kind": "rule",
+      "description": "Missing footprint",
+      "reference": "COMP-002"
+    },
+    {
+      "kind": "rule",
+      "description": "Net with only one connected pin",
+      "reference": "CONN-005"
+    },
+    {
+      "kind": "rule",
+      "description": "Net with only one connected pin",
+      "reference": "CONN-005"
+    }
+  ],
+  "confidence": 0.85,
+  "limitations": [
+    "Elevated-risk (power) design — have a professional review it.",
+    "Automated review; not a substitute for professional electrical engineering review."
+  ]
+}

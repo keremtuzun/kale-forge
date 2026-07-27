@@ -1,0 +1,18 @@
+{
+  "selected_candidate": {
+    "base": "mlx-community/Qwen2.5-1.5B-Instruct-4bit",
+    "adapter": "models/adapters/kale-design-v2",
+    "status": "guarded-preview",
+    "heldout_overall": 0.9860119047619047,
+    "stress_overall": 0.5765466015466015,
+    "requires_schema_validation": true,
+    "requires_deterministic_fallback": true
+  },
+  "rejected_candidates": [
+    {
+      "base": "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+      "adapter": "models/adapters/kale-design-qwen3-4b-v1",
+      "reason": "Structured-output regression: 1/6 valid JSON and 0.143 independent stress score."
+    }
+  ]
+}

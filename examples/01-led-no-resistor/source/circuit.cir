@@ -1,0 +1,4 @@
+* led_circuit — Kale.ai example (provenance only; see normalized.json)
+BT1 +3V 0 3V
+D1 +3V 0 LED
+.end

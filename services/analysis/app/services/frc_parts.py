@@ -340,13 +340,13 @@ STRUCTURE: dict[str, dict[str, Any]] = {
     # has a 1.375 in bore, which takes 1x1. Never invent an intermediate size to make the
     # arithmetic work: if the ladder does not nest, change the stage count, not the catalog.
     "tube_1_5x1_5": {"name": "1.5x1.5x0.0625 in tube", "material": "6061-T6",
-                     "section_in": (1.5, 1.5), "wall_in": 0.0625, "mass_lb_per_ft": 0.44,
+                     "section_in": (1.5, 1.5), "wall_in": 0.0625, "mass_lb_per_ft": 0.42,
                      "use": "first telescoping stage inside 2x2x0.125"},
     "tube_1x1_thin": {"name": "1x1x0.0625 in tube", "material": "6061-T6",
                       "section_in": (1.0, 1.0), "wall_in": 0.0625, "mass_lb_per_ft": 0.28,
                       "use": "second telescoping stage inside 1.5x1.5x0.0625"},
     "tube_1_5x0_5": {"name": "1.5x0.5x0.0625 in tube", "material": "6061-T6",
-                     "section_in": (1.5, 0.5), "wall_in": 0.0625, "mass_lb_per_ft": 0.24,
+                     "section_in": (1.5, 0.5), "wall_in": 0.0625, "mass_lb_per_ft": 0.28,
                      "use": "single telescoping stage inside 2x1x0.100"},
     "gusset": {"name": "corner / mechanism gusset", "material": "6061-T6 plate 0.090–0.125 in",
                "use": "tie tube ends in shear rather than loading rivets in tension"},

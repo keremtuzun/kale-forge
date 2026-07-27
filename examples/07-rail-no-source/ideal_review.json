@@ -1,0 +1,82 @@
+{
+  "summary": "A power rail has loads but nothing feeding it (the regulator that would source it is absent), so the rail would be dead at power-up. The rule engine confirms 2 finding(s).",
+  "confirmed_findings": [
+    {
+      "title": "Power rail with no source",
+      "detail": "Power net '+3V3' connects 3 components (C1, R1, U1) but no regulator output, connector, battery, or supply pin feeds it.",
+      "severity": "error",
+      "components": [
+        "C1",
+        "R1",
+        "U1"
+      ],
+      "nets": [
+        "+3V3"
+      ],
+      "rule_id": "PWR-007",
+      "evidence": [
+        "no source-type component (regulator/connector/battery/power_out pin) on net"
+      ]
+    },
+    {
+      "title": "Missing footprint",
+      "detail": "U1 (ATmega328P) has no footprint assigned.",
+      "severity": "warning",
+      "components": [
+        "U1"
+      ],
+      "nets": [],
+      "rule_id": "COMP-002",
+      "evidence": [
+        "footprint field empty"
+      ]
+    }
+  ],
+  "possible_findings": [],
+  "recommendations": [
+    {
+      "title": "Fix for PWR-007",
+      "detail": "Connect the rail to its supply (regulator output, connector, or battery).",
+      "severity": null,
+      "components": [
+        "C1",
+        "R1",
+        "U1"
+      ],
+      "nets": [
+        "+3V3"
+      ],
+      "rule_id": "PWR-007",
+      "evidence": []
+    },
+    {
+      "title": "Fix for COMP-002",
+      "detail": "Assign the correct footprint before layout.",
+      "severity": null,
+      "components": [
+        "U1"
+      ],
+      "nets": [],
+      "rule_id": "COMP-002",
+      "evidence": []
+    }
+  ],
+  "questions_for_engineer": [],
+  "evidence": [
+    {
+      "kind": "rule",
+      "description": "Power rail with no source",
+      "reference": "PWR-007"
+    },
+    {
+      "kind": "rule",
+      "description": "Missing footprint",
+      "reference": "COMP-002"
+    }
+  ],
+  "confidence": 0.85,
+  "limitations": [
+    "Elevated-risk (power) design — have a professional review it.",
+    "Automated review; not a substitute for professional electrical engineering review."
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "name": "kale-ai",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Kale.ai — specialized AI design-review platform for electrical engineers",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace apps/web",
+    "build:web": "npm run build --workspace apps/web",
+    "dev:analysis": "cd services/analysis && ../../.venv/bin/uvicorn app.main:app --reload --port 8000",
+    "dev:inference": "cd services/inference && ../../.venv/bin/uvicorn app.main:app --reload --port 8001",
+    "test:analysis": "cd services/analysis && ../../.venv/bin/python -m pytest -q",
+    "test:inference": "cd services/inference && ../../.venv/bin/python -m pytest -q",
+    "test:training": "cd services/training && PYTHONPATH=../analysis:. ../../.venv/bin/python -m pytest -q tests",
+    "test:evaluation": "cd services/evaluation && PYTHONPATH=../analysis:../training:. ../../.venv/bin/python -m pytest -q tests",
+    "test:py": "npm run test:analysis && npm run test:inference && npm run test:training && npm run test:evaluation",
+    "test:web": "npm run test --workspace apps/web --if-present",
+    "typecheck": "npm run typecheck --workspace apps/web",
+    "lint": "npm run lint --workspace apps/web --if-present",
+    "check": "./scripts/check.sh"
+  }
+}

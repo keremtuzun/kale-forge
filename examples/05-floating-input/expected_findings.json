@@ -1,0 +1,12 @@
+[
+  {
+    "rule_id": "CONN-004",
+    "severity": "error",
+    "affected_components": [
+      "U1"
+    ],
+    "affected_nets": [
+      "RESET"
+    ]
+  }
+]

@@ -1,0 +1,186 @@
+{
+  "project": {
+    "name": "valid_circuit",
+    "source_format": "synthetic",
+    "kicad_version": null,
+    "files": [],
+    "parser_warnings": []
+  },
+  "components": [
+    {
+      "reference": "J1",
+      "value": "PWR_IN",
+      "footprint": "PinHeader_1x02",
+      "mpn": null,
+      "lib_id": "Connector:Conn_01x02",
+      "dnp": false,
+      "in_bom": true,
+      "position": null,
+      "layer": null,
+      "pins": [
+        {
+          "number": "1",
+          "name": "V",
+          "type": "power_out",
+          "net": "+5V"
+        },
+        {
+          "number": "2",
+          "name": "G",
+          "type": "power_out",
+          "net": "GND"
+        }
+      ],
+      "fields": {},
+      "source_file": ""
+    },
+    {
+      "reference": "C1",
+      "value": "100nF",
+      "footprint": "C_0603",
+      "mpn": null,
+      "lib_id": "",
+      "dnp": false,
+      "in_bom": true,
+      "position": null,
+      "layer": null,
+      "pins": [
+        {
+          "number": "1",
+          "name": "",
+          "type": "passive",
+          "net": "+5V"
+        },
+        {
+          "number": "2",
+          "name": "",
+          "type": "passive",
+          "net": "GND"
+        }
+      ],
+      "fields": {},
+      "source_file": ""
+    },
+    {
+      "reference": "R1",
+      "value": "10k",
+      "footprint": "R_0603",
+      "mpn": null,
+      "lib_id": "",
+      "dnp": false,
+      "in_bom": true,
+      "position": null,
+      "layer": null,
+      "pins": [
+        {
+          "number": "1",
+          "name": "",
+          "type": "passive",
+          "net": "+5V"
+        },
+        {
+          "number": "2",
+          "name": "",
+          "type": "passive",
+          "net": "MID"
+        }
+      ],
+      "fields": {},
+      "source_file": ""
+    },
+    {
+      "reference": "R2",
+      "value": "10k",
+      "footprint": "R_0603",
+      "mpn": null,
+      "lib_id": "",
+      "dnp": false,
+      "in_bom": true,
+      "position": null,
+      "layer": null,
+      "pins": [
+        {
+          "number": "1",
+          "name": "",
+          "type": "passive",
+          "net": "MID"
+        },
+        {
+          "number": "2",
+          "name": "",
+          "type": "passive",
+          "net": "GND"
+        }
+      ],
+      "fields": {},
+      "source_file": ""
+    }
+  ],
+  "nets": [
+    {
+      "name": "+5V",
+      "pins": [
+        {
+          "component": "J1",
+          "pin": "1"
+        },
+        {
+          "component": "C1",
+          "pin": "1"
+        },
+        {
+          "component": "R1",
+          "pin": "1"
+        }
+      ],
+      "is_power": true,
+      "is_ground": false,
+      "inferred_voltage": 5.0,
+      "net_class": null
+    },
+    {
+      "name": "MID",
+      "pins": [
+        {
+          "component": "R1",
+          "pin": "2"
+        },
+        {
+          "component": "R2",
+          "pin": "1"
+        }
+      ],
+      "is_power": false,
+      "is_ground": false,
+      "inferred_voltage": null,
+      "net_class": null
+    },
+    {
+      "name": "GND",
+      "pins": [
+        {
+          "component": "J1",
+          "pin": "2"
+        },
+        {
+          "component": "C1",
+          "pin": "2"
+        },
+        {
+          "component": "R2",
+          "pin": "2"
+        }
+      ],
+      "is_power": false,
+      "is_ground": true,
+      "inferred_voltage": null,
+      "net_class": null
+    }
+  ],
+  "board": null,
+  "power_symbols": [],
+  "global_labels": [],
+  "hierarchical_labels": [],
+  "differential_pairs": [],
+  "unconnected_pins": []
+}

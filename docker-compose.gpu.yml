@@ -1,0 +1,46 @@
+# GPU serving overlay for Kale.ai.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
+#
+# Adds a Kale-controlled vLLM server and repoints the inference service at it. The vLLM
+# endpoint runs on infrastructure Kale.ai operates — it is NOT an external commercial AI API,
+# which the product forbids. It serves an open-weight base model plus our own LoRA adapter.
+services:
+  vllm:
+    image: vllm/vllm-openai:latest
+    command:
+      - "--model"
+      - "${KALE_BASE_MODEL:-Qwen/Qwen2.5-7B-Instruct}"
+      - "--enable-lora"
+      - "--max-lora-rank"
+      - "32"
+      - "--port"
+      - "8000"
+    environment:
+      HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}  # for downloading OPEN weights only
+    volumes:
+      - ./models/adapters:/adapters:ro          # LoRA adapters (Kale-owned)
+      - hf-cache:/root/.cache/huggingface       # base-model weight cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+
+  inference:
+    environment:
+      KALE_INFERENCE_PROVIDER: local_vllm
+      KALE_VLLM_URL: http://vllm:8000/v1        # Kale-controlled host, internal network only
+    depends_on:
+      vllm:
+        condition: service_healthy
+
+volumes:
+  hf-cache:

@@ -1,0 +1,5 @@
+* regulator_circuit — Kale.ai example (provenance only; see normalized.json)
+U1 0 +3V3 +5V AMS1117-3.3
+J1 +5V DC_IN
+C2 +3V3 0 10uF
+.end

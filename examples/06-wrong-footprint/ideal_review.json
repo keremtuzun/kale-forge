@@ -1,0 +1,174 @@
+{
+  "summary": "An IC has no/incorrect footprint assigned. Detecting a true package↔footprint mismatch requires component-spec data; this example is detected via the missing-footprint rule. The rule engine confirms 5 finding(s).",
+  "confirmed_findings": [
+    {
+      "title": "Regulator missing input capacitor",
+      "detail": "Regulator U2 (AMS1117-3.3) has no capacitor on its input net '+5V'. Most regulators oscillate or overshoot without it.",
+      "severity": "error",
+      "components": [
+        "U2"
+      ],
+      "nets": [
+        "+5V"
+      ],
+      "rule_id": "COMP-011",
+      "evidence": [
+        "no capacitor attached to input net",
+        "regulator identified by part-name heuristic"
+      ]
+    },
+    {
+      "title": "Missing footprint",
+      "detail": "U1 (ATmega328P) has no footprint assigned.",
+      "severity": "warning",
+      "components": [
+        "U1"
+      ],
+      "nets": [],
+      "rule_id": "COMP-002",
+      "evidence": [
+        "footprint field empty"
+      ]
+    },
+    {
+      "title": "Missing footprint",
+      "detail": "U2 (AMS1117-3.3) has no footprint assigned.",
+      "severity": "warning",
+      "components": [
+        "U2"
+      ],
+      "nets": [],
+      "rule_id": "COMP-002",
+      "evidence": [
+        "footprint field empty"
+      ]
+    },
+    {
+      "title": "IC without decoupling capacitor",
+      "detail": "IC U2 (AMS1117-3.3) has supply pins without any decoupling capacitor to ground: pin 3 (+5V)",
+      "severity": "warning",
+      "components": [
+        "U2"
+      ],
+      "nets": [
+        "+5V"
+      ],
+      "rule_id": "COMP-012",
+      "evidence": [
+        "supply pin on '+5V' with no cap-to-ground on that rail"
+      ]
+    },
+    {
+      "title": "Net with only one connected pin",
+      "detail": "Net '+5V' connects only U2.3. Check for a typo in a label or a missing wire.",
+      "severity": "warning",
+      "components": [
+        "U2"
+      ],
+      "nets": [
+        "+5V"
+      ],
+      "rule_id": "CONN-005",
+      "evidence": [
+        "net has exactly one pin",
+        "only member"
+      ]
+    }
+  ],
+  "possible_findings": [],
+  "recommendations": [
+    {
+      "title": "Fix for COMP-011",
+      "detail": "Add the datasheet-recommended input capacitor close to the pin (commonly 1–10 µF plus 100 nF; check the specific regulator's requirements).",
+      "severity": null,
+      "components": [
+        "U2"
+      ],
+      "nets": [
+        "+5V"
+      ],
+      "rule_id": "COMP-011",
+      "evidence": []
+    },
+    {
+      "title": "Fix for COMP-002",
+      "detail": "Assign the correct footprint before layout.",
+      "severity": null,
+      "components": [
+        "U1"
+      ],
+      "nets": [],
+      "rule_id": "COMP-002",
+      "evidence": []
+    },
+    {
+      "title": "Fix for COMP-002",
+      "detail": "Assign the correct footprint before layout.",
+      "severity": null,
+      "components": [
+        "U2"
+      ],
+      "nets": [],
+      "rule_id": "COMP-002",
+      "evidence": []
+    },
+    {
+      "title": "Fix for COMP-012",
+      "detail": "Add a 100 nF ceramic per supply pin (plus bulk capacitance per rail), placed close to the pin during layout.",
+      "severity": null,
+      "components": [
+        "U2"
+      ],
+      "nets": [
+        "+5V"
+      ],
+      "rule_id": "COMP-012",
+      "evidence": []
+    },
+    {
+      "title": "Fix for CONN-005",
+      "detail": "Connect the intended second endpoint or remove the stray label.",
+      "severity": null,
+      "components": [
+        "U2"
+      ],
+      "nets": [
+        "+5V"
+      ],
+      "rule_id": "CONN-005",
+      "evidence": []
+    }
+  ],
+  "questions_for_engineer": [],
+  "evidence": [
+    {
+      "kind": "rule",
+      "description": "Regulator missing input capacitor",
+      "reference": "COMP-011"
+    },
+    {
+      "kind": "rule",
+      "description": "Missing footprint",
+      "reference": "COMP-002"
+    },
+    {
+      "kind": "rule",
+      "description": "Missing footprint",
+      "reference": "COMP-002"
+    },
+    {
+      "kind": "rule",
+      "description": "IC without decoupling capacitor",
+      "reference": "COMP-012"
+    },
+    {
+      "kind": "rule",
+      "description": "Net with only one connected pin",
+      "reference": "CONN-005"
+    }
+  ],
+  "confidence": 0.85,
+  "limitations": [
+    "Automated review; not a substitute for professional electrical engineering review."
+  ]
+}

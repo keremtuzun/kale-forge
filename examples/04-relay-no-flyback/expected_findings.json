@@ -1,0 +1,13 @@
+[
+  {
+    "rule_id": "COMP-009",
+    "severity": "error",
+    "affected_components": [
+      "K1"
+    ],
+    "affected_nets": [
+      "+5V",
+      "COIL_SW"
+    ]
+  }
+]

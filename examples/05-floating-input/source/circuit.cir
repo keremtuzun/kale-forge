@@ -1,0 +1,5 @@
+* mcu_circuit — Kale.ai example (provenance only; see normalized.json)
+U1 +3V3 0 RESET ATmega328P
+C1 +3V3 0 100nF
+U2 0 +3V3 +5V AMS1117-3.3
+.end

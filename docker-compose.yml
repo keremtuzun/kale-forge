@@ -1,0 +1,86 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: kale
+      POSTGRES_USER: kale
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kale -d kale"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    volumes:
+      - redis-data:/data
+
+  inference:
+    build:
+      context: .
+      dockerfile: Dockerfile.inference
+    environment:
+      KALE_INFERENCE_PROVIDER: ${KALE_INFERENCE_PROVIDER:-stub}
+      KALE_MODEL_PATH: ${KALE_MODEL_PATH:-}
+      KALE_ADAPTER_PATH: ${KALE_ADAPTER_PATH:-}
+      KALE_VLLM_URL: ${KALE_VLLM_URL:-http://localhost:8010/v1}
+      KALE_MODEL_VERSION: ${KALE_MODEL_VERSION:-dev}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN in .env}
+      LOG_DIR: /data/logs
+    volumes:
+      - ./models:/app/models:ro
+      - inference-data:/data
+
+  analysis:
+    build:
+      context: .
+      dockerfile: Dockerfile.analysis
+    depends_on:
+      postgres:
+        condition: service_healthy
+      inference:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql+psycopg://kale:${POSTGRES_PASSWORD}@postgres:5432/kale
+      STORAGE_BACKEND: local
+      STORAGE_LOCAL_DIR: /data/storage
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      AUTH_DISABLED: ${AUTH_DISABLED:-false}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-admin@example.com}
+      BOOTSTRAP_API_TOKEN: ${BOOTSTRAP_API_TOKEN:?set BOOTSTRAP_API_TOKEN in .env}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN in .env}
+      INFERENCE_URL: http://inference:8001
+      KALE_MODEL_VERSION: ${KALE_MODEL_VERSION:-dev}
+      JOB_BACKEND: inprocess
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - analysis-data:/data
+    ports:
+      - "8000:8000"
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    depends_on:
+      analysis:
+        condition: service_started
+    environment:
+      NEXT_PUBLIC_ANALYSIS_API_URL: ${NEXT_PUBLIC_ANALYSIS_API_URL:-http://localhost:8000}
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres-data:
+  redis-data:
+  analysis-data:
+  inference-data:
