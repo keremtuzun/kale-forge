@@ -49,3 +49,7 @@ wandb/
 .DS_Store
 .idea/
 .vscode/
+# In-progress training checkpoints. The -work suffix keeps a partially trained adapter
+# durable across sessions without committing 11 MB every 100 iterations; the finished
+# adapter is promoted to models/adapters/<name>/ by scripts/finish-design-adapter.sh.
+models/adapters/*-work/
