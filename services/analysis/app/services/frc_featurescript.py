@@ -25,10 +25,21 @@ fully-editable geometry — which is the difference that matters against a mesh.
 from __future__ import annotations
 
 import math
+import os
 from typing import Any
 
-FS_VERSION = "kale-fs-1.0"
-_FS_STD = "2500.0"
+FS_VERSION = "kale-fs-1.1"
+
+# The FeatureScript language/std-library version the generated source declares.
+#
+# This is not cosmetic and it does go stale. The previous value, 2500, was inherited from an
+# older stub and by the time it was tested against a live account the std library was at 3029 —
+# the import silently failed and every standard type came back "No declaration found for type
+# Vector", which reads like a bug in the generated code and is not one.
+#
+# So: a current default, overridable without a code change, because it will age again.
+# `KALE_FS_STD_VERSION=3100 ...` is enough to move it.
+_FS_STD = os.environ.get("KALE_FS_STD_VERSION", "3029").split(".")[0]
 
 
 def _num(value: Any, default: float = 0.0) -> float:
@@ -257,10 +268,23 @@ function kalePlace(at is Vector, rot is Vector) returns Transform
     return transform(at) * t;
 }
 
-function kaleMove(context is Context, id is Id, at is Vector, rot is Vector)
+// Move the bodies a helper just built.
+//
+// `bodies` is passed in rather than derived from the parent id, and that is not a style
+// choice: qCreatedBy(parentId) matches only what that exact id created, NOT what its
+// sub-ids created. Since every primitive here is built under id + "solid" (or similar),
+// querying the parent matches nothing and opTransform fails on an empty selection — which
+// would silently leave every part of the robot stacked at the origin, or error outright.
+// Verified against a live Onshape workspace: parent query fails, sub-id query succeeds.
+//
+// The size check keeps an empty result a no-op instead of an error, so one degenerate part
+// cannot take the whole robot down with it.
+function kaleMove(context is Context, id is Id, bodies is Query, at is Vector, rot is Vector)
 {
+    if (size(evaluateQuery(context, bodies)) == 0)
+        return;
     opTransform(context, id + "place", {
-            "bodies" : qCreatedBy(id, EntityType.BODY),
+            "bodies" : bodies,
             "transform" : kalePlace(at, rot)
     });
 }
@@ -273,7 +297,7 @@ function kaleBox(context is Context, id is Id, sx is number, sy is number, sz is
             "corner1" : vector(-sx / 2, -sy / 2, -sz / 2) * inch,
             "corner2" : vector(sx / 2, sy / 2, sz / 2) * inch
     });
-    kaleMove(context, id, at, rot);
+    kaleMove(context, id, qCreatedBy(id + "solid", EntityType.BODY), at, rot);
 }
 
 // A tube is the outer section minus the inner section: the wall is a dimension you can edit,
@@ -297,7 +321,7 @@ function kaleTube(context is Context, id is Id, w is number, h is number, len is
                 "operationType" : BooleanOperationType.SUBTRACTION
         });
     }
-    kaleMove(context, id, at, rot);
+    kaleMove(context, id, qCreatedBy(id + "outer", EntityType.BODY), at, rot);
 }
 
 function kaleCylinder(context is Context, id is Id, dia is number, len is number,
@@ -308,7 +332,7 @@ function kaleCylinder(context is Context, id is Id, dia is number, len is number
             "bottomCenter" : vector(0, -len / 2, 0) * inch,
             "radius" : dia / 2 * inch
     });
-    kaleMove(context, id, at, rot);
+    kaleMove(context, id, qCreatedBy(id + "solid", EntityType.BODY), at, rot);
 }
 
 // 1/2 in hex is the FRC default shaft; modelled as a real hexagon so a bore cut from it fits.
@@ -330,7 +354,7 @@ function kaleHexShaft(context is Context, id is Id, acrossFlats is number, len i
             "endBound" : BoundingType.BLIND,
             "endDepth" : len * inch
     });
-    kaleMove(context, id, at, rot);
+    kaleMove(context, id, qCreatedBy(id + "ext", EntityType.BODY), at, rot);
 }
 
 function kaleDisc(context is Context, id is Id, dia is number, width is number,
@@ -354,7 +378,7 @@ function kaleDisc(context is Context, id is Id, dia is number, width is number,
                 "operationType" : BooleanOperationType.SUBTRACTION
         });
     }
-    kaleMove(context, id, at, rot);
+    kaleMove(context, id, qCreatedBy(id + "solid", EntityType.BODY), at, rot);
 }
 
 function kaleBearing(context is Context, id is Id, bore is number, od is number,
@@ -365,7 +389,9 @@ function kaleBearing(context is Context, id is Id, bore is number, od is number,
     if (flanged)
         kaleDisc(context, id + "flange", od + 0.19, 0.06, bore,
                  vector(0, width / 2, 0) * inch, vector(0, 0, 0) * degree);
-    kaleMove(context, id, at, rot);
+    kaleMove(context, id, qUnion([qCreatedBy(id + "race" + "solid", EntityType.BODY),
+                                  qCreatedBy(id + "flange" + "solid", EntityType.BODY)]),
+             at, rot);
 }
 
 function kaleGusset(context is Context, id is Id, a is number, b is number,
@@ -385,7 +411,7 @@ function kaleGusset(context is Context, id is Id, a is number, b is number,
             "endBound" : BoundingType.BLIND,
             "endDepth" : th * inch
     });
-    kaleMove(context, id, at, rot);
+    kaleMove(context, id, qCreatedBy(id + "ext", EntityType.BODY), at, rot);
 }
 
 function kaleBoltRow(context is Context, id is Id, dia is number, len is number,
@@ -400,7 +426,10 @@ function kaleBoltRow(context is Context, id is Id, dia is number, len is number,
                 "radius" : dia / 2 * inch
         });
     }
-    kaleMove(context, id, at, rot);
+    var boltBodies = qNothing();
+    for (var i = 0; i < count; i += 1)
+        boltBodies = qUnion([boltBodies, qCreatedBy(id + ("bolt" ~ i), EntityType.BODY)]);
+    kaleMove(context, id, boltBodies, at, rot);
 }
 
 // The shooter hood: an arc segment the gamepiece is squeezed against. Its radius is the
@@ -413,17 +442,34 @@ function kaleHood(context is Context, id is Id, radius is number, width is numbe
     var sketch = newSketchOnPlane(context, id + "sk", {
             "sketchPlane" : plane(vector(0, -width / 2, 0) * inch, vector(0, 1, 0))
     });
+    // skArc takes start/mid/end POINTS, not a centre with start and end angles. The
+    // centre-radius form silently creates nothing, and the failure surfaces later and
+    // unhelpfully as CANNOT_RESOLVE_ENTITIES on the extrude, because the region never existed.
+    //
+    // The two arcs are also open curves on their own and bound no area, so the profile is
+    // closed with a radial segment at each end before it can be extruded.
+    var a0 = fromDeg * degree;
+    var a1 = (fromDeg + span) * degree;
+    var am = (fromDeg + span / 2) * degree;
+    var rOut = (radius + wall) * inch;
+    var rIn = radius * inch;
     skArc(sketch, "outer", {
-            "center" : vector(0, 0) * inch,
-            "radius" : (radius + wall) * inch,
-            "startAngle" : fromDeg * degree,
-            "endAngle" : (fromDeg + span) * degree
+            "start" : vector(rOut * cos(a0), rOut * sin(a0)),
+            "mid" : vector(rOut * cos(am), rOut * sin(am)),
+            "end" : vector(rOut * cos(a1), rOut * sin(a1))
     });
     skArc(sketch, "inner", {
-            "center" : vector(0, 0) * inch,
-            "radius" : radius * inch,
-            "startAngle" : fromDeg * degree,
-            "endAngle" : (fromDeg + span) * degree
+            "start" : vector(rIn * cos(a0), rIn * sin(a0)),
+            "mid" : vector(rIn * cos(am), rIn * sin(am)),
+            "end" : vector(rIn * cos(a1), rIn * sin(a1))
+    });
+    skLineSegment(sketch, "capStart", {
+            "start" : vector(rIn * cos(a0), rIn * sin(a0)),
+            "end" : vector(rOut * cos(a0), rOut * sin(a0))
+    });
+    skLineSegment(sketch, "capEnd", {
+            "start" : vector(rIn * cos(a1), rIn * sin(a1)),
+            "end" : vector(rOut * cos(a1), rOut * sin(a1))
     });
     skSolve(sketch);
     opExtrude(context, id + "ext", {
@@ -432,7 +478,7 @@ function kaleHood(context is Context, id is Id, radius is number, width is numbe
             "endBound" : BoundingType.BLIND,
             "endDepth" : width * inch
     });
-    kaleMove(context, id, at, rot);
+    kaleMove(context, id, qCreatedBy(id + "ext", EntityType.BODY), at, rot);
 }
 
 // A belt, chain or rope run drawn between its real endpoints, so its length is a measurement
@@ -476,8 +522,8 @@ def build_featurescript(spec: dict[str, Any], name: str = "Kale FRC Robot") -> s
     length = _num(frame.get("length_in"), 27.0)
 
     out: list[str] = [
-        f"FeatureScript {_FS_STD.split('.')[0]};",
-        f'import(path : "onshape/std/common.fs", version : "{_FS_STD}");',
+        f"FeatureScript {_FS_STD};",
+        f'import(path : "onshape/std/common.fs", version : "{_FS_STD}.0");',
         "",
         f"// {name}",
         f"// Generated by Kale Forge ({FS_VERSION}) from the design's own CAD tree.",
