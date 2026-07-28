@@ -3,12 +3,20 @@
 This is intentionally small and auditable.  Kale does not copy meshes from these
 documents; it uses their public assembly patterns and engineering guidance to choose
 real subsystem structure instead of hallucinating a robot-shaped collection of boxes.
+
+The season *profiles* below are derived from `frc_season.SEASONS` rather than typed here, so
+the frame size, gamepiece and default mechanisms a profile hands to the synthesiser can never
+disagree with the field and rule figures the same season states elsewhere.  What lives here is
+the part a season does not determine: the build techniques, and the public references whose
+patterns the geometry is grounded in.
 """
 from __future__ import annotations
 
 from typing import Any
 
-KNOWLEDGE_VERSION = "frc-exemplars-2026.08"
+from app.services.frc_season import ALIASES, SEASONS, resolve_season
+
+KNOWLEDGE_VERSION = "frc-exemplars-2026.09"
 
 REFERENCES: list[dict[str, str]] = [
     {
@@ -81,42 +89,52 @@ REFERENCES: list[dict[str, str]] = [
         "url": "https://firstfrc.blob.core.windows.net/frc2026/Manual/HTML/2026GameManual.htm",
         "lesson": "current starting perimeter, height, bumper, safety and extension constraints",
     },
+    {
+        "name": "WCP GreyT turret",
+        "kind": "shooter",
+        "url": "https://wcproducts.com/products/greyt-turret",
+        "lesson": ("a turret is one large-bore bearing plus plate bearing blocks and a driven "
+                   "ring; the hard part is the wire path under the plate, not the rotation"),
+    },
+    {
+        "name": "Open-alliance spindexer and hopper build threads",
+        "kind": "hopper",
+        "url": "https://www.chiefdelphi.com/c/technical/open-alliance/",
+        "lesson": ("bulk ball indexing converges on a rotating floor that feeds one lane: "
+                   "raise the driven wheels slightly above the floor, funnel many lanes into "
+                   "one, and gate the last piece with a sensor rather than a timer"),
+    },
+    {
+        "name": "Public team CAD and technical binder releases",
+        "kind": "design_guidance",
+        "url": "https://www.chiefdelphi.com/c/technical/robot-showcase/",
+        "lesson": ("a technical binder states, per subsystem: the requirement, the options "
+                   "considered, the calculation that chose between them, the test that "
+                   "validated it and the failure mode still open — write the design that way "
+                   "and the review takes minutes"),
+    },
 ]
 
+# Profiles are the synthesiser's view of a season: the handful of fields it needs to start a
+# robot. They are generated from the season model so a frame size or gamepiece can never be
+# stated twice and drift.
 PROFILES: dict[str, dict[str, Any]] = {
-    "reference-bare-swerve": {
-        "label": "28-inch reference swerve-ready frame",
-        "season": "all-season",
-        "frame": (28.0, 28.0),
-        "starting_height_in": 29.5,
-        "gamepiece": {"name": "generic", "diameter_in": 6.0},
-        "default_subsystems": ["intake", "shooter", "arm", "climber"],
-    },
-    "2026-low-profile": {
-        "label": "2026 low-profile fuel robot",
-        "season": "2026 REBUILT",
-        "frame": (28.0, 28.0),
-        "starting_height_in": 29.5,
-        "gamepiece": {"name": "fuel", "diameter_in": 5.91},
-        "default_subsystems": ["intake", "shooter", "climber"],
-    },
-    "2025-reefscape": {
-        "label": "2025 elevator manipulator",
-        "season": "2025 REEFSCAPE",
-        "frame": (28.0, 28.0),
-        "starting_height_in": 47.5,
-        "gamepiece": {"name": "coral/algae", "diameter_in": 16.0},
-        "default_subsystems": ["intake", "elevator", "arm", "climber"],
-    },
-    "2024-note-shooter": {
-        "label": "2024 over-bumper note shooter",
-        "season": "2024 CRESCENDO",
-        "frame": (28.0, 28.0),
-        "starting_height_in": 47.5,
-        "gamepiece": {"name": "note", "diameter_in": 14.0},
-        "default_subsystems": ["intake", "shooter", "arm", "climber"],
-    },
+    key: {
+        "label": season["label"] if season["year"] else "Off-season reference frame",
+        "season": season["label"],
+        "season_key": key,
+        "frame": season["frame"],
+        "starting_height_in": season["starting_height_in"],
+        "target_weight_lb": season["target_weight_lb"],
+        "gamepiece": {"name": season["gamepiece"]["name"],
+                      "diameter_in": season["gamepiece"]["diameter_in"]},
+        "default_subsystems": list(season["default_subsystems"]),
+    }
+    for key, season in SEASONS.items()
 }
+# Ids that older designs and corpora were generated with still resolve.
+PROFILES.update({legacy: PROFILES[target] for legacy, target in ALIASES.items()
+                 if target in PROFILES and legacy not in PROFILES})
 
 
 # Build techniques.  Each one is a decision a real team makes, with the reason it exists and
@@ -265,6 +283,69 @@ TECHNIQUES: dict[str, list[dict[str, str]]] = {
          "why": "A turret that boots at the wrong angle aims at your own alliance wall.",
          "how": "Absolute encoder on the azimuth with stored offsets and a documented zeroing jig.",
          "pitfall": "Re-zeroing by eye in the pit and trusting it in the match."},
+    ],
+    "hopper": [
+        {"name": "One lane out, however many lanes in",
+         "why": ("A shooter can only take one gamepiece at a time. Every mechanism that tries "
+                 "to hand it two at once jams, and the jam always happens under load in a match."),
+         "how": ("Funnel the floor into a single exit lane, and make the last stage before the "
+                 "shooter positive — a driven roller or belt that owns the piece — with a "
+                 "beam-break telling the code exactly one is staged."),
+         "pitfall": "A wide hopper that dumps straight into the feeder and wedges two pieces in the throat."},
+        {"name": "Raise the driven wheels above the floor",
+         "why": ("A rotating-floor indexer works by driving the gamepiece across a stationary "
+                 "surface. If the wheels are flush the piece rides on the floor and slips; too "
+                 "high and it climbs over."),
+         "how": ("Set the wheel axis so roughly half an inch of wheel stands above the floor "
+                 "plate for a 6 in ball, then test with a full hopper, not one piece."),
+         "pitfall": "Tuning the indexer with three gamepieces and finding it stalls with twelve."},
+        {"name": "Test the hopper full, and test it on the bump",
+         "why": ("Throughput measured with a half-empty hopper is fiction: the pieces at the "
+                 "bottom carry the weight of the ones above them, and driving over an obstacle "
+                 "throws the whole mass at one wall."),
+         "how": ("Fill it to capacity, drive the real field obstacles, and count pieces per "
+                 "second out of the exit rather than watching it spin."),
+         "pitfall": "A hopper that indexes beautifully on the bench and packs solid in a match."},
+        {"name": "Compression is the jam knob",
+         "why": ("Indexer compression trades throughput against current draw and jamming. Too "
+                 "loose and pieces slip; too tight and the motor heats, the bus sags and the "
+                 "pieces wedge."),
+         "how": ("Set it as a dimension in the plates, then back it off in small steps while "
+                 "watching supply current until throughput stops improving."),
+         "pitfall": "Chasing jams by tightening compression, which is usually what caused them."},
+        {"name": "Give the hopper a floor you can open",
+         "why": "Every bulk handler jams eventually, and a jam you can clear in ten seconds between matches is a different problem from one that needs the shooter removed.",
+         "how": "Make one wall or the top plate a thumbscrew panel, and keep the exit lane visible.",
+         "pitfall": "A sealed hopper that has to come off the robot to clear one wedged piece."},
+    ],
+    "turret": [
+        {"name": "One large-bore bearing carries the whole turret",
+         "why": "A turret carries moment loads, not just rotation; a stack of small bearings wobbles and the shot walks.",
+         "how": ("One large-diameter slew or X-contact bearing under the turret plate, driven "
+                 "by a ring gear or a capstan for low backlash."),
+         "pitfall": "A cantilevered turret on one small bearing that shakes the aim loose over a match."},
+        {"name": "The wire path is the design problem",
+         "why": ("The bearing is the easy part. Getting motor power, CAN and a camera across a "
+                 "rotating joint without tearing a harness is what actually takes the time."),
+         "how": ("An energy chain or a service loop sized for the full sweep, tensioned by a "
+                 "constant-force spring so it never goes slack and snags, with physical rotation "
+                 "limits at both ends. A slip ring only if continuous rotation is genuinely needed."),
+         "pitfall": "Software-only rotation limits guarding a taut cable bundle."},
+        {"name": "Keep the sweep inside the frame perimeter",
+         "why": "A turret that swings a shooter past the perimeter is an extension-rule failure at inspection, not a packaging annoyance.",
+         "how": ("Sweep the widest point of the turret through its full range in CAD against the "
+                 "perimeter and the extension allowance before committing the plate size."),
+         "pitfall": "Discovering at inspection that the hood clears the bumper at 45°."},
+        {"name": "Zero the azimuth like a swerve module",
+         "why": "A turret that boots at the wrong angle aims at your own alliance wall.",
+         "how": "Absolute encoder on the azimuth with stored offsets and a documented zeroing jig.",
+         "pitfall": "Re-zeroing by eye in the pit and trusting it in the match."},
+        {"name": "Decide what the turret is for before building one",
+         "why": ("A turret buys shoot-while-moving and passing without turning. If the strategy "
+                 "does not use either, it is mass, complexity and a wire path for nothing."),
+         "how": ("Write down the two or three match situations that justify it. If a fixed "
+                 "shooter and a good driver cover them, build the fixed shooter."),
+         "pitfall": "Building a turret because the top teams have one, then aiming with the drivebase anyway."},
     ],
     "elevator": [
         {"name": "Rigid stages, sliders between them",
@@ -416,12 +497,14 @@ TECHNIQUES: dict[str, list[dict[str, str]]] = {
 }
 
 
-def techniques_for(subsystems: list[str], *, drive: str = "") -> list[dict[str, str]]:
+def techniques_for(subsystems: list[str], *, drive: str = "", turreted: bool = False) -> list[dict[str, str]]:
     """Techniques relevant to this robot: always the fundamentals, plus per-subsystem craft."""
     keys = ["chassis", "electrical", "cad"]
     if drive and "swerve" in drive:
         keys.insert(1, "drivetrain")
     keys.extend(name for name in subsystems if name in TECHNIQUES)
+    if turreted:
+        keys.append("turret")
     seen: set[str] = set()
     ordered: list[dict[str, str]] = []
     for key in keys:
@@ -433,19 +516,18 @@ def techniques_for(subsystems: list[str], *, drive: str = "") -> list[dict[str, 
     return ordered
 
 
-def choose_profile(prompt: str) -> tuple[str, dict[str, Any]]:
-    p = prompt.lower()
-    if any(word in p for word in ("2025", "reef", "coral", "algae")):
-        key = "2025-reefscape"
-    elif any(word in p for word in ("2024", "crescendo", "note")):
-        key = "2024-note-shooter"
-    elif any(word in p for word in ("2026", "rebuilt", "fuel", "shooter")):
-        key = "2026-low-profile"
-    else:
-        key = "reference-bare-swerve"
-    return key, PROFILES[key]
+def choose_profile(prompt: str, requested_season: str = "") -> tuple[str, dict[str, Any], str]:
+    """The profile for this design: the team's selected season, or one inferred from the prompt.
+
+    Returns (key, profile, how it was decided). The third value is carried into the spec so a
+    design records *why* it is a 2026 robot instead of leaving it to be argued about later.
+    """
+    key, _season, reason = resolve_season(prompt, requested_season)
+    return key, PROFILES[key], reason
 
 
-def references_for(subsystems: list[str]) -> list[dict[str, str]]:
+def references_for(subsystems: list[str], *, turreted: bool = False) -> list[dict[str, str]]:
     wanted = set(subsystems) | {"full_robot", "design_guidance", "rules"}
+    if turreted:
+        wanted.add("shooter")
     return [item for item in REFERENCES if item["kind"] in wanted or any(part in item["kind"] for part in subsystems)]

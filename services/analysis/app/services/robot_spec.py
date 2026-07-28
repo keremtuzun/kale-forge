@@ -45,14 +45,35 @@ from app.services.frc_robot_knowledge import (
     references_for,
     techniques_for,
 )
+from app.services.frc_season import (
+    SEASON_VERSION,
+    design_targets,
+    element,
+    frame_budget,
+    get_season,
+    optimal_launch_angle,
+    required_exit_fps,
+    rule_findings,
+    scoring_math,
+    season_digest,
+    shot_solution,
+    surface_speed_for_exit,
+)
 
-SUBSYSTEM_NAMES = ("intake", "shooter", "elevator", "arm", "climber")
+SUBSYSTEM_NAMES = ("intake", "hopper", "shooter", "elevator", "arm", "climber")
 
 INTAKE_TYPES = ("coaxial slapdown", "four-bar over-bumper", "under-bumper roller",
                 "side funnel roller", "fixed over-bumper roller",
                 "dual-roller over-bumper", "pivoting compliant-wheel intake",
                 "ground-to-feeder tunnel intake", "horizontal series-roller intake",
                 "active floor sweeper with indexer")
+# Bulk gamepiece handling. A hopper is the mechanism between "acquired" and "staged": it holds
+# many pieces, turns them into a single ordered lane and hands exactly one to the shooter.
+# The 2026 field's foam balls make it the defining subsystem of the season, but the archetypes
+# are older than any one game and are named for what they do, not for the year.
+HOPPER_TYPES = ("circular spindexer", "oval spindexer", "belt-floor hopper",
+                "twin-lane belt hopper", "funnel-to-tower hopper",
+                "serpentine tunnel indexer", "paddle-wheel agitator hopper")
 SHOOTER_TYPES = ("dual independent flywheel hooded shooter", "single flywheel backspin shooter",
                  "turreted dual flywheel hooded shooter", "fixed-angle flywheel shooter",
                  "variable-hood flywheel shooter",
@@ -118,6 +139,7 @@ INTENT_SCHEMA: dict[str, Any] = {
         "subsystems": {"type": "array", "items": {"type": "string", "enum": list(SUBSYSTEM_NAMES)}},
         "drive_type": {"type": "string", "enum": ["swerve", "swerve-ready", "west-coast", "tank"]},
         "intake_type": {"type": "string", "enum": list(INTAKE_TYPES)},
+        "hopper_type": {"type": "string", "enum": list(HOPPER_TYPES)},
         "shooter_type": {"type": "string", "enum": list(SHOOTER_TYPES)},
         "arm_type": {"type": "string", "enum": list(ARM_TYPES)},
         "climber_type": {"type": "string", "enum": list(CLIMBER_TYPES)},
@@ -134,6 +156,9 @@ SYSTEM_DESIGN = """You are Kale Forge's self-hosted FRC design model. You turn a
 into ONE structured design intent for a competition robot.
 - Choose only from the enumerated values in the schema. Never invent an option.
 - Respect everything the request states explicitly; only decide what it leaves open.
+- The season sets the constraints: the gamepiece decides how it is handled, the goal height \
+decides the scoring mechanism, the obstacles decide the envelope, and the perimeter and \
+extension budgets decide what fits. Design to those, not to last year's robot.
 - Prefer architectures the team can actually build and service: rigid subassemblies, dead \
 axles, serviceable plates, short wire runs.
 - design_notes are short engineering justifications for YOUR choices. risks are the concrete \
@@ -155,7 +180,8 @@ def intent_vocabulary_block() -> str:
     Training and inference both call this, so the two can never drift.
     """
     groups = (("drive_type", ("swerve", "swerve-ready", "west-coast", "tank")),
-              ("intake_type", INTAKE_TYPES), ("shooter_type", SHOOTER_TYPES),
+              ("intake_type", INTAKE_TYPES), ("hopper_type", HOPPER_TYPES),
+              ("shooter_type", SHOOTER_TYPES),
               ("arm_type", ARM_TYPES), ("climber_type", CLIMBER_TYPES),
               ("elevator_architecture", ELEVATOR_TYPES))
     lines = ["Allowed values — copy one exactly, never paraphrase or invent:"]
@@ -164,32 +190,36 @@ def intent_vocabulary_block() -> str:
     return "\n".join(lines)
 
 
-def intent_user_message(prompt: str, stated: dict[str, Any]) -> str:
+def intent_user_message(prompt: str, stated: dict[str, Any], season_key: str = "") -> str:
     """The exact user message for the design-intent task.
 
     One function so training, inference and evaluation cannot disagree about the prompt. They
     already did once: the vocabulary block was added to the corpus and to the Design Studio but
     not to the eval harness, so v10 was trained with it and scored without it. Its intent
     output looked like a collapse and was actually a prompt it had never been trained on.
-    Anything that asks the model for a design intent must build the message here.
+    Anything that asks the model for a design intent must build the message here — and that now
+    includes the season block, for exactly the same reason.
     """
+    from app.services.frc_season import prompt_block
     from app.services.security import fence_user_content
+    season = get_season(season_key)
     return ("Design an FRC robot for this request. Fields already fixed by the team are given "
             "as 'stated', repeat them unchanged and decide only the rest.\n\n"
+            + prompt_block(season) + "\n\n"
             + intent_vocabulary_block()
             + f"\n\nstated: {stated}\n\nTeam request:\n" + fence_user_content(prompt))
 
 
-def _model_intent(prompt: str, parsed: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+def _model_intent(prompt: str, parsed: dict[str, Any],
+                  season_key: str = "") -> tuple[dict[str, Any], dict[str, Any]]:
     """Ask the self-hosted model to fill the gaps. Returns (intent, provenance)."""
     from app.services.inference_client import InferenceClient, InferenceUnavailable
-    from app.services.security import fence_user_content
 
     settings = get_settings()
     provenance: dict[str, Any] = {"used": False, "provider": "", "model_version": "", "reason": ""}
     client = InferenceClient(settings.inference_url, settings.inference_timeout_seconds)
     stated = {key: value for key, value in parsed.items() if value is not None}
-    user = intent_user_message(prompt, stated)
+    user = intent_user_message(prompt, stated, season_key)
     try:
         # Temperature is deliberately non-zero: two similar prompts should still explore
         # different architectures rather than collapsing onto one answer.
@@ -219,7 +249,8 @@ def _sanitize_intent(intent: dict[str, Any]) -> dict[str, Any]:
         if chosen:
             clean["subsystems"] = chosen
     enums = {"drive_type": ("swerve", "swerve-ready", "west-coast", "tank"),
-             "intake_type": INTAKE_TYPES, "shooter_type": SHOOTER_TYPES, "arm_type": ARM_TYPES,
+             "intake_type": INTAKE_TYPES, "hopper_type": HOPPER_TYPES,
+             "shooter_type": SHOOTER_TYPES, "arm_type": ARM_TYPES,
              "climber_type": CLIMBER_TYPES, "elevator_architecture": ELEVATOR_TYPES}
     for field, options in enums.items():
         value = intent.get(field)
@@ -241,11 +272,12 @@ def _sanitize_intent(intent: dict[str, Any]) -> dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 # Deterministic parsing
 # ─────────────────────────────────────────────────────────────────────────────
-def _parse(prompt: str) -> dict[str, Any]:
+def _parse(prompt: str, requested_season: str = "") -> dict[str, Any]:
     """Everything the prompt states explicitly. `None` means 'not stated, decide later'."""
     p = prompt.lower()
     latest = p.rsplit("revision request:", 1)[-1]
-    profile_key, profile = choose_profile(prompt)
+    profile_key, profile, season_reason = choose_profile(prompt, requested_season)
+    season = get_season(profile_key)
     default_width, default_length = profile["frame"]
 
     pair = re.findall(rf"(\d+(?:\.\d+)?)\s*(?:x|×|by)\s*(\d+(?:\.\d+)?)\s*{_INCH}", p)
@@ -256,13 +288,21 @@ def _parse(prompt: str) -> dict[str, Any]:
     pair_width, pair_length = pair[-1] if pair else (default_width, default_length)
     width_in = _clamp(_number(p, rf"(\d+(?:\.\d+)?)\s*{_INCH}\s*(?:wide|width)", float(pair_width)), 20, 34)
     length_in = _clamp(_number(p, rf"(\d+(?:\.\d+)?)\s*{_INCH}\s*(?:long|length|deep)", float(pair_length)), 20, 34)
+
+    # The season's perimeter budget is a rule, not a preference, so it outranks even an
+    # explicitly stated frame: a 28 × 28 robot is a legal 2025 robot and an illegal 2026 one,
+    # and quietly building the illegal one is worse than resizing it and saying so.
+    budget = frame_budget(season, width_in, length_in)
+    width_in, length_in = budget["width_in"], budget["length_in"]
+
     height_in = _clamp(_number(p, rf"(\d+(?:\.\d+)?)\s*{_INCH}\s*(?:tall|height|high)",
                                profile["starting_height_in"]), 24, 84)
 
     def stated_subsystem(name: str) -> bool | None:
         word = {"climber": r"climb(?:er|ing)?", "elevator": r"elevator|lift",
                 "arm": r"arm|manipulator|wrist", "shooter": r"shoot(?:er)?|launcher",
-                "intake": r"intake|collector"}[name]
+                "intake": r"intake|collector",
+                "hopper": r"hopper|spindexer|indexer|magazine|carousel|serializer"}[name]
         if re.search(rf"\b(?:no|without|remove|delete|omit|drop)\s+(?:the\s+)?(?:{word})\b", latest):
             return False
         if re.search(rf"\b(?:{word})\b", latest):
@@ -296,7 +336,8 @@ def _parse(prompt: str) -> dict[str, Any]:
     # season profile's default mechanisms, that is how every prompt used to collapse into
     # the same full robot. A drivetrain-scoped request builds chassis + drivetrain and adds
     # only mechanisms the prompt itself states.
-    _mech_words = r"intake|collector|shoot(?:er)?|launcher|elevator|lift|arm|manipulator|wrist|climb|turret"
+    _mech_words = (r"intake|collector|shoot(?:er)?|launcher|elevator|lift|arm|manipulator|wrist"
+                   r"|climb|turret|hopper|spindexer|indexer")
     _drivetrain_words = r"swerve|mk\s*\d\w*|maxswerve|thrifty|drive\s*base|drive\s*train|drivetrain|chassis|modules?"
     # Scope is decided by the ORIGINAL request, not by revision text, "add an intake" to a
     # bare drivebase must extend the drivebase, not resurrect a full default robot.
@@ -313,6 +354,7 @@ def _parse(prompt: str) -> dict[str, Any]:
     return {
         "scope": scope,
         "profile_key": profile_key, "profile": profile,
+        "season": season, "season_reason": season_reason, "frame_budget": budget,
         "width_in": width_in, "length_in": length_in, "height_in": height_in,
         "drive_type": drive_type, "modules_included": not bare_swerve,
         "wheel_in": wheel_in, "weight_lb": weight_lb, "reach_in": reach_in,
@@ -320,28 +362,101 @@ def _parse(prompt: str) -> dict[str, Any]:
         "elevator_stages": _count(latest, "stage", 0) or None,
         "subsystems_stated": {name: stated_subsystem(name) for name in SUBSYSTEM_NAMES},
         "second_can_bus": bool(re.search(r"\bcanivore\b|second can|separate can", p)),
+        "team_number": _team_number(p),
+        "bumper_color": _bumper_color(p),
         "prompt": prompt, "latest": latest, "lower": p,
     }
+
+
+DEFAULT_TEAM_NUMBER = 8159
+
+# A team number has to be *asked for*, never inferred from a loose integer: a prompt is full
+# of numbers that are not it — 28x28 frames, 6.75:1 ratios, 40 A breakers, 2026 seasons.
+# Only an explicit "team 1234" / "frc 1234" / "#1234" counts.
+_TEAM_PATTERNS = (
+    r"\bteam\s*(?:number\s*|no\.?\s*|#\s*)?(\d{1,5})\b",
+    r"\bfrc\s*#?\s*(\d{1,5})\b",
+    r"#(\d{3,5})\b",
+    r"\bfor\s+(\d{3,5})\b",
+)
+
+
+def _team_number(text: str) -> int:
+    """The team number on the bumpers. Stated in the prompt, or the house default."""
+    for pattern in _TEAM_PATTERNS:
+        match = re.search(pattern, text, re.I)
+        if match:
+            number = int(match.group(1))
+            if 1 <= number <= 99999:
+                return number
+    return DEFAULT_TEAM_NUMBER
+
+
+# Alliance colours first, then the rest of what teams actually paint bumpers.
+BUMPER_COLORS: dict[str, str] = {
+    "red": "#a01722", "blue": "#1f4fd8", "black": "#1c1f22", "white": "#e8e8e6",
+    "green": "#2f9d5b", "orange": "#e8721f", "yellow": "#e8c31f", "purple": "#7a3fb8",
+    "pink": "#d94f8a", "teal": "#1f9d9d", "gold": "#c9a227", "silver": "#b9c0c6",
+    "grey": "#7b838a", "gray": "#7b838a", "navy": "#16306b", "maroon": "#7b1f2b",
+    "crimson": "#a51c30", "cyan": "#22b8d6", "lime": "#7fc41f", "brown": "#6b4a2f",
+    "magenta": "#c0219b",
+}
+DEFAULT_BUMPER_COLOR = "red"
+
+_COLOR_WORDS = "|".join(sorted(BUMPER_COLORS, key=len, reverse=True))
+_BUMPER_PATTERNS = (
+    rf"\b({_COLOR_WORDS})\s+bumpers?\b",
+    rf"\bbumpers?\s+(?:in|are|is|colou?red|painted)?\s*({_COLOR_WORDS})\b",
+    rf"\bbumpers?\s*[:=]\s*({_COLOR_WORDS})\b",
+)
+
+
+def _bumper_color(text: str) -> dict[str, str]:
+    """Bumper colour, stated in the prompt or red by default.
+
+    Matched only next to the word "bumper". A prompt says "green compliant wheels" and
+    "blue Loctite" without meaning either as a bumper colour, so a loose colour word is
+    never enough.
+    """
+    match = re.search(rf"\bbumpers?\s*(?:in|are|is|colou?red|painted)?\s*#([0-9a-fA-F]{{6}})\b", text)
+    if not match:
+        match = re.search(rf"#([0-9a-fA-F]{{6}})\s+bumpers?\b", text)
+    if match:
+        return {"name": f"#{match.group(1).lower()}", "hex": f"#{match.group(1).lower()}"}
+    for pattern in _BUMPER_PATTERNS:
+        found = re.search(pattern, text, re.I)
+        if found:
+            name = found.group(1).lower()
+            return {"name": name, "hex": BUMPER_COLORS[name]}
+    return {"name": DEFAULT_BUMPER_COLOR, "hex": BUMPER_COLORS[DEFAULT_BUMPER_COLOR]}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Assembly
 # ─────────────────────────────────────────────────────────────────────────────
-def build_robot_spec(prompt: str, *, use_model: bool = True) -> dict[str, Any]:
-    parsed = _parse(prompt)
+def build_robot_spec(prompt: str, *, use_model: bool = True, season: str = "") -> dict[str, Any]:
+    """Synthesize one robot for one season.
+
+    ``season`` is the team's explicit choice ("2026-rebuilt", "2025-reefscape"). Left empty,
+    the season is inferred from the prompt and falls back to the current one — see
+    `frc_season.resolve_season`, which also records which of those three happened.
+    """
+    parsed = _parse(prompt, season)
     rng = _seed(prompt)
     p, latest = parsed["lower"], parsed["latest"]
     profile = parsed["profile"]
+    season_data = parsed["season"]
 
     intent: dict[str, Any] = {}
     provenance = {"used": False, "provider": "", "model_version": "",
                   "reason": "model pass disabled for this call"}
     if use_model:
         raw, provenance = _model_intent(prompt, {
+            "season": season_data["key"],
             "frame_in": [parsed["width_in"], parsed["length_in"]],
             "drive_type": parsed["drive_type"],
             "subsystems_stated": {k: v for k, v in parsed["subsystems_stated"].items() if v is not None},
-        })
+        }, parsed["profile_key"])
         intent = _sanitize_intent(raw)
 
     # Subsystems: explicit statement > model choice > season profile default.
@@ -448,6 +563,18 @@ def build_robot_spec(prompt: str, *, use_model: bool = True) -> dict[str, Any]:
          "under-bumper roller", "fixed over-bumper roller", "dual-roller over-bumper",
          "pivoting compliant-wheel intake")))
 
+    hopper_type = _pick_type(p, HOPPER_TYPES, {
+        r"oval\s+spindexer": "oval spindexer",
+        r"spindexer|carousel|washing\s*machine|rotating\s+floor": "circular spindexer",
+        r"twin[- ]lane|two[- ]lane|double\s+lane": "twin-lane belt hopper",
+        r"belt\s+floor|belt\s+hopper|floor\s+belt": "belt-floor hopper",
+        r"funnel|tower\s+feed": "funnel-to-tower hopper",
+        r"serpentine|tunnel\s+index|snake": "serpentine tunnel indexer",
+        r"paddle|agitator|stir": "paddle-wheel agitator hopper",
+    }, intent.get("hopper_type") or rng.choice(
+        ("circular spindexer", "circular spindexer", "oval spindexer",
+         "belt-floor hopper", "funnel-to-tower hopper", "twin-lane belt hopper")))
+
     shooter_type = _pick_type(p, SHOOTER_TYPES, {
         r"turret": "turreted dual flywheel hooded shooter",
         r"stacked\s+flywheel|multi[- ]?flywheel|flywheel\s+stack": "stacked multi-flywheel barrel shooter",
@@ -516,6 +643,34 @@ def build_robot_spec(prompt: str, *, use_model: bool = True) -> dict[str, Any]:
     intake_surface_speed_fps = round(_intake_roller_rpm * _PI * roller_in / 12.0 / 60.0, 1)
     intake_deployed = intake_type != "fixed over-bumper roller"
 
+    # ── Hopper / indexer ───────────────────────────────────────────────────
+    # Sizing is volumetric and honest about it: how many gamepieces fit is floor area divided
+    # by the area one piece occupies, derated hard because spheres do not tile and the real
+    # limit is what the exit lane can un-jam, not what the box can hold.
+    gp_dia = season_data["gamepiece"]["diameter_in"]
+    hopper_floor_in = round(min(parsed["width_in"] - 4.0, 24.0), 1)
+    hopper_depth_in = round(min(parsed["length_in"] * 0.55, 18.0), 1)
+    hopper_wall_in = round(gp_dia * 1.9, 1)           # roughly two pieces deep, with a funnel lip
+    hopper_lanes = 2 if "twin" in hopper_type else 1
+    hopper_exit_in = round(gp_dia + 0.75, 2)          # exit lane: one piece wide, plus clearance
+    hopper_floor_clearance_in = round(gp_dia * 0.085, 2)   # driven wheel proud of the floor plate
+    # Capacity by volume, not by footprint: usable height is short of the wall because nobody
+    # fills to the brim and driving spills the top layer, and randomly poured spheres pack at
+    # about 60% — not the 74% of a stacked lattice they will never form in a hopper.
+    _fill_in = hopper_wall_in * 0.8
+    _piece_volume = math.pi / 6 * gp_dia ** 3
+    hopper_capacity = int(hopper_floor_in * hopper_depth_in * _fill_in * 0.60
+                          / _piece_volume) if gp_dia else 0
+    hopper_wheel_in = round(rng.choice([3.0, 4.0, 4.0]), 1)
+    hopper_wheel_count = max(3, int(round(hopper_floor_in / 6.0)) + 1)
+    hopper_reduction = rng.choice([9.0, 12.0, 12.0, 15.0])
+    hopper_motor_key = "neo_550" if hopper_floor_in < 16 else rng.choice(["neo", "neo_550"])
+    _hopper_rpm = MOTORS[hopper_motor_key]["free_rpm"] / hopper_reduction
+    # Throughput: one piece leaves per exit-lane length swept past the gate.
+    hopper_feed_per_s = round(max(0.5, (_hopper_rpm / 60.0) * 3.141592653589793
+                                 * hopper_wheel_in / max(gp_dia, 1.0) * 0.45), 1)
+    hopper_agitator = "paddle" in hopper_type or "spindexer" in hopper_type
+
     # Superstructure detail. A stacked/staged shooter runs several flywheel pairs in series
     # down a barrel so the gamepiece is accelerated progressively instead of by one impulse;
     # a belt- or chain-rigged tower carries the stages on rails with preloaded bearing blocks.
@@ -536,6 +691,46 @@ def build_robot_spec(prompt: str, *, use_model: bool = True) -> dict[str, Any]:
     # wheel down and the second shot goes somewhere else. Mass is the design knob.
     shooter_flywheel_mass_lb = round(0.35 * shooter_stages * (flywheel_in / 4.0) ** 2, 2)
     shooter_spinup_s = round(0.6 + shooter_flywheel_mass_lb * 0.9, 2)
+
+    # ── The shot the season actually asks for ──────────────────────────────
+    # This is the difference between "a shooter" and "a shooter for this game": the goal
+    # height and a stated working distance give a required exit velocity, the required exit
+    # velocity gives a required surface speed, and the surface speed the design has says
+    # whether it makes the shot. All of it is derived here, none of it is looked up.
+    goal = element(season_data, "HUB") or element(season_data, "REEF") or {}
+    rim_in = float(goal.get("opening_front_edge_in")
+                   or (goal.get("levels_in") or {}).get("L4") or 0.0)
+    shooter_release_in = round(min(parsed["height_in"], season_data["rules"]["start_height_in"]) * 0.72, 1)
+    shot: dict[str, Any] = {}
+    if rim_in:
+        design_range = float(goal.get("design_range_ft", 15.0))
+        long_range = float(goal.get("long_range_ft", 25.0))
+        angle = optimal_launch_angle(shooter_release_in, rim_in, design_range)
+        needed = required_exit_fps(angle, shooter_release_in, rim_in, design_range)
+        needed_long = required_exit_fps(
+            optimal_launch_angle(shooter_release_in, rim_in, long_range),
+            shooter_release_in, rim_in, long_range)
+        achieved = shot_solution(shooter_exit_fps, angle, shooter_release_in, rim_in)
+        shot = {
+            "target": goal.get("name", "goal"), "target_height_in": rim_in,
+            "release_height_in": shooter_release_in,
+            "design_range_ft": design_range, "long_range_ft": long_range,
+            "optimal_angle_deg": angle,
+            "required_exit_fps": needed,
+            "required_exit_fps_long": needed_long,
+            "required_surface_speed_fps": surface_speed_for_exit(
+                needed, counter_rotating=shooter_stacked),
+            "achieved_exit_fps": shooter_exit_fps,
+            "achieved_range_ft": achieved["range_ft"],
+            "apex_in": achieved["apex_in"],
+            "entry_angle_deg": achieved["entry_angle_deg"],
+            "makes_design_range": bool(achieved["reaches"] and achieved["range_ft"] >= design_range),
+            "makes_long_range": bool(achieved["reaches"] and achieved["range_ft"] >= long_range),
+            "caveat": achieved["note"],
+        }
+        # Centre the hood on the cheapest shot rather than on a habit; the span covers the
+        # near-and-far pair the same flywheel speed has to serve.
+        shooter_pivot_deg = [max(10, round(angle - 16)), min(85, round(angle + 14))]
 
     elevator_rigged = "rigged" in elevator_arch or "tower" in elevator_arch
     elevator_rigging = ("HTD 5 mm belt" if "belt" in elevator_arch else
@@ -576,7 +771,33 @@ def build_robot_spec(prompt: str, *, use_model: bool = True) -> dict[str, Any]:
     climber_tension_lbf = round(climber_load_lb / climber_paths, 1)
     climber_drum_torque_nm = round(climber_tension_lbf * 4.4482 * (climber_drum_in / 2 * 0.0254), 2)
     climber_reduction = round(_clamp(climber_drum_torque_nm / (MOTORS["kraken_x60"]["stall_nm"] * 0.4 * 2), 20, 240), 0)
-    climber_travel_in = round(min(parsed["height_in"] + 24, 84) - min(parsed["height_in"], 29.5), 1)
+
+    # How high the mechanism itself may stand. In a season with an in-match vertical cap
+    # (2026's R107) nothing may ever exceed it, so a climber cannot telescope a mast up to the
+    # rung — the robot has to hoist its own body instead, and the useful number becomes how far
+    # it must RISE rather than how far it can reach.
+    _height_cap = season_data["rules"].get("max_height_in") or 84.0
+    climber_stowed_in = round(min(parsed["height_in"], season_data["rules"]["start_height_in"]), 1)
+    climber_extended_in = round(min(parsed["height_in"] + 24, _height_cap), 1)
+    climber_travel_in = round(max(climber_extended_in - climber_stowed_in, 0.0), 1)
+
+    _tower = element(season_data, "TOWER")
+    climber_rise: dict[str, Any] = {}
+    if _tower and _tower.get("level_criteria"):
+        _rungs = _tower["rungs_in"]
+        _bumper_top = season_data["rules"]["bumper_zone_in"][1]
+        climber_rise = {
+            "mode": "hoist the robot, not reach the rung",
+            "rung_od_in": _tower.get("rung_od_in", 1.66),
+            "rung_spacing_in": _tower.get("rung_spacing_in", 18.0),
+            "l2_rise_in": round(_rungs["L2"] - _bumper_top, 1),
+            "l3_rise_in": round(_rungs["L3"] - _bumper_top, 1),
+            "criteria": _tower["level_criteria"],
+            "note": ("Levels score on where the robot's bumper covers end up, not on what it "
+                     "touches, and the height cap forbids extending to the rung. The mechanism "
+                     "grips a rung and lifts the whole robot; re-gripping one rung higher "
+                     "(18 in) is what earns the next level."),
+        }
 
     def block(name: str, **extra: Any) -> dict[str, Any]:
         included = name in subsystems
@@ -586,7 +807,12 @@ def build_robot_spec(prompt: str, *, use_model: bool = True) -> dict[str, Any]:
     gamepiece = profile["gamepiece"]
 
     spec: dict[str, Any] = {
-        "schema_version": "3.1",
+        "schema_version": "3.2",
+        # Both go on the bumpers, and both stay out of the CAD tree on purpose: a number and
+        # a colour are finish, not fabricated parts, and adding them to the geometry would
+        # change every chassis assembly the model was trained on.
+        "team_number": parsed["team_number"],
+        "bumper_color": parsed["bumper_color"],
         # Structural decisions in the CAD tree — how many crossmembers, belt or chain, plate
         # or tube — are resolved from this, so one prompt always yields one robot while
         # different prompts differ in construction and not merely in dimensions.
@@ -618,6 +844,30 @@ def build_robot_spec(prompt: str, *, use_model: bool = True) -> dict[str, Any]:
                         position_bias=round(intake_bias, 3),
                         rigid_subassemblies=["static gearbox", "intake arms", "powered roller",
                                              "belt reduction", "indexer handoff"]),
+        "hopper": block("hopper", type=hopper_type,
+                        floor_width_in=hopper_floor_in, floor_depth_in=hopper_depth_in,
+                        wall_height_in=hopper_wall_in, lanes=hopper_lanes,
+                        exit_lane_width_in=hopper_exit_in,
+                        gamepiece_diameter_in=gp_dia,
+                        capacity_estimate=hopper_capacity,
+                        wheel_diameter_in=hopper_wheel_in, wheel_count=hopper_wheel_count,
+                        wheel_proud_in=hopper_floor_clearance_in,
+                        gear_reduction=f"{hopper_reduction:g}:1",
+                        feed_rate_per_s=hopper_feed_per_s,
+                        agitator=hopper_agitator,
+                        floor="0.093 in polycarbonate floor plate over a plate frame",
+                        sensor="beam-break at the exit gate, one staged piece at a time",
+                        access="thumbscrew top panel so a jam clears without removing the shooter",
+                        motor_key=hopper_motor_key, motor=MOTORS[hopper_motor_key]["name"],
+                        motor_count=2 if hopper_lanes > 1 else 1,
+                        position_bias=round(rng.uniform(0.34, 0.50), 3),
+                        rigid_subassemblies=["hopper floor", "outer wall", "driven wheel shaft",
+                                             "exit gate", "feeder handoff"],
+                        caveat=("Capacity is volumetric: floor area × 80% of the wall height × "
+                                "60% random-pour packing, divided by one gamepiece. The real "
+                                "limit is usually what the exit lane clears without jamming, "
+                                "not what the box holds. Feed rate is a geometric ceiling — "
+                                "measure it with a full hopper while driving the obstacles.")),
         "shooter": block("shooter", type=shooter_type, flywheel_diameter_in=flywheel_in,
                          gamepiece_diameter_in=gamepiece["diameter_in"], compression_in=0.5,
                          hood_angle_deg=shooter_pivot_deg, motor_key=shooter_motor_key,
@@ -633,8 +883,11 @@ def build_robot_spec(prompt: str, *, use_model: bool = True) -> dict[str, Any]:
                          spinup_time_s=shooter_spinup_s,
                          wheel="grey 60A urethane flywheels on a 1/2 in hex shaft",
                          turret_range_deg=[-180, 180] if shooter_turreted else [0, 0],
-                         feed_path="indexer → barrel → staged flywheel pairs" if shooter_stacked
-                                   else "feeder → flywheel pair → hood",
+                         release_height_in=shooter_release_in,
+                         shot=shot or None,
+                         feed_path=("hopper → feeder tower → " if "hopper" in subsystems else "")
+                                   + ("indexer → barrel → staged flywheel pairs" if shooter_stacked
+                                      else "feeder → flywheel pair → hood"),
                          position_bias=round(shooter_bias, 3),
                          rigid_subassemblies=(["indexer", "barrel"] +
                                               [f"flywheel stage {n}" for n in range(1, shooter_stages + 1)] +
@@ -675,8 +928,9 @@ def build_robot_spec(prompt: str, *, use_model: bool = True) -> dict[str, Any]:
                              rigid_subassemblies=(["shoulder gearbox"] +
                                                   [f"segment {n}" for n in range(1, arm_segments + 1)] +
                                                   (["wrist", "end effector"] if arm_wristed else ["end effector"]))),
-        "climber": block("climber", type=climber_type, stowed_height_in=min(height_in, 29.5),
-                         extended_height_in=round(min(height_in + 24, 84), 1),
+        "climber": block("climber", type=climber_type, stowed_height_in=climber_stowed_in,
+                         extended_height_in=climber_extended_in,
+                         height_cap_in=_height_cap, rise=climber_rise or None,
                          stages=climber_stages, tower="2x2x0.125 in upright tied into two rails",
                          winch_drum_diameter_in=climber_drum_in, rope="1/8 in Dyneema on a grooved drum",
                          travel_in=climber_travel_in, load_paths=climber_paths,
@@ -696,12 +950,40 @@ def build_robot_spec(prompt: str, *, use_model: bool = True) -> dict[str, Any]:
         "constraints": {
             "starting_perimeter_in": [width_in, length_in],
             "frame_perimeter_in": round(2 * (width_in + length_in), 1),
+            "perimeter_limit_in": season_data["rules"]["perimeter_in"],
+            "start_height_limit_in": season_data["rules"]["start_height_in"],
+            "extension_limit_in": season_data["rules"]["extension_in"],
+            "propulsion_motor_limit": season_data["rules"]["propulsion_motors"],
+            "weight_limit_lb": season_data["rules"]["weight_lb"],
             "target_weight_lb": parsed["weight_lb"] or profile.get("target_weight_lb", 105),
             "bumper_gap_in": 0.25, "service_clearance_in": 0.5,
-            "rule_snapshot": "Verify frame perimeter, height, extension and weight against the current manual and team updates.",
+            "bumper_zone_in": season_data["rules"]["bumper_zone_in"],
+            "frame_note": parsed["frame_budget"]["note"],
+            "rule_snapshot": (f"Limits shown are the published {season_data['label']} figures. "
+                              "Rules move by team update — verify perimeter, height, extension, "
+                              "motor count and weight against the current manual before "
+                              "inspection."),
         },
-        "reference_basis": references_for(subsystems),
-        "techniques": techniques_for(subsystems, drive=drive_type),
+        # What this robot is for, expressed as the season's own numbers. Everything here is
+        # derived from the field and the rules rather than described, so the same request in a
+        # different season produces different targets instead of the same robot relabelled.
+        "season": {
+            **season_digest(season_data),
+            "selected_by": parsed["season_reason"],
+            "summary": season_data["summary"],
+            "gamepiece": season_data["gamepiece"],
+            "match": season_data["match"],
+            "scoring": season_data["scoring"],
+            "ranking": season_data["ranking"],
+            "field_elements": season_data["field"]["elements"],
+            "design_targets": design_targets(season_data, robot_height_in=height_in,
+                                             release_height_in=shooter_release_in),
+            "scoring_math": scoring_math(season_data),
+            "archetypes": season_data["archetypes"],
+            "verify": season_data["verify"],
+        },
+        "reference_basis": references_for(subsystems, turreted=shooter_turreted),
+        "techniques": techniques_for(subsystems, drive=drive_type, turreted=shooter_turreted),
         "design_notes": intent.get("design_notes", []),
         "risks": intent.get("risks", []),
         "intent": prompt[-1200:],
@@ -719,6 +1001,10 @@ def build_robot_spec(prompt: str, *, use_model: bool = True) -> dict[str, Any]:
     }
     spec["electrical"]["placements"] = electrical_layout(width_in * 25.4, length_in * 25.4, spec)
     spec["mass_estimate"] = _mass_estimate(spec)
+    # Run the season's construction rules over the finished spec. This is the last thing that
+    # happens because it checks the assembled result, not the intent — and it is reported, not
+    # enforced: a design that trips a check is shown with the check, so the team decides.
+    spec["rule_check"] = rule_findings(spec, season_data)
 
     # ── CAD: the same robot expressed as individual dimensioned parts ──────
     # Everything above says what the robot *is*; this says what it is made of, in one
@@ -759,13 +1045,14 @@ def _mass_estimate(spec: dict[str, Any]) -> dict[str, Any]:
                      "counted": True})
         rows.append({"item": f"{count}x drive motors", "counted": True,
                      "lb": round(motor["mass_lb"] * count, 1)})
-    for key, label in (("intake", "intake"), ("shooter", "shooter"), ("elevator", "elevator"),
-                       ("manipulator", "arm"), ("climber", "climber")):
+    for key, label in (("intake", "intake"), ("hopper", "hopper"), ("shooter", "shooter"),
+                       ("elevator", "elevator"), ("manipulator", "arm"), ("climber", "climber")):
         block = spec[key]
         if not block.get("included"):
             continue
         motor = MOTORS.get(block.get("motor_key", "neo"), MOTORS["neo"])
-        base = {"intake": 8.0, "shooter": 14.0, "elevator": 18.0, "manipulator": 12.0, "climber": 10.0}[key]
+        base = {"intake": 8.0, "hopper": 9.0, "shooter": 14.0, "elevator": 18.0,
+                "manipulator": 12.0, "climber": 10.0}[key]
         rows.append({"item": f"{label} structure + motors", "counted": True,
                      "lb": round(base + motor["mass_lb"] * block.get("motor_count", 1), 1)})
     control_lb = sum(ELECTRONICS[key]["mass_lb"] for key in

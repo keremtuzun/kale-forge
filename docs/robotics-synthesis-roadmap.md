@@ -195,6 +195,34 @@ Tracked as a first-class eval metric alongside validity and requirement-match in
 [evaluation-plan.md](evaluation-plan.md): *novelty distance distribution* and *nearest-neighbor
 leakage rate* per model version. A version that memorizes does not get promoted.
 
+### 6.1 Season conditioning — memorization reducer #2 (shipped in v11)
+
+Training on a *current* season is where memorization pressure is highest: the season has a
+known best answer, the corpus is full of it, and a model that reproduces it scores well right
+up until the game changes. `services/analysis/app/services/frc_season.py` is the structural
+answer, and it works by making the season an **input** rather than a fact.
+
+- **Targets are derived, not stored.** A season carries its field, its scoring table and the
+  construction rules that differ between years; everything a mechanism is sized against is
+  computed from those. "The perimeter budget is 110 in, so a square frame is at most 27.5"
+  transfers to a season nobody has played. "The 2026 robot is 27 in wide" does not.
+- **The corpus is conditioned on it.** Every family — intent, CAD, binder, strategy — is
+  presented with the season block and its target derived from that season's numbers, so the
+  same request in two seasons has two different correct answers. The invariant the model can
+  learn is the derivation.
+- **~420 sampled sizing problems per corpus.** Frame budget, launch angle and exit velocity,
+  climb reach and hopper capacity, with the inputs drawn at random. There is no answer to
+  memorize; the method is the only thing that generalizes.
+- **The season's own mechanisms are held out of CAD training.** `CAD_HELD_OUT` now includes
+  the two 2026 hopper archetypes alongside the 2025 hold-outs. They still appear in
+  `design_intent`, so the model knows the names and has never seen the geometry.
+
+The last point is the measurement, and it is deliberately the hardest question the eval asks:
+`eval_cad_adapter.py` scores held-out mechanisms separately from trained ones. A model that
+memorized this season scores well on the trained set and collapses on the held-out one. The
+gap between those two numbers is the honest read on whether training on a season taught
+engineering or taught the season.
+
 ---
 
 ## 7. Phased roadmap

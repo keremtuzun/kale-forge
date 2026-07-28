@@ -283,6 +283,13 @@ class Choices:
         self.intake_drive = pick(["belt", "belt", "chain", "gear"])
         self.intake_supports = pick(["plate", "plate", "tube"])
         self.intake_hardstops = pick([True, True, False])
+        # Hopper construction. The floor takes the wear and the walls take the impact, so teams
+        # build them out of different things — a polycarb floor slides better and a plate floor
+        # stays flat, and the walls are bent polycarb or folded sheet depending on the shop.
+        self.hopper_floor = pick(["polycarb", "polycarb", "plate"])
+        self.hopper_walls = pick(["polycarb", "polycarb", "plate"])
+        self.hopper_drive = pick(["belt", "belt", "chain"])
+        self.hopper_agitator = pick([True, False])
         self.shooter_feeder = pick(["roller", "belt", "kicker"])
         self.shooter_hood_drive = pick(["servo", "rack", "fixed"])
         self.elevator_rigging = pick(["belt", "belt", "chain", "rope"])
@@ -570,6 +577,152 @@ def _intake(spec: dict[str, Any], c: Choices) -> dict[str, Any] | None:
                        "pivot revolute about the dead axle, limited by the hard stops"])
 
 
+def _hopper(spec: dict[str, Any], lane_x: float, c: Choices) -> dict[str, Any] | None:
+    """Bulk gamepiece storage and serialisation: floor, walls, driven wheels, exit lane.
+
+    A hopper is geometrically simple and mechanically fussy, and the geometry is where the
+    fussiness lives.  Three dimensions decide whether it works: how far the driven wheels
+    stand proud of the floor (too flush and pieces slip, too high and they climb over), how
+    wide the exit lane is (one piece plus clearance, never two), and how tall the wall is
+    relative to a piece (which sets both capacity and how much spills over the bump).
+    """
+    hp = spec.get("hopper") or {}
+    if not hp.get("included"):
+        return None
+    frame = spec["frame"]
+    ln = frame["length_in"]
+    width = hp.get("floor_width_in", 20.0)
+    depth = hp.get("floor_depth_in", 14.0)
+    wall_h = hp.get("wall_height_in", 10.0)
+    wheel_d = hp.get("wheel_diameter_in", 4.0)
+    proud = hp.get("wheel_proud_in", 0.5)
+    exit_w = hp.get("exit_lane_width_in", 6.5)
+    lanes = int(hp.get("lanes", 1))
+    count = max(3, int(hp.get("wheel_count", 4)))
+    mkey = hp.get("motor_key", "neo_550")
+    kind = hp.get("type", "")
+    rotating = "spindexer" in kind
+    features: list[dict[str, Any]] = []
+
+    # Floor. The driven wheels sit under it and stand `proud` above it, so the floor plane is
+    # the datum for the whole mechanism and everything else is dimensioned from it.
+    floor_y = 0.0
+    if c.hopper_floor == "polycarb":
+        features.append(polycarb("hopper floor", (width, 0.093, depth), _at(0, floor_y, 0)))
+    else:
+        features.append(plate("hopper floor", (width, 0.090, depth), _at(0, floor_y, 0), pockets=6,
+                              note="0.090 in 6061, slots for the driven wheels"))
+
+    # Walls. Three sides plus a funnel that narrows onto the exit lane; the fourth side is the
+    # exit itself. Bolting them to a plate frame rather than to the floor keeps the floor flat.
+    def wall(name: str, size: tuple[float, float, float], at: list[float],
+             rot: list[float] | None = None) -> dict[str, Any]:
+        if c.hopper_walls == "polycarb":
+            return polycarb(name, size, at, rot)
+        return plate(name, size, at, rot, mat="aluminium", pockets=2)
+
+    features.append(wall("hopper back wall", (width, wall_h, 0.093),
+                         _at(0, floor_y + wall_h / 2, depth / 2)))
+    for sx in (-1, 1):
+        features.append(wall(f"hopper {'left' if sx < 0 else 'right'} wall",
+                             (0.093, wall_h, depth), _at(sx * width / 2, floor_y + wall_h / 2, 0)))
+    # Funnel: two angled panels that turn the whole floor width into one exit lane. This is the
+    # part that decides whether the hopper serialises or bridges.
+    funnel_span = max((width - exit_w * lanes) / 2, 1.0)
+    for sx in (-1, 1):
+        features.append(wall(f"hopper {'left' if sx < 0 else 'right'} funnel",
+                             (funnel_span, wall_h * 0.75, 0.093),
+                             _at(sx * (exit_w * lanes / 2 + funnel_span / 2),
+                                 floor_y + wall_h * 0.4, -depth / 2 + 1.4),
+                             _rot(0, sx * 28, 0)))
+
+    # Driven wheels on one shaft across the floor, standing `proud` above it. On a spindexer
+    # the floor itself rotates and the wheels index the pieces off it; on a belt-floor hopper
+    # the same wheels drive a belt underneath.
+    shaft_y = floor_y - wheel_d / 2 + proud
+    features.append(shaft("hopper drive shaft", _HEX_BORE, width + 1.2,
+                          _at(0, shaft_y, -depth * 0.18), _rot(0, 0, 90)))
+    for sx in (-1, 1):
+        features.append(bearing("hopper shaft bearing", _at(sx * (width / 2 + 0.4), shaft_y, -depth * 0.18),
+                                _rot(0, 0, 90)))
+    for i in range(count):
+        x = -width / 2 + (i + 0.5) * (width / count)
+        features.append(wheel(f"index wheel {i + 1}", wheel_d, 0.9, _at(x, shaft_y, -depth * 0.18),
+                              _rot(0, 0, 90), kind="compliant", durometer="35A green compliant"))
+    if rotating:
+        # The rotating floor: one large disc on a centre bearing, driven at its rim.
+        disc_d = min(width, depth) * (1.35 if "oval" in kind else 1.0)
+        features.append(wheel("spindexer floor disc", disc_d, 0.19, _at(0, floor_y + 0.14, 0),
+                              kind="spindexer", durometer="0.19 in polycarb disc on a rim drive"))
+        features.append(bearing("spindexer centre bearing", _at(0, floor_y - 0.3, 0),
+                                bore=1.125, od=2.0, width=0.4))
+        features.append(gear("spindexer rim gear", 96, _at(0, floor_y - 0.55, 0), dp=20, face=0.35,
+                             bore=disc_d - 1.6, mat="anodised"))
+        features.append(gear("spindexer pinion", 16, _at(disc_d / 2 - 0.6, floor_y - 0.55, 0),
+                             dp=20, face=0.35, bore=0.375))
+    if c.hopper_agitator or hp.get("agitator"):
+        features.append(shaft("agitator shaft", 0.375, width * 0.8,
+                              _at(0, floor_y + wall_h * 0.62, depth * 0.12), _rot(0, 0, 90),
+                              form="round"))
+        for i in range(3):
+            features.append(polycarb(f"agitator paddle {i + 1}", (width * 0.6, 0.093, 2.2),
+                                     _at(0, floor_y + wall_h * 0.62, depth * 0.12),
+                                     _rot(0, 0, 60 * i)))
+
+    # Exit lane and gate. One piece wide, with a sensor that tells the code exactly one is
+    # staged — a timer here is how you end up feeding two and jamming the shooter.
+    for lane in range(lanes):
+        offset = (lane - (lanes - 1) / 2) * (exit_w + 1.0)
+        features.append(polycarb(f"exit lane {lane + 1} guide", (exit_w, wall_h * 0.6, 3.0),
+                                 _at(offset, floor_y + wall_h * 0.3, -depth / 2 - 1.5)))
+        features.append(wheel(f"exit lane {lane + 1} roller", 2.0, exit_w * 0.8,
+                              _at(offset, floor_y + 1.0, -depth / 2 - 2.4), _rot(0, 0, 90),
+                              kind="compliant", durometer="40A"))
+        features.append(_feat("sensor", f"lane {lane + 1} beam-break",
+                              _at(offset, floor_y + 1.6, -depth / 2 - 2.0),
+                              size=[0.5, 0.5, 0.5], kind="beam-break",
+                              note="one staged piece, sensed not timed"))
+        features.append(hardstop(f"lane {lane + 1} gate stop",
+                                 _at(offset + exit_w / 2, floor_y + 0.8, -depth / 2 - 2.4)))
+
+    # Power: gearbox outboard of the wall, one run to the index shaft.
+    drive_x = width / 2 + 0.9
+    features.append(gearbox("hopper gearbox", (2.0, 2.2, 1.2), _at(drive_x + 0.9, shaft_y + 1.6, depth * 0.1),
+                            ratio=hp.get("gear_reduction", "12:1"), stages=2))
+    for i in range(int(hp.get("motor_count", 1))):
+        features.append(motor("hopper motor", mkey,
+                              _at(drive_x + 2.4 + i * 2.2, shaft_y + 1.6, depth * 0.1), _rot(0, 0, 90)))
+    if c.hopper_drive == "chain":
+        features.append(sprocket("hopper driven sprocket", 24, _at(drive_x, shaft_y, -depth * 0.18), _rot(0, 0, 90)))
+        features.append(sprocket("hopper drive sprocket", 12, _at(drive_x, shaft_y + 1.6, depth * 0.1), _rot(0, 0, 90)))
+        features.append(belt("hopper drive run", _at(drive_x, shaft_y + 1.6, depth * 0.1),
+                             _at(drive_x, shaft_y, -depth * 0.18), 0.35, kind="#25 chain"))
+    else:
+        features.append(pulley("hopper driven pulley", 30, 0.45, _at(drive_x, shaft_y, -depth * 0.18), _rot(0, 0, 90)))
+        features.append(pulley("hopper drive pulley", 15, 0.45, _at(drive_x, shaft_y + 1.6, depth * 0.1), _rot(0, 0, 90)))
+        features.append(belt("hopper drive run", _at(drive_x, shaft_y + 1.6, depth * 0.1),
+                             _at(drive_x, shaft_y, -depth * 0.18), 0.45, kind="HTD 5 mm 15 mm belt"))
+    features.append(_feat("tensioner", f"{c.hopper_drive} tensioner",
+                          _at(drive_x + 0.7, shaft_y + 0.8, -depth * 0.04), dia=0.9, w=0.4,
+                          rot=_rot(0, 0, 90)))
+    # Structure under it all: two rails the floor and walls bolt to.
+    for sx in (-1, 1):
+        features.append(tube("hopper support rail", TUBE_1X1, depth + 1.0,
+                             _at(sx * (width / 2 - 0.6), floor_y - 0.8, 0), bolts=2.5))
+    features.append(plate("hopper access panel", (width * 0.6, 0.090, depth * 0.4),
+                          _at(0, floor_y + wall_h + 0.1, depth * 0.2), pockets=3,
+                          note="thumbscrewed — a jam clears without removing the shooter"))
+
+    bias = hp.get("position_bias", 0.42)
+    return _asm("hopper", "Hopper / indexer", "mechanism", features,
+                origin=_at(lane_x, 2.4, -ln / 2 + bias * ln),
+                note=kind,
+                mates=["support rails bolt to two crossmembers",
+                       "index shaft revolute in the wall bearings",
+                       "exit gate feeds the shooter one piece at a time"]
+                      + (["floor disc revolute about Y on the centre bearing"] if rotating else []))
+
+
 def _shooter(spec: dict[str, Any], lane_x: float, c: Choices) -> dict[str, Any] | None:
     """Flywheel shooter — staged barrel or classic hooded pair — on a real pivot."""
     sh = spec.get("shooter") or {}
@@ -665,6 +818,29 @@ def _shooter(spec: dict[str, Any], lane_x: float, c: Choices) -> dict[str, Any] 
                                   _rot(0, 0, 90), kind="compliant", durometer="35A"))
             features.append(motor("feeder motor", "neo_550", _at(width * 0.4, 3.1, 1.9), _rot(0, 0, 90)))
         features.append(polycarb("feeder guide", (width * 0.7, 0.093, 3.0), _at(0, 3.2, 1.6), _rot(-24, 0, 0)))
+        if sh.get("turreted"):
+            # A hooded shooter on a turret: one large-bore slew bearing carries the whole head,
+            # a ring gear drives it, and the energy chain is the part that actually takes the
+            # design time — it is modelled because if it is not modelled it is not packaged.
+            ring_bore = max(width * 0.45, 5.0)
+            features.append(bearing("turret slew bearing", _at(0, 0.9, 0),
+                                    bore=ring_bore, od=ring_bore + 1.4, width=0.5))
+            features.append(gear("turret ring gear", 120, _at(0, 1.4, 0), dp=20, face=0.45,
+                                 bore=ring_bore + 0.2, mat="anodised"))
+            features.append(gear("turret pinion", 14, _at(ring_bore / 2 + 1.2, 1.4, 0), dp=20,
+                                 face=0.45, bore=0.375))
+            features.append(motor("turret motor", "neo_550",
+                                  _at(ring_bore / 2 + 1.2, 3.4, 0), _rot(180, 0, 0)))
+            features.append(plate("turret plate", (ring_bore + 2.6, 0.250, ring_bore + 2.6),
+                                  _at(0, 1.9, 0), pockets=6,
+                                  note="everything above this rotates; keep the sweep inside the perimeter"))
+            for sz in (-1, 1):
+                features.append(hardstop("turret rotation stop",
+                                         _at(ring_bore / 2 + 0.4, 1.9, sz * (ring_bore / 2 + 0.4))))
+            features.append(_feat("chain_track", "turret energy chain",
+                                  _at(0, 0.55, ring_bore / 2 + 0.6),
+                                  size=[0.9, 0.7, ring_bore * 1.6], kind="energy chain",
+                                  note="constant-force spring keeps it tensioned through the sweep"))
     bias = sh.get("position_bias", 0.65)
     return _asm("shooter", "Shooter", "mechanism", features,
                 origin=_at(lane_x, 1.2, -ln / 2 + bias * ln),
@@ -956,11 +1132,18 @@ def _lanes(spec: dict[str, Any]) -> dict[str, float]:
     real robot instead of every mechanism stacked on the centreline."""
     w = spec["frame"]["width_in"]
     has = lambda key: bool((spec.get(key) or {}).get("included"))  # noqa: E731
-    lanes = {"elevator": 0.0, "shooter": 0.0, "manipulator": w * 0.22, "climber": -w * 0.26}
+    lanes = {"elevator": 0.0, "shooter": 0.0, "hopper": 0.0,
+             "manipulator": w * 0.22, "climber": -w * 0.26}
     if has("elevator") and has("shooter"):
         lanes["elevator"], lanes["shooter"] = -w * 0.10, w * 0.12
     if has("manipulator") and has("elevator"):
         lanes["manipulator"] = w * 0.30
+    if has("hopper"):
+        # A hopper wants the middle of the robot — it is the biggest single volume and every
+        # other mechanism connects to it. The shooter sits above and behind it, so they share
+        # the centreline rather than competing for it.
+        lanes["hopper"], lanes["shooter"] = 0.0, 0.0
+        lanes["climber"] = -w * 0.30
     return lanes
 
 
@@ -975,6 +1158,7 @@ def build_cad(spec: dict[str, Any]) -> dict[str, Any]:
     assemblies: list[dict[str, Any]] = [_chassis(spec, c)]
     assemblies += _drivetrain(spec, c)
     for asm in (_intake(spec, c),
+                _hopper(spec, lanes["hopper"], c),
                 _shooter(spec, lanes["shooter"], c),
                 _elevator(spec, lanes["elevator"], c),
                 _arm(spec, lanes["manipulator"], c),

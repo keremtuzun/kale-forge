@@ -5,11 +5,16 @@ Every example is derived from the SAME catalog the runtime uses
 on exactly the vocabulary, part numbers, ratios and design rules the Design Studio will hand
 it at inference time.  Training data and runtime knowledge cannot drift apart.
 
-Seven example families:
+Ten example families:
 
 * ``design_intent`` — the real inference task: a team request in, one schema-valid design
   intent JSON out.  This is the family that stops the model from answering every prompt with
   the same robot.
+* ``season_rules``  — the field and the construction rules as *derivations*: what the number
+  is, where it comes from, and what it forces the design to do.
+* ``strategy``      — game analysis: which archetype, and the scoring arithmetic behind it.
+* ``binder``        — technical-binder subsystem write-ups: requirement, options considered,
+  the calculation that chose between them, how it was validated, what is still open.
 * ``parts_qa``      — dimensioned facts about every catalog part.
 * ``electrical``    — channel, breaker and wire-gauge planning off the power budget.
 * ``technique``     — why a build technique exists and what it prevents.
@@ -19,6 +24,13 @@ Seven example families:
   naming a mechanism to describing the parts it is made of.
 * ``cad_qa``        — cut lists, travel, exit velocity, winch torque and joint geometry,
   every number computed from the same CAD tree rather than remembered.
+
+Every family is season-conditioned, and that is the point of this revision.  The same request
+in 2026 and in 2025 has to produce a different robot, because the perimeter budget, the goal
+height and the gamepiece are different — so the corpus presents the season alongside the
+request and the target answer is derived from that season's numbers.  A model trained this way
+learns "read the constraints, then design", which transfers to a season it has never seen; a
+model trained on one season's answers learns that season.
 
 No vendor prose, CAD, mesh or user data is copied. Published figures are restated as the
 nominal engineering facts they are, always with the verification caveat attached.
@@ -39,12 +51,27 @@ sys.path.insert(0, str(_REPO / "services" / "analysis"))
 
 from app.services import frc_parts  # noqa: E402
 from app.services.frc_cad import CAD_VERSION, SYSTEM_CAD  # noqa: E402
-from app.services.frc_robot_knowledge import PROFILES, REFERENCES, TECHNIQUES  # noqa: E402
+from app.services.frc_robot_knowledge import REFERENCES, TECHNIQUES  # noqa: E402
+from app.services.frc_season import (  # noqa: E402
+    SEASON_VERSION,
+    SELECTABLE,
+    SEASONS,
+    design_targets,
+    element,
+    frame_budget,
+    max_square_frame,
+    optimal_launch_angle,
+    prompt_block,
+    required_exit_fps,
+    scoring_math,
+    surface_speed_for_exit,
+)
 from app.services.security import fence_user_content  # noqa: E402
 from app.services.robot_spec import (  # noqa: E402
     ARM_TYPES,
     CLIMBER_TYPES,
     ELEVATOR_TYPES,
+    HOPPER_TYPES,
     INTAKE_TYPES,
     SHOOTER_TYPES,
     SYSTEM_DESIGN,
@@ -81,10 +108,10 @@ def _row(system: str, user: str, assistant: str, family: str, index: int) -> dic
 # 1. Design intent — the task the Design Studio actually calls
 # ─────────────────────────────────────────────────────────────────────────────
 _SEASON_WORDS = {
-    "2026-low-profile": ["2026", "REBUILT", "fuel"],
+    "2026-rebuilt": ["2026", "REBUILT", "fuel"],
     "2025-reefscape": ["2025", "REEFSCAPE", "coral and algae"],
-    "2024-note-shooter": ["2024", "CRESCENDO", "note"],
-    "reference-bare-swerve": ["off-season", "training", "reference"],
+    "2024-crescendo": ["2024", "CRESCENDO", "note"],
+    "offseason": ["off-season", "training", "reference"],
 }
 
 _ROLE_TEMPLATES = [
@@ -107,15 +134,27 @@ _EXPERIENCE = ["a rookie", "a second-year", "an experienced", "a resource-limite
 
 
 def _intent_example(rng: random.Random, index: int) -> dict[str, Any]:
-    profile_key = rng.choice(list(PROFILES))
-    profile = PROFILES[profile_key]
-    width = rng.choice([26, 27, 28, 28, 28, 29, 30])
-    length = width if rng.random() < 0.75 else rng.choice([26, 27, 28, 30])
+    # Seasons are sampled with the two selectable ones weighted up: those are what teams
+    # actually ask for, and the older ones are there so the model does not learn that a
+    # season word it has not seen means "ignore the season".
+    profile_key = rng.choice(["2026-rebuilt", "2026-rebuilt", "2026-rebuilt",
+                              "2025-reefscape", "2025-reefscape",
+                              "2024-crescendo", "offseason"])
+    season_data = SEASONS[profile_key]
+    # Frames are sampled across and *past* the season's budget on purpose: a third of the
+    # examples ask for a frame that does not fit, and the target has to be the resized one
+    # with the reason attached. Learning to say "that is over the budget, here is what fits"
+    # is worth more than learning any particular frame size.
+    width = rng.choice([24, 26, 26, 27, 27, 28, 28, 29, 30])
+    length = width if rng.random() < 0.75 else rng.choice([24, 26, 27, 28, 30])
+    budget = frame_budget(season_data, float(width), float(length))
+    width, length = budget["width_in"], budget["length_in"]
+    profile = {"default_subsystems": season_data["default_subsystems"]}
     season = rng.choice(_SEASON_WORDS[profile_key])
     goal = rng.choice(_GOALS)
     experience = rng.choice(_EXPERIENCE)
     prompt = rng.choice(_ROLE_TEMPLATES).format(
-        experience=experience, season=season, w=width, l=length, goal=goal)
+        experience=experience, season=season, w=f"{width:g}", l=f"{length:g}", goal=goal)
 
     subsystems = list(profile["default_subsystems"])
     if "climb" in goal and "climber" not in subsystems:
@@ -126,7 +165,14 @@ def _intent_example(rng: random.Random, index: int) -> dict[str, Any]:
         subsystems = subsystems[:2]
     if "from range" in goal and "shooter" not in subsystems:
         subsystems.append("shooter")
-    order = ("intake", "shooter", "elevator", "arm", "climber")
+    # A shooter that has to keep firing needs something feeding it, and a hopper with nothing
+    # to feed is dead weight. Tying them together is a rule the model should learn, not a
+    # coincidence in the data.
+    if "shooter" in subsystems and "hopper" not in subsystems and rng.random() < 0.6:
+        subsystems.append("hopper")
+    if "shooter" not in subsystems:
+        subsystems = [name for name in subsystems if name != "hopper"]
+    order = ("intake", "hopper", "shooter", "elevator", "arm", "climber")
     subsystems = [name for name in order if name in subsystems]
 
     drive = "swerve" if rng.random() < 0.78 else rng.choice(["west-coast", "swerve-ready", "tank"])
@@ -150,6 +196,7 @@ def _intent_example(rng: random.Random, index: int) -> dict[str, Any]:
         drive = "swerve"
 
     intake_type = rng.choice(INTAKE_TYPES)
+    hopper_type = rng.choice(HOPPER_TYPES)
     shooter_type = rng.choice(SHOOTER_TYPES)
     arm_type = rng.choice(ARM_TYPES)
     climber_type = rng.choice(CLIMBER_TYPES)
@@ -225,6 +272,72 @@ def _intent_example(rng: random.Random, index: int) -> dict[str, Any]:
         "packages around them.",
     ]))
 
+    # Season-derived notes. Each one is arithmetic off this season's own numbers, so the same
+    # sentence pattern produces a different — and correct — statement in a different year.
+    # This is the family's most important job: the reasoning is the constant, not the answer.
+    rules = season_data["rules"]
+    if budget["scaled"]:
+        notes.append(rng.choice([
+            f"The requested frame was over {season_data['label']}'s {rules['perimeter_in']:g} in "
+            f"perimeter budget ({rules['perimeter_rule']}); {width:g} × {length:g} in is the "
+            f"nearest legal frame with the same proportions.",
+            f"Resized to {width:g} × {length:g} in: {rules['perimeter_rule']} allows "
+            f"{rules['perimeter_in']:g} in of perimeter this season, so the frame as asked for "
+            f"would not pass inspection.",
+            f"Frame perimeter is a rule, not a preference — {rules['perimeter_in']:g} in in "
+            f"{season_data['label']} means at most {max_square_frame(season_data):g} in square.",
+        ]))
+    goal_el = element(season_data, "HUB") or element(season_data, "REEF")
+    if goal_el and "shooter" in subsystems and goal_el.get("opening_front_edge_in"):
+        rim = goal_el["opening_front_edge_in"]
+        release = rules["start_height_in"] * 0.72
+        design_range = goal_el.get("design_range_ft", 15.0)
+        angle = optimal_launch_angle(release, rim, design_range)
+        exit_fps = required_exit_fps(angle, release, rim, design_range)
+        notes.append(rng.choice([
+            f"The {goal_el['name']} opening sits at {rim:g} in, so from a ~{release:.0f} in "
+            f"release the cheapest {design_range:g} ft shot leaves at {angle:g}° and about "
+            f"{exit_fps:g} ft/s — size the flywheel from that, not from a target RPM.",
+            f"Shot sizing: {rim:g} in of goal height at {design_range:g} ft needs roughly "
+            f"{exit_fps:g} ft/s of exit velocity at {angle:g}°, which is "
+            f"{surface_speed_for_exit(exit_fps, counter_rotating=False):g} ft/s of surface "
+            f"speed on a single hooded wheel and half that with a counter-rotating pair.",
+            f"Aim the hood range around {angle:g}° — that is 45° + ½·atan(Δh/d) for a "
+            f"{rim:g} in goal at {design_range:g} ft, and it is the shot that needs the least "
+            f"flywheel energy.",
+        ]))
+    if "hopper" in subsystems:
+        gp = season_data["gamepiece"]
+        notes.append(rng.choice([
+            f"The hopper exit lane is one {gp['name']} wide — {gp['diameter_in']:g} in plus "
+            f"clearance — and gated on a beam-break, not a timer; two pieces arriving together "
+            f"is what jams a shooter.",
+            f"Bulk {gp['name']} handling is a serialisation problem: many lanes in, one lane "
+            f"out, with the index wheels standing about "
+            f"{gp['diameter_in'] * 0.085:.2f} in proud of the floor.",
+            f"Size the hopper by volume and derate hard — {gp['diameter_in']:g} in spheres pour "
+            f"at roughly 60% packing, and the real limit is what the exit clears without jamming.",
+        ]))
+    trench = element(season_data, "TRENCH")
+    if trench:
+        notes.append(rng.choice([
+            f"Decide the {trench['underpass_in'][1]:g} in trench question at architecture time: "
+            f"fitting under it is a whole-robot constraint, not a trim you apply in week five.",
+            f"If this robot is meant to use the trench, everything lives under "
+            f"{trench['underpass_in'][1]:g} in — hopper volume and shot angle both pay for it.",
+        ]))
+    tower = element(season_data, "TOWER")
+    if tower and "climber" in subsystems:
+        rungs = tower["rungs_in"]
+        notes.append(rng.choice([
+            f"Climb reach from a {rules['start_height_in']:g} in stowed height: L2 needs about "
+            f"{rungs['L2'] - rules['start_height_in']:.0f} in above the frame, L3 about "
+            f"{rungs['L3'] - rules['start_height_in']:.0f} in. The rungs are 18 in apart, so "
+            f"one more stage of travel buys one more level.",
+            f"Size the climber on the L3 rung at {rungs['L3']:g} in, then check it stows inside "
+            f"{rules['start_height_in']:g} in — the stowed check is the one that fails at inspection.",
+        ]))
+
     risks = [
         rng.choice([
             "Weight: every added subsystem is 8–18 lb — check the roll-up before detailing.",
@@ -263,18 +376,635 @@ def _intent_example(rng: random.Random, index: int) -> dict[str, Any]:
             "the roboRIO bus.",
         ]))
 
+    if rules["propulsion_motors"] < 6 and drive in {"west-coast", "tank"}:
+        risks.append(rng.choice([
+            f"{rules['propulsion_rule']} allows {rules['propulsion_motors']} propulsion motors "
+            f"this season — a six-motor drop-centre drivebase does not pass, so plan the "
+            f"gearboxes around {rules['propulsion_motors']}.",
+            f"Watch the motor count: {rules['propulsion_motors']} propulsion motors maximum, "
+            f"which rules out the traditional six-motor west-coast layout.",
+        ]))
+
     intent = {"subsystems": subsystems, "drive_type": drive, "intake_type": intake_type,
+              "hopper_type": hopper_type,
               "shooter_type": shooter_type, "arm_type": arm_type, "climber_type": climber_type,
               "elevator_architecture": elevator_arch, "elevator_stages": stages,
               "pneumatics": bool(rng.random() < 0.25),
-              "design_notes": notes[:5], "risks": risks[:4]}
+              "design_notes": notes[:6], "risks": risks[:4]}
 
-    stated = {"frame_in": [width, length], "drive_type": None, "subsystems_stated": {}}
-    # The vocabulary block comes from robot_spec so training and inference present the model
-    # with byte-identical options; it is the same function the Design Studio calls.
-    user = intent_user_message(prompt, stated)
+    stated = {"season": profile_key, "frame_in": [width, length], "drive_type": None,
+              "subsystems_stated": {}}
+    # The vocabulary block and the season block both come from the runtime modules, so training
+    # and inference present the model with byte-identical context; this is the same function
+    # the Design Studio calls.
+    user = intent_user_message(prompt, stated, profile_key)
     return _row(SYSTEM_DESIGN, user, json.dumps(intent, separators=(",", ":"), sort_keys=True),
                 "design_intent", index)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1b. Season rules — the field and the rulebook as derivations
+#
+# The temptation with a season is to write down its numbers and train on the list.  That
+# produces a model that recites 2026 and is useless in 2027.  Every answer here states the
+# figure, where it comes from, and *what it forces the design to do* — and the last part is
+# the transferable skill.  All of it is computed from `frc_season`, so the corpus and the
+# Design Studio can never disagree about how tall the goal is.
+# ─────────────────────────────────────────────────────────────────────────────
+_RULE_QUESTIONS = [
+    "What does {label} actually constrain about the robot?",
+    "We are starting {label}. What are the numbers that decide the architecture?",
+    "Give me the design constraints for {label} and where each one comes from.",
+    "What has to be true of a {label} robot before we cut anything?",
+]
+
+_FIELD_QUESTIONS = [
+    "How high is the {element} in {label}, and what does that mean for the mechanism?",
+    "Tell me about the {element} in {label} and how it sizes our design.",
+    "What do we need to know about the {element} this season?",
+]
+
+
+def _season_math_examples(rng: random.Random, start: int, count: int) -> list[dict[str, Any]]:
+    """Sampled sizing problems whose answers are worked, not recalled.
+
+    This is the family that carries the generalisation. Every other example teaches the model
+    facts about a season; these teach it the four calculations a season is *used for* —
+    perimeter budget, launch angle and exit velocity, climb reach, hopper capacity — with the
+    inputs sampled so no answer can be memorised. A model that has done two hundred of these
+    can do the two hundred and first for a game that does not exist yet.
+    """
+    rows: list[dict[str, Any]] = []
+    for offset in range(count):
+        key = rng.choice(SELECTABLE)
+        season = SEASONS[key]
+        rules = season["rules"]
+        kind = rng.choice(["frame", "shot", "climb", "hopper"])
+
+        if kind == "frame":
+            width = rng.choice([24, 25, 26, 27, 28, 29, 30, 31])
+            length = rng.choice([24, 26, 27, 28, 30, 32])
+            budget = frame_budget(season, float(width), float(length))
+            perimeter = 2 * (width + length)
+            question = (f"Is a {width} × {length} in frame legal in {season['label']}, and if "
+                        f"not what is?")
+            if budget["fits"]:
+                answer = (f"Yes. {width} × {length} in is {perimeter:g} in of perimeter against "
+                          f"{rules['perimeter_rule']}'s {rules['perimeter_in']:g} in budget, with "
+                          f"{rules['perimeter_in'] - perimeter:g} in to spare. The perimeter is "
+                          f"2 × (width + length), so you could go to "
+                          f"{max_square_frame(season):g} in square if you wanted the volume — "
+                          f"but a bigger frame is heavier and harder to defend, so spend the "
+                          f"budget on the dimension the mechanism actually needs.")
+            else:
+                answer = (f"No. {width} × {length} in is {perimeter:g} in of perimeter and "
+                          f"{rules['perimeter_rule']} allows {rules['perimeter_in']:g} in this "
+                          f"season, so it is {perimeter - rules['perimeter_in']:g} in over and "
+                          f"fails inspection. Scaling both sides to hold the proportions gives "
+                          f"{budget['width_in']:g} × {budget['length_in']:g} in "
+                          f"({budget['perimeter_in']:g} in). If the width matters more than the "
+                          f"length, keep {width} in and cut the length to "
+                          f"{rules['perimeter_in'] / 2 - width:g} in instead — the budget is a "
+                          f"sum, so you choose which dimension spends it.")
+
+        elif kind == "shot":
+            goal = element(season, "HUB") or element(season, "REEF")
+            rim = float(goal.get("opening_front_edge_in")
+                        or (goal.get("levels_in") or {}).get("L4") or 72.0)
+            release = float(rng.choice([14, 18, 20, 22, 24, 26, 28]))
+            distance = float(rng.choice([8, 10, 12, 15, 18, 20, 24, 28]))
+            angle = optimal_launch_angle(release, rim, distance)
+            exit_fps = required_exit_fps(angle, release, rim, distance)
+            single = surface_speed_for_exit(exit_fps, counter_rotating=False)
+            pair = surface_speed_for_exit(exit_fps, counter_rotating=True)
+            wheel_in = float(rng.choice([3, 4, 4, 5, 6]))
+            rpm = single * 12 * 60 / (3.141592653589793 * wheel_in)
+            question = (f"We want to score into the {goal.get('name', 'goal')} from {distance:g} "
+                        f"ft with a {release:g} in release height. What does the shooter need?")
+            answer = (
+                f"Work it back from the geometry. The opening is at {rim:g} in, so the ball has "
+                f"to gain {rim - release:g} in over {distance:g} ft.\n\n"
+                f"1. Cheapest launch angle is 45° + ½·atan(Δh/d) = **{angle:g}°**. That is the "
+                f"angle needing the least energy, so it is what the hood range should be centred on.\n"
+                f"2. At that angle the required exit velocity is **{exit_fps:g} ft/s**.\n"
+                f"3. Exit velocity is about half the flywheel surface speed for a piece squeezed "
+                f"between one wheel and a fixed hood, and close to the full surface speed for a "
+                f"counter-rotating pair. So you need **{single:g} ft/s** of surface speed with a "
+                f"single hooded wheel, or **{pair:g} ft/s** with a pair.\n"
+                f"4. On a {wheel_in:g} in wheel, {single:g} ft/s is about "
+                f"**{rpm:.0f} RPM** at the wheel — pick the reduction from your motor's free "
+                f"speed to land there with headroom, not at the ceiling.\n\n"
+                f"That is a vacuum trajectory: no drag, no Magnus. A foam ball loses real range "
+                f"to air, so treat it as the optimistic ceiling, build in headroom, and tune on "
+                f"the field.")
+
+        elif kind == "climb":
+            tower = element(season, "TOWER") or element(season, "CAGE")
+            stowed = float(rng.choice([24, 26, 28, 29, 30, 34, 38, 42]))
+            stowed = min(stowed, rules["start_height_in"])
+            if tower.get("rungs_in"):
+                rungs = tower["rungs_in"]
+                target_name = rng.choice(list(rungs))
+                target_h = rungs[target_name]
+                where = f"the {target_name} rung at {target_h:g} in"
+            else:
+                target_name = rng.choice(["shallow", "deep"])
+                target_h = tower.get(f"{target_name}_bottom_in", 30.0)
+                where = f"the {target_name} cage at {target_h:g} in"
+            reach = max(0.0, target_h - stowed)
+            weight = float(rng.choice([95, 100, 105, 110, 115]))
+            paths = rng.choice([1, 2, 2])
+            drum = rng.choice([1.0, 1.25, 1.5, 2.0])
+            tension = weight / paths
+            torque = tension * 4.4482 * (drum / 2 * 0.0254)
+            question = (f"Our robot stows at {stowed:g} in and weighs {weight:g} lb. Size the "
+                        f"climber for {where} in {season['label']}.")
+            answer = (
+                f"Reach first, then torque.\n\n"
+                f"1. {target_h:g} in target minus a {stowed:g} in stowed height is "
+                f"**{reach:g} in of extension** above the frame"
+                + (" — reachable without extending, so this is a drive-on rather than a lift."
+                   if reach <= 0 else ".") + "\n"
+                f"2. Rope tension is robot weight ÷ load paths = {weight:g} ÷ {paths} = "
+                f"**{tension:.1f} lbf**. Two paths halve the tension and stop the robot swinging "
+                f"on one point, which is what pulls a hook out.\n"
+                f"3. Drum torque is tension × drum radius = {tension:.1f} lbf × {drum / 2:g} in = "
+                f"**{torque:.2f} N·m**. The drum radius is a lever working against you: a bigger "
+                f"drum takes more rope and costs you reduction.\n"
+                f"4. Divide that by what the motors give at a safe duty point — not at stall — "
+                f"to get the reduction, then check the climb finishes inside the endgame window.\n\n"
+                f"Hold it mechanically. A ratchet on the drum carries the robot after the buzzer; "
+                f"motor brake mode stops holding the moment power cuts. And check the stowed "
+                f"height against {rules['height_rule']}'s {rules['start_height_in']:g} in with "
+                f"the real bumpers on — that is the check that fails at inspection.")
+
+        else:
+            gp = season["gamepiece"]
+            floor_w = float(rng.choice([16, 18, 20, 22, 24]))
+            floor_d = float(rng.choice([10, 12, 14, 16, 18]))
+            wall = float(rng.choice([8, 10, 12, 14]))
+            fill = wall * 0.8
+            piece_volume = 3.141592653589793 / 6 * gp["diameter_in"] ** 3
+            capacity = int(floor_w * floor_d * fill * 0.60 / piece_volume)
+            question = (f"How many {gp['name']} fit in a {floor_w:g} × {floor_d:g} in hopper "
+                        f"with {wall:g} in walls?")
+            answer = (
+                f"About **{capacity}** — and the number matters less than how you get it.\n\n"
+                f"1. Usable height is not the wall height. Nobody fills to the brim and driving "
+                f"throws the top layer out, so take {wall:g} × 0.8 = {fill:.1f} in.\n"
+                f"2. Usable volume is {floor_w:g} × {floor_d:g} × {fill:.1f} = "
+                f"{floor_w * floor_d * fill:.0f} in³.\n"
+                f"3. Randomly poured spheres pack at about 60%, not the 74% of a stacked lattice "
+                f"they will never form in a hopper. That is {floor_w * floor_d * fill * 0.6:.0f} in³ "
+                f"of gamepiece.\n"
+                f"4. One {gp['diameter_in']:g} in piece is π/6 × d³ = {piece_volume:.0f} in³, so "
+                f"{floor_w * floor_d * fill * 0.6:.0f} ÷ {piece_volume:.0f} ≈ **{capacity}**.\n\n"
+                f"Treat that as an upper bound. The real limit is almost always what the exit "
+                f"lane clears without jamming, not what the box holds — so build the exit first, "
+                f"measure throughput with the hopper full, and size the box to match.")
+
+        rows.append(_row(SYSTEM_KNOWLEDGE, question, answer, "season_rules", start + offset))
+    return rows
+
+
+def _season_rule_examples(rng: random.Random, start: int) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    index = start
+    for key in SELECTABLE + ["2024-crescendo"]:
+        season = SEASONS[key]
+        label = season["label"]
+        rules = season["rules"]
+
+        # The whole constraint set, as a derivation table.
+        targets = design_targets(season, robot_height_in=rules["start_height_in"])
+        lines = [f"{label}. {season['summary']}", ""]
+        lines += [f"- **{row['target']}: {row['value']}** (from {row['from']}). {row['means']}"
+                  for row in targets]
+        lines += ["", season["verify"]]
+        rows.append(_row(SYSTEM_KNOWLEDGE, rng.choice(_RULE_QUESTIONS).format(label=label),
+                         "\n".join(lines), "season_rules", index))
+        index += 1
+
+        # One example per field element, because a mechanism is sized against one element at
+        # a time and that is how the question arrives at a design review.
+        for item in season["field"]["elements"]:
+            detail: list[str] = [item["note"]]
+            if item.get("opening_front_edge_in"):
+                rim = item["opening_front_edge_in"]
+                release = rules["start_height_in"] * 0.72
+                for range_ft in (goal_range for goal_range in
+                                 (item.get("design_range_ft", 15.0), item.get("long_range_ft", 25.0))):
+                    angle = optimal_launch_angle(release, rim, range_ft)
+                    exit_fps = required_exit_fps(angle, release, rim, range_ft)
+                    detail.append(
+                        f"From a {release:.0f} in release, a {range_ft:g} ft shot is cheapest at "
+                        f"{angle:g}° and needs about {exit_fps:g} ft/s of exit velocity — "
+                        f"{surface_speed_for_exit(exit_fps, counter_rotating=False):g} ft/s of "
+                        f"surface speed on a single wheel against a fixed hood, or "
+                        f"{surface_speed_for_exit(exit_fps, counter_rotating=True):g} ft/s with a "
+                        f"counter-rotating pair.")
+                detail.append("Those are vacuum trajectories — no drag, no Magnus. Treat them as "
+                              "the optimistic ceiling and tune on the field.")
+            if item.get("rungs_in"):
+                rungs = item["rungs_in"]
+                detail.append("From a {:g} in stowed height the reach above the frame is ".format(
+                    rules["start_height_in"]) + ", ".join(
+                    f"{name} {max(0.0, height - rules['start_height_in']):.0f} in"
+                    for name, height in rungs.items()) + ".")
+            if item.get("levels_in"):
+                levels = item["levels_in"]
+                detail.append("Reach above the bellypan for each level is roughly " + ", ".join(
+                    f"{name} {height - 3:.0f} in" for name, height in levels.items())
+                    + " — the elevator has to deliver the tallest of those with the gamepiece held.")
+            if item.get("underpass_in"):
+                w, h = item["underpass_in"]
+                detail.append(f"Everything on a robot that uses it lives under {h:g} in and "
+                              f"within {w:g} in of width, including bumpers and any stowed mechanism.")
+            if item.get("ramp_deg"):
+                detail.append(f"Breakover matters more than ground clearance: a long wheelbase "
+                              f"lands its belly on a {item['size_in'][2]:g} in crest even with "
+                              f"clearance to spare. Check the diagonal.")
+            rows.append(_row(SYSTEM_KNOWLEDGE,
+                             rng.choice(_FIELD_QUESTIONS).format(element=item["name"], label=label),
+                             " ".join(detail) + f" {season['verify']}", "season_rules", index))
+            index += 1
+
+        # Scoring, as arithmetic rather than a table read aloud.
+        if season["scoring"]:
+            lines = [f"{label} scoring:"]
+            lines += [f"- {row['phase'].upper()}: {row['action']} — {row['points']} points"
+                      + (f" ({row['note']})" if row.get("note") else "")
+                      for row in season["scoring"]]
+            lines.append("")
+            lines.append("Ranking points: " + "; ".join(
+                f"{row['name']} {row['rp']} RP" + (f" at {row['threshold']}" if row.get("threshold") else "")
+                for row in season["ranking"]))
+            if scoring_math(season):
+                lines += ["", "What that means:"] + [f"- {item}" for item in scoring_math(season)]
+            rows.append(_row(SYSTEM_KNOWLEDGE,
+                             rng.choice([f"How does scoring work in {label}, and what is worth building for?",
+                                         f"Break down the {label} scoring table for us.",
+                                         f"What should we prioritise given the {label} point values?"]),
+                             "\n".join(lines), "season_rules", index))
+            index += 1
+
+        # Cross-season comparison: the single best defence against memorising one year.
+        for other_key in SELECTABLE:
+            if other_key == key:
+                continue
+            other = SEASONS[other_key]
+            diffs = []
+            for field, name, unit in (("perimeter_in", "frame perimeter", "in"),
+                                      ("start_height_in", "starting height", "in"),
+                                      ("extension_in", "extension allowance", "in"),
+                                      ("propulsion_motors", "propulsion motors", "")):
+                a, b = rules[field], other["rules"][field]
+                if a != b:
+                    diffs.append(f"{name} {a:g}{unit} → {b:g}{unit}")
+            if not diffs:
+                continue
+            answer = (
+                f"Do not carry the frame over. Moving from {label} to {other['label']} changes "
+                + "; ".join(diffs) + ". "
+                + (f"A {max_square_frame(season):g} in square frame was the largest legal one in "
+                   f"{label}; in {other['label']} it is {max_square_frame(other):g} in. "
+                   if rules["perimeter_in"] != other["rules"]["perimeter_in"] else "")
+                + f"The gamepiece changes too — {season['gamepiece']['name']} at "
+                f"{season['gamepiece']['diameter_in']:g} in versus "
+                f"{other['gamepiece']['name']} at {other['gamepiece']['diameter_in']:g} in — so "
+                f"the intake, the storage and the scoring mechanism are all different problems. "
+                f"What does transfer is the drivetrain, the electrical layout and the build "
+                f"techniques. {other['verify']}")
+            rows.append(_row(SYSTEM_KNOWLEDGE,
+                             rng.choice([
+                                 f"Can we reuse our {label} chassis for {other['label']}?",
+                                 f"What changes between {label} and {other['label']}?",
+                                 f"We built for {label}. What breaks if we build the same robot for "
+                                 f"{other['label']}?"]),
+                             answer, "season_rules", index))
+            index += 1
+    return rows
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1c. Strategy — archetype selection with the arithmetic that justifies it
+# ─────────────────────────────────────────────────────────────────────────────
+_STRATEGY_QUESTIONS = [
+    "We are {experience}. What should we build this season and why?",
+    "Talk us through the archetypes for {label}. We are {experience}.",
+    "{experience} team. Which robot archetype fits {label} best for us?",
+    "Help us pick a strategy for {label}. Context: we are {experience}.",
+]
+
+
+def _strategy_examples(rng: random.Random, start: int) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    index = start
+    for key in SELECTABLE:
+        season = SEASONS[key]
+        if not season["archetypes"]:
+            continue
+        for experience in _EXPERIENCE:
+            lines = [f"{season['label']}: {season['summary']}", "",
+                     "The archetypes worth considering:", ""]
+            for archetype in season["archetypes"]:
+                lines += [f"**{archetype['name']}** — {archetype['shape']}",
+                          f"- For: {archetype['why']}",
+                          f"- Against: {archetype['against']}", ""]
+            lines += ["The arithmetic behind the choice:", ""]
+            lines += [f"- {item}" for item in scoring_math(season)]
+            # The recommendation follows the constraint the team actually stated, which is the
+            # thing a strategy answer is for. Resource-limited teams get told to do less.
+            simple = any(word in experience for word in ("rookie", "resource-limited", "five-student"))
+            pick = season["archetypes"][-1 if simple else 0]
+            lines += ["", f"For {experience} team: **{pick['name']}**. "
+                          + ("Depth beats breadth when hours are the scarce resource — one "
+                             "mechanism that works every match is worth more than three that "
+                             "half-work, and it is the version you can actually finish, wire "
+                             "and practise with."
+                             if simple else
+                             "You have the hours to absorb the complexity, and the flexibility "
+                             "pays back across a whole event rather than in one match.")]
+            lines += ["", "Whatever you pick, decide it in week one and stop revisiting it. The "
+                          "cost of switching archetypes in week four is the season."]
+            rows.append(_row(SYSTEM_KNOWLEDGE,
+                             rng.choice(_STRATEGY_QUESTIONS).format(
+                                 label=season["label"], experience=experience),
+                             "\n".join(lines), "strategy", index))
+            index += 1
+    return rows
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1d. Technical binder — the format a design review actually wants
+#
+# A binder entry is not a description of a mechanism, it is an argument for it: here is the
+# requirement, here is what we considered, here is the number that decided it, here is how we
+# know it works, here is what is still open.  Training on that shape is what turns a model
+# that lists parts into one that justifies them — and the numbers come from the same spec the
+# Design Studio produces, so they are derived rather than asserted.
+# ─────────────────────────────────────────────────────────────────────────────
+_BINDER_QUESTIONS = [
+    "Write the technical binder entry for the {label} on this robot.",
+    "We need a design review write-up for the {label}. Requirement, options, calculation, validation, open risks.",
+    "Document the {label} the way a judge would want to read it.",
+    "Give me the binder page for the {label}: why this design, what decided it, how we validated it.",
+]
+
+_BINDER_OPTIONS: dict[str, list[str]] = {
+    "intake": ["a fixed under-bumper roller", "an over-the-bumper pivot", "a four-bar deploy"],
+    "hopper": ["a rotating-floor spindexer", "a belt-floor hopper", "a serpentine tunnel"],
+    "shooter": ["a fixed hooded shooter", "a turreted hooded shooter", "a staged barrel"],
+    "elevator": ["a single-stage lift", "a cascade tower", "a continuous tower"],
+    "manipulator": ["a single-segment arm", "a double-jointed arm", "a four-bar linkage"],
+    "climber": ["a single pivoting hook", "dual telescoping hooks", "a winch-driven carriage"],
+}
+
+
+def _binder_examples(rng: random.Random, start: int, requests: list[tuple[str, str]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    index = start
+    for request, season_key in requests:
+        spec = build_robot_spec(request, use_model=False, season=season_key)
+        season = SEASONS[spec["season"]["key"]]
+        for block_key, label in (("intake", "intake"), ("hopper", "hopper"), ("shooter", "shooter"),
+                                 ("elevator", "elevator"), ("manipulator", "arm"),
+                                 ("climber", "climber")):
+            block = spec.get(block_key) or {}
+            if not block.get("included"):
+                continue
+            options = _BINDER_OPTIONS.get(block_key, [])
+            lines = [f"## {label.title()} — {block.get('type', block.get('architecture', ''))}", ""]
+
+            # Requirement: what the season asks this subsystem to do.
+            requirement = _binder_requirement(block_key, spec, season)
+            lines += [f"**Requirement.** {requirement}", ""]
+
+            # Options: what was on the table and why the others lost.
+            if options:
+                lines += [f"**Options considered.** {', '.join(options)}. "
+                          + rng.choice([
+                              "The choice below is the one whose failure mode we can live with.",
+                              "All three are buildable; the deciding factor is the calculation "
+                              "that follows, not preference.",
+                              "We picked on the number below, not on what looked impressive.",
+                          ]), ""]
+
+            # Calculation: derived from the spec, never asserted.
+            lines += ["**Calculation.**"] + [f"- {item}" for item in
+                                             _binder_calculation(block_key, spec, season)] + [""]
+
+            # Validation and risks.
+            lines += ["**Validation.** " + _binder_validation(block_key, rng), ""]
+            lines += ["**Open risks.**"] + [f"- {item}" for item in _binder_risks(block_key, spec)]
+            lines += ["", f"Every dimension above is concept geometry sized against the "
+                          f"{season['label']} figures. Confirm each COTS part against its vendor "
+                          f"drawing and each constraint against the current manual before "
+                          f"fabrication."]
+            user = (rng.choice(_BINDER_QUESTIONS).format(label=label)
+                    + f"\n\nSeason: {season['label']}\n\nRobot:\n" + _fenced(request))
+            rows.append(_row(SYSTEM_KNOWLEDGE, user, "\n".join(lines), "binder", index))
+            index += 1
+    return rows
+
+
+def _binder_requirement(key: str, spec: dict[str, Any], season: dict[str, Any]) -> str:
+    gp = season["gamepiece"]
+    rules = season["rules"]
+    if key == "intake":
+        return (f"Acquire {gp['name']} from the floor at driving speed without stopping. "
+                f"{gp['handling']} The roller has to reach past the bumper and out-run the "
+                f"drivebase's approach speed, and deployed it may not exceed the "
+                f"{rules['extension_in']:g} in extension allowance ({rules['extension_rule']}).")
+    if key == "hopper":
+        return (f"Hold enough {gp['name']} to be worth a trip across the field, and deliver them "
+                f"one at a time to the shooter at a rate the shooter can absorb. Bulk storage is "
+                f"a serialisation problem: the mechanism has to turn an unordered pile into a "
+                f"single ordered lane, and stay un-jammed while the robot crosses obstacles.")
+    if key == "shooter":
+        goal = element(season, "HUB") or element(season, "REEF")
+        height = (goal.get("opening_front_edge_in")
+                  or (goal.get("levels_in") or {}).get("L4") or 0)
+        return (f"Deliver {gp['name']} into the {goal.get('name', 'goal')} at "
+                f"{height:g} in from a useful working distance, repeatably, and recover fast "
+                f"enough between shots that the cycle rate is set by the hopper rather than by "
+                f"the flywheel.")
+    if key == "elevator":
+        reef = element(season, "REEF")
+        top = max((reef.get("levels_in") or {}).values(), default=0)
+        return (f"Lift the end effector to {top:g} in with a {gp['name']} held, and return to "
+                f"the collection height fast enough to keep cycling. It has to stow inside the "
+                f"{rules['start_height_in']:g} in starting height.")
+    if key == "manipulator":
+        return (f"Present the {gp['name']} at the scoring geometry with the arm's own weight "
+                f"and the payload cantilevered, holding position without drift. The worst case "
+                f"is holding horizontal at full extension, not moving.")
+    if key == "climber":
+        tower = element(season, "TOWER") or element(season, "CAGE")
+        if tower.get("rungs_in"):
+            target = max(tower["rungs_in"].values())
+            where = f"the {max(tower['rungs_in'], key=lambda k: tower['rungs_in'][k])} rung at {target:g} in"
+        else:
+            target = tower.get("deep_bottom_in", 30.0)
+            where = f"the deep cage at {target:g} in"
+        return (f"Lift the whole robot onto {where} inside the endgame window, hold it after "
+                f"power cuts at the buzzer, and stow inside the {rules['start_height_in']:g} in "
+                f"starting height before the match.")
+    return "Perform its function within the season's envelope and weight budget."
+
+
+def _binder_calculation(key: str, spec: dict[str, Any], season: dict[str, Any]) -> list[str]:
+    block = spec.get(key) or {}
+    if key == "intake":
+        return [f"Roller surface speed = free RPM ÷ reduction × π × diameter = "
+                f"{block['roller_surface_speed_fps']:g} ft/s off a {block['motor']} through "
+                f"{block['gear_reduction']} on a {block['roller_diameter_in']:g} in roller. That "
+                f"has to exceed the approach speed or the intake pushes the piece away.",
+                f"Compression is set by the {block['roller_center_distance_in']:g} in centre "
+                f"distance, giving {block['compression_in']:g} in of squish on "
+                f"{block['compliant_wheel']} — a dimension cut into the plates, not a feel.",
+                f"{block['width_in']:g} in of intake width across "
+                f"{block['roller_count']} roller{'s' if block['roller_count'] > 1 else ''}, "
+                f"powered by {block['power_path']}."]
+    if key == "hopper":
+        return [f"Capacity = floor area × 80% of wall height × 60% random-pour packing ÷ one "
+                f"gamepiece volume = {block['floor_width_in']:g} × {block['floor_depth_in']:g} × "
+                f"{block['wall_height_in'] * 0.8:.1f} in at 60% ÷ a "
+                f"{block['gamepiece_diameter_in']:g} in sphere ≈ "
+                f"**{block['capacity_estimate']} pieces**.",
+                f"Feed rate ≈ {block['feed_rate_per_s']:g} per second from "
+                f"{block['wheel_count']} × {block['wheel_diameter_in']:g} in index wheels through "
+                f"{block['gear_reduction']} off a {block['motor']}.",
+                f"Exit lane is {block['exit_lane_width_in']:g} in — one "
+                f"{block['gamepiece_diameter_in']:g} in piece plus clearance, never two.",
+                f"Index wheels stand {block['wheel_proud_in']:g} in proud of the floor: flush "
+                f"and the piece rides the floor and slips, higher and it climbs over."]
+    if key == "shooter":
+        shot = block.get("shot") or {}
+        lines = [f"Surface speed = {block['motor']} free RPM ÷ {block['gear_reduction']} × π × "
+                 f"{block['flywheel_diameter_in']:g} in = "
+                 f"{block['flywheel_surface_speed_fps']:g} ft/s.",
+                 f"Exit velocity is "
+                 + ("the full surface speed with counter-rotating stages"
+                    if block.get("stacked") else
+                    "about half the surface speed — the piece leaves at the mean of a moving "
+                    "wheel and a stationary hood")
+                 + f", so {block['exit_velocity_fps']:g} ft/s.",
+                 f"{block['flywheel_mass_lb']:g} lb of flywheel gives roughly "
+                 f"{block['spinup_time_s']:g} s of recovery between shots; recovery time, not "
+                 f"peak RPM, sets the cycle rate."]
+        if shot:
+            lines.append(
+                f"Required: a {shot['design_range_ft']:g} ft shot into a "
+                f"{shot['target_height_in']:g} in opening from a "
+                f"{shot['release_height_in']:g} in release is cheapest at "
+                f"{shot['optimal_angle_deg']:g}° and needs {shot['required_exit_fps']:g} ft/s. "
+                + ("This design clears it."
+                   if shot["makes_design_range"] else
+                   "This design does not clear it — raise the surface speed or lower the reduction."))
+        return lines
+    if key == "elevator":
+        return [f"{block['stages']} stages × {block['stage_travel_in']:g} in of stage travel = "
+                f"{block['travel_in']:g} in at the carriage, moving "
+                f"{block['carriage_speed_multiple']}× the drum payout.",
+                f"{block['stage_overlap_in']:g} in of overlap remains at full extension — that "
+                f"overlap, with a bearing block at each end of it, is the only thing resisting "
+                f"the tip moment.",
+                f"Rigged in {block['rigging']} off a {block['drum_diameter_in']:g} in drum "
+                f"through {block['reduction']}, sized on holding torque at full extension rather "
+                f"than free speed."]
+    if key == "manipulator":
+        return [f"Holding torque at full extension ≈ {block['holding_torque_nm']:g} N·m, which "
+                f"is what the {block['reduction']} reduction is sized on.",
+                f"{block['reach_in']:g} in of reach in {block['segments']} segment"
+                f"{'s' if block['segments'] > 1 else ''} "
+                f"({', '.join(f'{v:g} in' for v in block['segment_lengths_in'])}) on a "
+                f"{block['shaft']} dead axle in double shear.",
+                f"Sweep {block['shoulder_pivot_deg'][0]}–{block['shoulder_pivot_deg'][1]}° with "
+                f"metal hard stops just outside the software limits."]
+    if key == "climber":
+        return [f"Rope tension = robot weight ÷ load paths = {block['lift_load_lb']:g} lb ÷ "
+                f"{block['load_paths']} = {block['rope_tension_lbf']:g} lbf.",
+                f"Drum torque = tension × drum radius = {block['rope_tension_lbf']:g} lbf × "
+                f"{block['winch_drum_diameter_in'] / 2:g} in = {block['drum_torque_nm']:g} N·m, "
+                f"which is why the winch runs {block['reduction']} off "
+                f"{block['motor_count']}× {block['motor']}.",
+                f"{block['travel_in']:g} in of extension from a "
+                f"{block['stowed_height_in']:g} in stowed height, held by {block['ratchet']} "
+                f"rather than motor brake mode — brake mode stops holding when power cuts."]
+    return []
+
+
+def _binder_validation(key: str, rng: random.Random) -> str:
+    return {
+        "intake": rng.choice([
+            "Bench rig at the design compression, then floor tests at full drive speed in both "
+            "directions. Count acquisitions out of fifty, not out of five.",
+            "Measure compression with feeler stock rather than by eye, then run pickup trials at "
+            "the fastest approach the drivers actually use.",
+        ]),
+        "hopper": rng.choice([
+            "Fill it to capacity and drive the real field obstacles — throughput measured with a "
+            "half-empty hopper is fiction, and the bump is what packs it solid.",
+            "Count pieces per second out of the exit gate with the hopper full, then repeat after "
+            "driving over the obstacle, which is when a bridge forms.",
+        ]),
+        "shooter": rng.choice([
+            "Shoot groups of ten at each of three distances, logging bus voltage and the "
+            "at-speed flag. Consistency between shots matters more than any single shot.",
+            "Measure recovery time between shots with a full feed rather than trusting the "
+            "setpoint, and re-tune with worn gamepieces — foam compresses more as it ages.",
+        ]),
+        "elevator": rng.choice([
+            "Walk every stage through by hand before the first powered run, then run to both "
+            "limits under current limit and check the overlap at full extension.",
+            "Verify the rigging stage by stage unpowered — a cascade a stage out of sync tears "
+            "itself apart the first time it is driven.",
+        ]),
+        "manipulator": rng.choice([
+            "Hold horizontal at full extension with the payload and measure the deflection and "
+            "the holding current. Both should be boring.",
+            "Cycle the full sweep two hundred times with the payload, checking for backlash "
+            "growth at the shoulder — that is where rounded hex shows up first.",
+        ]),
+        "climber": rng.choice([
+            "Pull-test the engagement at twice the expected load before trusting it at the "
+            "buzzer, then climb with the robot at competition weight and cut power at the top.",
+            "Climb the real geometry, hold for thirty seconds with the motors disabled, and "
+            "confirm the ratchet — not brake mode — is what is carrying the robot.",
+        ]),
+    }.get(key, "Test it at competition weight against the real field geometry.")
+
+
+def _binder_risks(key: str, spec: dict[str, Any]) -> list[str]:
+    common = ["Mass: this subsystem is in the roll-up as an estimate. Weigh the built article.",
+              "Harness routing was planned with the mechanism; verify service loops at every "
+              "moving joint before the first event."]
+    specific = {
+        "intake": ["Compliant wheels wear and change compression across an event — keep spares "
+                   "and re-measure between days.",
+                   "The deployed arm is the most-hit part of the robot; the pivot and its hard "
+                   "stops are the first things to inspect after a match."],
+        "hopper": ["Jamming is the failure mode, and it happens under load in a match, not on "
+                   "the bench. The access panel exists because of that.",
+                   "Capacity is volumetric and optimistic; the exit lane is the real limit."],
+        "shooter": ["Range is computed without drag, so real range is shorter. Treat the number "
+                    "as a ceiling.",
+                    "Battery sag between shots moves the setpoint; gate the feeder on a measured "
+                    "at-speed condition, never a timer."],
+        "elevator": ["Slop multiplies at the carriage; preload the bearing blocks and re-check "
+                     "after the first competition day.",
+                     "Extension has to be re-checked against the current manual and team updates."],
+        "manipulator": ["Reversing shock load rounds hex. Watch the shoulder for backlash growth.",
+                        "Software limits fail with a dead encoder; the metal stops are what "
+                        "actually protect the mechanism."],
+        "climber": ["A hook that binds on entry in the last ten seconds costs the climb; test "
+                    "engagement tired and in a hurry, not carefully.",
+                    "The stowed height is an inspection item — check it with the real bumpers on."],
+    }
+    rule_fails = [f"{row['check']} currently fails {row['rule']}: {row['detail']}. {row['fix']}"
+                  for row in spec.get("rule_check", []) if not row["ok"]]
+    return specific.get(key, []) + common[:1] + rule_fails
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -565,29 +1295,35 @@ _CAD_PROMPTS = [
     "What parts make up the {label}, and where does each one sit?",
 ]
 
-_CAD_REQUESTS = [
-    "28x28 REEFSCAPE robot, three-stage belt-rigged cascade tower, coaxial slapdown intake, "
-    "wristed carriage arm and a deep climb.",
-    "27 inch 2026 robot on MK4n modules with a dual-roller over-bumper intake, a turreted dual "
-    "flywheel hooded shooter and dual telescoping winch hooks.",
-    "Rookie team, 28 inch frame, ground-to-feeder tunnel intake and a two-stage continuous "
-    "elevator. Keep it simple.",
-    "30x28 CRESCENDO robot, staged accelerator-and-flywheel shooter on Krakens, four-bar "
-    "over-bumper intake, single pivoting hook climber.",
-    "26x26 low-profile robot with a horizontal series-roller intake, a double-jointed arm and "
-    "a chain-rigged continuous tower.",
-    "Experienced team, 28x28 on MK5i modules. Variable-hood flywheel shooter, active floor "
-    "sweeper with indexer, winch-driven carriage climb.",
-    "29 inch robot, telescoping box elevator with a 3 stage lift, pivoting compliant-wheel "
-    "intake and a four-bar linkage arm.",
-    "28x28 swerve robot, fixed-angle flywheel shooter, under-bumper roller intake, no climber.",
-    "Just an MK4i swerve module on a Kraken X60 at L2.",
-    "30x30 west-coast drivebase on six Krakens with a single flywheel backspin shooter.",
+# Each request carries the season it belongs to, so the CAD families are conditioned the same
+# way the Design Studio is. The pairing matters: a 27 in frame is a 2026 answer and a 28 in
+# frame is a 2025 one, and a corpus that mixes them teaches the model that frame size is noise.
+_CAD_REQUESTS: list[tuple[str, str]] = [
+    ("28x28 REEFSCAPE robot, three-stage belt-rigged cascade tower, coaxial slapdown intake, "
+     "wristed carriage arm and a deep climb.", "2025-reefscape"),
+    ("27 inch REBUILT robot on MK4n modules with a dual-roller over-bumper intake, a circular "
+     "spindexer and a turreted dual flywheel hooded shooter, plus dual telescoping winch hooks.",
+     "2026-rebuilt"),
+    ("Rookie team, 28 inch frame, ground-to-feeder tunnel intake and a two-stage continuous "
+     "elevator. Keep it simple.", "2025-reefscape"),
+    ("30x28 CRESCENDO robot, staged accelerator-and-flywheel shooter on Krakens, four-bar "
+     "over-bumper intake, single pivoting hook climber.", "2024-crescendo"),
+    ("26x26 low-profile robot with a horizontal series-roller intake, a belt-floor hopper and "
+     "a fixed-angle flywheel shooter that fits under the trench.", "2026-rebuilt"),
+    ("Experienced team, 28x28 on MK5i modules. Variable-hood flywheel shooter, active floor "
+     "sweeper with indexer, winch-driven carriage climb.", "2025-reefscape"),
+    ("29 inch robot, telescoping box elevator with a 3 stage lift, pivoting compliant-wheel "
+     "intake and a four-bar linkage arm.", "2025-reefscape"),
+    ("27x27 swerve robot, funnel-to-tower hopper, single flywheel backspin shooter, "
+     "under-bumper roller intake, no climber.", "2026-rebuilt"),
+    ("Just an MK4i swerve module on a Kraken X60 at L2.", "offseason"),
+    ("26x29 west-coast drivebase on four Krakens with a twin-lane belt hopper feeding two "
+     "fixed hooded shooters.", "2026-rebuilt"),
 ]
 
-_CAD_LABELS = {"intake": "intake", "shooter": "shooter", "elevator": "elevator",
-               "manipulator": "arm", "climber": "climber", "chassis": "chassis",
-               "swerve_0": "swerve module", "drivetrain": "drivetrain",
+_CAD_LABELS = {"intake": "intake", "hopper": "hopper", "shooter": "shooter",
+               "elevator": "elevator", "manipulator": "arm", "climber": "climber",
+               "chassis": "chassis", "swerve_0": "swerve module", "drivetrain": "drivetrain",
                "electrical": "control system"}
 
 
@@ -595,12 +1331,18 @@ _CAD_LABELS = {"intake": "intake", "shooter": "shooter", "elevator": "elevator",
 # anyway: if the model can only build what it was shown, it memorised; if it can build these,
 # it learned how a mechanism goes together. Nothing stops these appearing in `design_intent`
 # — the model still has to know the names, it just never sees their geometry.
+#
+# The 2026 mechanisms are held out on the same principle and for a sharper reason: the point of
+# training on this season is not to reproduce this season's robots. A model that can build a
+# serpentine tunnel indexer it was never shown has learned what an indexer *is*.
 CAD_HELD_OUT = {
     "ground-to-feeder tunnel intake",
     "variable-hood flywheel shooter",
     "telescoping box",
     "four-bar linkage arm",
     "winch-driven carriage climb",
+    "serpentine tunnel indexer",
+    "paddle-wheel agitator hopper",
 }
 
 _FRAMES = [(24, 24), (26, 26), (26, 30), (27, 27), (28, 24), (28, 28), (28, 30), (28, 32),
@@ -614,28 +1356,41 @@ _TEAM_VOICE = [
 ]
 
 
-def _varied_cad_requests(rng: random.Random, count: int) -> list[str]:
-    """Sample many genuinely different robots.
+def _legal_frame(season_key: str, width: float, length: float) -> tuple[float, float]:
+    """A frame that fits the season, so no CAD target is built on an illegal chassis."""
+    budget = frame_budget(SEASONS[season_key], float(width), float(length))
+    return budget["width_in"], budget["length_in"]
+
+
+def _varied_cad_requests(rng: random.Random, count: int) -> list[tuple[str, str]]:
+    """Sample many genuinely different robots, each paired with a season.
 
     Variety here is the whole point. A corpus built from one frame size and one mechanism
     combination teaches a model that a chassis *is* a fixed list of parts. Sampling frames,
     drives and mechanism mixes means the structure of the answer has to follow the request.
+    Sampling the season on top of that means it has to follow the constraints too.
     """
     intakes = [t for t in INTAKE_TYPES if t not in CAD_HELD_OUT]
+    hoppers = [t for t in HOPPER_TYPES if t not in CAD_HELD_OUT]
     shooters = [t for t in SHOOTER_TYPES if t not in CAD_HELD_OUT]
     elevators = [t for t in ELEVATOR_TYPES if t not in CAD_HELD_OUT]
     arms = [t for t in ARM_TYPES if t not in CAD_HELD_OUT]
     climbers = [t for t in CLIMBER_TYPES if t not in CAD_HELD_OUT]
-    requests: list[str] = []
+    requests: list[tuple[str, str]] = []
     for _ in range(count):
-        width, length = rng.choice(_FRAMES)
+        season_key = rng.choice(["2026-rebuilt", "2026-rebuilt", "2025-reefscape",
+                                 "2025-reefscape", "offseason"])
+        width, length = _legal_frame(season_key, *rng.choice(_FRAMES))
         drive = rng.choice(["swerve", "swerve", "swerve", "MK4i swerve", "MK4n swerve",
                             "MK5i swerve", "west-coast", "tank"])
         mechs: list[str] = []
         if rng.random() < 0.85:
             mechs.append(f"a {rng.choice(intakes)}")
-        if rng.random() < 0.55:
+        shoots = rng.random() < 0.55
+        if shoots:
             mechs.append(f"a {rng.choice(shooters)}")
+            if rng.random() < 0.7:
+                mechs.append(f"a {rng.choice(hoppers)}")
         if rng.random() < 0.55:
             mechs.append(f"a {rng.randint(1, 3)} stage {rng.choice(elevators)} elevator")
         if rng.random() < 0.40:
@@ -645,12 +1400,12 @@ def _varied_cad_requests(rng: random.Random, count: int) -> list[str]:
         if not mechs:
             mechs.append("a drivebase only")
         joined = ", ".join(mechs[:-1]) + (" and " + mechs[-1] if len(mechs) > 1 else mechs[0])
-        requests.append(rng.choice(_TEAM_VOICE).format(
-            w=width, l=length, drive=drive, mechs=joined))
+        requests.append((rng.choice(_TEAM_VOICE).format(
+            w=f"{width:g}", l=f"{length:g}", drive=drive, mechs=joined), season_key))
     return requests
 
 
-def _typed_cad_requests(rng: random.Random) -> list[str]:
+def _typed_cad_requests(rng: random.Random) -> list[tuple[str, str]]:
     """Cover every enumerated mechanism type at least once.
 
     The hand-written requests above read like real team asks but only touch a handful of the
@@ -658,19 +1413,20 @@ def _typed_cad_requests(rng: random.Random) -> list[str]:
     named type — that mapping is what stops a "ground-to-feeder tunnel intake" from being
     modelled as whatever intake the model saw most often.
     """
-    requests: list[str] = []
-    frames = [26, 27, 28, 28, 29, 30]
-    for options, phrase in ((INTAKE_TYPES, "{} intake"), (SHOOTER_TYPES, "{}"),
+    requests: list[tuple[str, str]] = []
+    for options, phrase in ((INTAKE_TYPES, "{} intake"), (HOPPER_TYPES, "{}"),
+                            (SHOOTER_TYPES, "{}"),
                             (ELEVATOR_TYPES, "{} elevator"), (ARM_TYPES, "{}"),
                             (CLIMBER_TYPES, "{}")):
         for option in options:
             if option in CAD_HELD_OUT:
                 continue
-            width = rng.choice(frames)
+            season_key = rng.choice(["2026-rebuilt", "2025-reefscape", "offseason"])
+            width, _ = _legal_frame(season_key, rng.choice([26, 27, 28, 29, 30]),
+                                    rng.choice([26, 27, 28, 29, 30]))
             mechanism = phrase.format(option).replace("intake intake", "intake")
-            requests.append(
-                f"{width}x{width} swerve robot built around a {mechanism}. "
-                f"Model it at part level.")
+            requests.append((f"{width:g}x{width:g} swerve robot built around a {mechanism}. "
+                             f"Model it at part level.", season_key))
     return requests
 
 
@@ -693,28 +1449,29 @@ def _cad_geometry_examples(rng: random.Random, start: int, count: int,
     """
     rows: list[dict[str, Any]] = []
     requests = _CAD_REQUESTS + _typed_cad_requests(rng) + _varied_cad_requests(rng, 260)
-    pairs: list[tuple[str, dict[str, Any]]] = []
-    for request in requests:
-        spec = build_robot_spec(request, use_model=False)
+    pairs: list[tuple[str, str, dict[str, Any]]] = []
+    for request, season_key in requests:
+        spec = build_robot_spec(request, use_model=False, season=season_key)
         for assembly in spec["cad"]["assemblies"]:
             if assembly["id"] in _CAD_LABELS and assembly["features"]:
-                pairs.append((request, assembly))
+                pairs.append((request, season_key, assembly))
     rng.shuffle(pairs)
 
     seen: dict[tuple[Any, ...], int] = {}
-    kept: list[tuple[str, dict[str, Any]]] = []
-    for request, assembly in pairs:
+    kept: list[tuple[str, str, dict[str, Any]]] = []
+    for request, season_key, assembly in pairs:
         signature = _structure_signature(assembly)
         if seen.get(signature, 0) >= per_structure:
             continue
         seen[signature] = seen.get(signature, 0) + 1
-        kept.append((request, assembly))
+        kept.append((request, season_key, assembly))
         if len(kept) >= count:
             break
 
-    for offset, (request, assembly) in enumerate(kept):
+    for offset, (request, season_key, assembly) in enumerate(kept):
         label = _CAD_LABELS[assembly["id"]]
-        user = (rng.choice(_CAD_PROMPTS).format(label=label) + "\n\nRobot:\n"
+        user = (rng.choice(_CAD_PROMPTS).format(label=label)
+                + f"\n\nSeason: {SEASONS[season_key]['label']}\n\nRobot:\n"
                 + _fenced(request))
         answer = json.dumps(assembly, separators=(",", ":"), sort_keys=False)
         rows.append(_row(SYSTEM_CAD, user, answer, "cad_geometry", start + offset))
@@ -729,8 +1486,8 @@ def _cad_qa_examples(rng: random.Random, start: int) -> list[dict[str, Any]]:
     """
     rows: list[dict[str, Any]] = []
     index = start
-    for request in _CAD_REQUESTS + _typed_cad_requests(rng):
-        spec = build_robot_spec(request, use_model=False)
+    for request, season_key in _CAD_REQUESTS + _typed_cad_requests(rng):
+        spec = build_robot_spec(request, use_model=False, season=season_key)
         cad, frame = spec["cad"], spec["frame"]
 
         cuts = spec["cut_list"][:6]
@@ -848,6 +1605,47 @@ def _cad_qa_examples(rng: random.Random, start: int) -> list[dict[str, Any]]:
                              f"Walk me through the intake geometry.\n\n{_fenced(request)}",
                              answer, "cad_qa", index))
             index += 1
+
+        hopper = spec.get("hopper") or {}
+        if hopper.get("included"):
+            answer = (
+                f"{hopper['type']}: a {hopper['floor_width_in']:g} × "
+                f"{hopper['floor_depth_in']:g} in floor with {hopper['wall_height_in']:g} in "
+                f"walls, funnelled into {hopper['lanes']} exit lane"
+                f"{'s' if hopper['lanes'] > 1 else ''} of {hopper['exit_lane_width_in']:g} in — "
+                f"one {hopper['gamepiece_diameter_in']:g} in gamepiece plus clearance, never two. "
+                f"Capacity is volumetric: floor area × 80% of the wall height × 60% random-pour "
+                f"packing ÷ one piece ≈ {hopper['capacity_estimate']} pieces. "
+                f"{hopper['wheel_count']} × {hopper['wheel_diameter_in']:g} in index wheels stand "
+                f"{hopper['wheel_proud_in']:g} in proud of the floor — flush and the piece rides "
+                f"the floor and slips, higher and it climbs over — driven through "
+                f"{hopper['gear_reduction']} off a {hopper['motor']} for roughly "
+                f"{hopper['feed_rate_per_s']:g} pieces per second. {hopper['sensor']}, because a "
+                f"timer feeds two and jams the shooter. {hopper['access']}. "
+                f"{hopper['caveat']}")
+            rows.append(_row(SYSTEM_KNOWLEDGE,
+                             f"How much does the hopper hold and how fast does it feed?"
+                             f"\n\n{_fenced(request)}", answer, "cad_qa", index))
+            index += 1
+
+        # Rule check as its own question: "is this legal" is what a team asks before a design
+        # review, and the answer has to name the rule and the number, not reassure.
+        season = SEASONS[spec["season"]["key"]]
+        checks = spec.get("rule_check") or []
+        if checks:
+            lines = [f"Checked against {season['label']}:"]
+            lines += [f"- {row['check']} ({row['rule']}): "
+                      f"{'passes' if row['ok'] else 'FAILS'} — {row['detail']}."
+                      + ("" if row["ok"] else f" {row['fix']}")
+                      for row in checks]
+            lines.append("")
+            lines.append("These are the four things a synthesised robot can actually get wrong. "
+                         "Passing them means nothing was caught here — it is not an inspection, "
+                         "and rules move by team update, so check the current manual.")
+            rows.append(_row(SYSTEM_KNOWLEDGE,
+                             f"Is this design legal for {season['label']}?\n\n{_fenced(request)}",
+                             "\n".join(lines), "cad_qa", index))
+            index += 1
     return rows
 
 
@@ -867,10 +1665,14 @@ def _load_existing(dataset_dir: Path) -> list[dict[str, Any]]:
 
 def generate(output_dir: Path, intent_count: int = 320, electrical_count: int = 90,
              seed: int = 1701, merge: list[Path] | None = None,
-             cad_count: int = 90) -> dict[str, Any]:
+             cad_count: int = 90, season_math_count: int = 260) -> dict[str, Any]:
     rng = random.Random(seed)
     rows: list[dict[str, Any]] = []
     rows += [_intent_example(rng, index) for index in range(intent_count)]
+    rows += _season_rule_examples(rng, len(rows))
+    rows += _season_math_examples(rng, len(rows), season_math_count)
+    rows += _strategy_examples(rng, len(rows))
+    rows += _binder_examples(rng, len(rows), _CAD_REQUESTS + _typed_cad_requests(rng)[:24])
     rows += _parts_examples(rng, len(rows))
     rows += _electrical_examples(rng, len(rows), electrical_count)
     rows += _technique_examples(rng, len(rows))
@@ -916,6 +1718,9 @@ def generate(output_dir: Path, intent_count: int = 320, electrical_count: int = 
         "sha256": hashes,
         "catalog": frc_parts.catalog_digest(),
         "cad_schema": CAD_VERSION,
+        "season_model": SEASON_VERSION,
+        "seasons": {key: SEASONS[key]["label"] for key in SEASONS},
+        "cad_held_out": sorted(CAD_HELD_OUT),
         "license": "internal",
         "provenance": ("Derived from Kale's own FRC parts catalog and technique library. No vendor "
                        "prose, CAD, meshes or user data copied. Published specifications are "
@@ -933,12 +1738,14 @@ def main() -> None:
     parser.add_argument("--intent-count", type=int, default=320)
     parser.add_argument("--electrical-count", type=int, default=90)
     parser.add_argument("--cad-count", type=int, default=90)
+    parser.add_argument("--season-math-count", type=int, default=260)
     parser.add_argument("--seed", type=int, default=1701)
     parser.add_argument("--merge", nargs="*", default=[],
                         help="existing processed dataset dirs to fold in (e.g. datasets/processed/design-v2)")
     args = parser.parse_args()
     manifest = generate(Path(args.out), args.intent_count, args.electrical_count, args.seed,
-                        [Path(item) for item in args.merge], cad_count=args.cad_count)
+                        [Path(item) for item in args.merge], cad_count=args.cad_count,
+                        season_math_count=args.season_math_count)
     print(json.dumps(manifest, indent=2))
 
 

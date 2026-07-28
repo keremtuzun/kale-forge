@@ -46,42 +46,65 @@ KNOWN_TYPES = {
     "belt", "wheel", "motor", "gearbox", "standoff", "polycarb", "hardstop", "hook",
     "drum", "pawl", "tensioner", "hood", "envelope", "bolts", "component", "cable", "rope",
     "slide", "actuator", "brake",
+    # Added with the hopper and the turret: a beam-break at the exit gate and the energy
+    # chain that carries the turret's harness through its sweep. Both are drawn by the
+    # viewer, so a model emitting them is correct and must not be scored as hallucinating.
+    "sensor", "chain_track",
 }
 
+# Every prompt carries the season it belongs to, because the corpus conditions on it and a
+# model asked without the season is being asked a different question than the one it was
+# trained on. Frames are legal for their season — an over-budget frame is a separate test.
 INTENT_PROMPTS = [
-    "We are a rookie team. Design a 2026 robot on a 28 x 28 inch frame that cycles gamepieces "
-    "from the floor as fast as possible.",
-    "MK5i swerve on Krakens at R2 with a ground-to-feeder tunnel intake and a deep climb.",
-    "27 inch REEFSCAPE robot, three-stage cascade elevator, wristed carriage arm, no shooter.",
-    "30x30 west-coast drivebase on six Krakens. Defence bot, nothing else.",
-    "Experienced team, 28 inch swerve, turreted dual flywheel hooded shooter and an active "
-    "floor sweeper with indexer.",
-    "Just an MK4n swerve module on a Kraken X60.",
-    "Resource-limited team, 26x26, horizontal series-roller intake and a four-bar linkage arm.",
-    "29 inch robot with a staged accelerator-and-flywheel shooter and dual telescoping winch hooks.",
+    ("2026-rebuilt", "We are a rookie team. Design a robot on a 27 x 27 inch frame that cycles "
+                     "gamepieces from the floor as fast as possible."),
+    ("2025-reefscape", "MK5i swerve on Krakens at R2 with a ground-to-feeder tunnel intake and "
+                       "a deep climb."),
+    ("2025-reefscape", "27 inch REEFSCAPE robot, three-stage cascade elevator, wristed carriage "
+                       "arm, no shooter."),
+    ("offseason", "27x27 west-coast drivebase on Krakens. Defence bot, nothing else."),
+    ("2026-rebuilt", "Experienced team, 27 inch swerve, turreted dual flywheel hooded shooter, "
+                     "circular spindexer and an active floor sweeper with indexer."),
+    ("offseason", "Just an MK4n swerve module on a Kraken X60."),
+    ("2025-reefscape", "Resource-limited team, 26x26, horizontal series-roller intake and a "
+                       "four-bar linkage arm."),
+    ("2026-rebuilt", "26x29 robot with a staged accelerator-and-flywheel shooter, a twin-lane "
+                     "belt hopper and dual telescoping winch hooks."),
+    # The frame-budget behaviour, asked of the model rather than of the synthesiser: a 28 x 28
+    # frame is 112 in of perimeter and does not fit 2026's 110 in budget.
+    ("2026-rebuilt", "Design a 28 x 28 inch REBUILT robot with an over-bumper intake and a "
+                     "hooded shooter."),
 ]
 
 CAD_PROMPTS = [
-    ("intake", "28x28 swerve robot built around a dual-roller over-bumper intake."),
-    ("elevator", "28x28 REEFSCAPE robot with a 3 stage belt-rigged cascade tower."),
-    ("shooter", "27 inch robot with a turreted dual flywheel hooded shooter on Krakens."),
-    ("arm", "28x28 robot with a double-jointed arm reaching 24 in."),
-    ("climber", "28 inch robot with dual telescoping winch hooks."),
-    ("chassis", "30x28 swerve robot, bolted 2x1 tube frame."),
-    ("swerve module", "Just an MK4i swerve module on a Kraken X60 at L2."),
-    ("intake", "26x26 robot with a horizontal series-roller intake."),
+    ("intake", "2026-rebuilt", "27x27 swerve robot built around a dual-roller over-bumper intake."),
+    ("elevator", "2025-reefscape", "28x28 REEFSCAPE robot with a 3 stage belt-rigged cascade tower."),
+    ("shooter", "2026-rebuilt", "27 inch robot with a turreted dual flywheel hooded shooter on Krakens."),
+    ("hopper", "2026-rebuilt", "27x27 REBUILT robot with a circular spindexer feeding a hooded shooter."),
+    ("arm", "2025-reefscape", "28x28 robot with a double-jointed arm reaching 24 in."),
+    ("climber", "2026-rebuilt", "27 inch robot with dual telescoping winch hooks."),
+    ("chassis", "2025-reefscape", "30x28 swerve robot, bolted 2x1 tube frame."),
+    ("swerve module", "offseason", "Just an MK4i swerve module on a Kraken X60 at L2."),
+    ("intake", "2025-reefscape", "26x26 robot with a horizontal series-roller intake."),
 ]
 
 # Mechanism types whose geometry is deliberately absent from the CAD training families
 # (see CAD_HELD_OUT in generate_frc_corpus). Scoring these separately is the only way to tell
 # a model that learned how a mechanism goes together from one that memorised the examples:
 # a memoriser scores well above and collapses here.
+#
+# The last two are this season's mechanisms, and they are the sharpest question the eval asks.
+# Training on 2026 is worthless if it only produced a model that can rebuild 2026's robots —
+# so the two 2026 hopper archetypes are held out, and building one it has never seen is the
+# evidence that it learned what an indexer is rather than which indexers exist.
 HELD_OUT_PROMPTS = [
-    ("intake", "26x26 robot with a ground-to-feeder tunnel intake."),
-    ("shooter", "28 inch robot with a variable-hood flywheel shooter."),
-    ("elevator", "28x28 robot with a 2 stage telescoping box elevator."),
-    ("arm", "27 inch robot with a four-bar linkage arm reaching 22 in."),
-    ("climber", "29 inch robot with a winch-driven carriage climb."),
+    ("intake", "2025-reefscape", "26x26 robot with a ground-to-feeder tunnel intake."),
+    ("shooter", "2025-reefscape", "28 inch robot with a variable-hood flywheel shooter."),
+    ("elevator", "2025-reefscape", "28x28 robot with a 2 stage telescoping box elevator."),
+    ("arm", "2025-reefscape", "27 inch robot with a four-bar linkage arm reaching 22 in."),
+    ("climber", "2025-reefscape", "29 inch robot with a winch-driven carriage climb."),
+    ("hopper", "2026-rebuilt", "27x27 REBUILT robot with a serpentine tunnel indexer."),
+    ("hopper", "2026-rebuilt", "26x29 REBUILT robot with a paddle-wheel agitator hopper."),
 ]
 
 
@@ -188,15 +211,17 @@ def run(adapter: Path | None, repo: Path, max_tokens: int,
     # sections come from the runtime module so the eval can never grade against a stale copy.
     sys.path.insert(0, str(repo / "apps" / "kale-demo"))
     from app.services.frc_cad import SYSTEM_CAD, STRUCTURE
+    from app.services.frc_season import SEASONS, frame_budget
     from app.services.robot_spec import (ARM_TYPES, CLIMBER_TYPES, ELEVATOR_TYPES,
-                                         INTAKE_TYPES, SHOOTER_TYPES, SYSTEM_DESIGN,
-                                         intent_user_message)
+                                         HOPPER_TYPES, INTAKE_TYPES, SHOOTER_TYPES,
+                                         SYSTEM_DESIGN, intent_user_message)
     STOCK_SECTIONS.clear()
     for key, part in STRUCTURE.items():
         if key.startswith("tube_") and "section_in" in part:
             w, h = part["section_in"]
             STOCK_SECTIONS.update({(round(w, 3), round(h, 3)), (round(h, 3), round(w, 3))})
-    vocab = {"intake_type": set(INTAKE_TYPES), "shooter_type": set(SHOOTER_TYPES),
+    vocab = {"intake_type": set(INTAKE_TYPES), "hopper_type": set(HOPPER_TYPES),
+             "shooter_type": set(SHOOTER_TYPES),
              "arm_type": set(ARM_TYPES), "climber_type": set(CLIMBER_TYPES),
              "elevator_architecture": set(ELEVATOR_TYPES),
              "drive_type": {"swerve", "swerve-ready", "west-coast", "tank"}}
@@ -215,25 +240,32 @@ def run(adapter: Path | None, repo: Path, max_tokens: int,
     cad_prompts = CAD_PROMPTS[:cad_n]
 
     intent_results, signatures = [], set()
-    for prompt in intent_prompts:
-        # Build the message exactly as training and the Design Studio do; scoring a model on
-        # a prompt shape it was never trained on measures the harness, not the model.
-        stated = {"frame_in": [28, 28], "drive_type": None, "subsystems_stated": {}}
-        out = ask(SYSTEM_DESIGN, intent_user_message(prompt, stated), intent_tokens)
+    for season_key, prompt in intent_prompts:
+        # Build the message exactly as training and the Design Studio do — including the
+        # season block. Scoring a model on a prompt shape it was never trained on measures the
+        # harness, not the model, which is how v10's intent score was misread once already.
+        season = SEASONS[season_key]
+        budget = frame_budget(season, *season["frame"])
+        stated = {"season": season_key,
+                  "frame_in": [budget["width_in"], budget["length_in"]],
+                  "drive_type": None, "subsystems_stated": {}}
+        out = ask(SYSTEM_DESIGN, intent_user_message(prompt, stated, season_key), intent_tokens)
         result = score_intent(_first_json(out), vocab)
         result["prompt"] = prompt[:70]
+        result["season"] = season_key
         if result.get("signature"):
             signatures.add(result.pop("signature"))
         intent_results.append(result)
 
     def run_cad(prompts):
         out_rows = []
-        for subsystem, prompt in prompts:
+        for subsystem, season_key, prompt in prompts:
             out = ask(SYSTEM_CAD,
                       f"Give me the {subsystem} assembly for this robot at part level.\n\n"
+                      f"Season: {SEASONS[season_key]['label']}\n\n"
                       f"Robot:\n{prompt}", max_tokens)
             result = score_cad(_first_json(out))
-            result.update(subsystem=subsystem, prompt=prompt[:70])
+            result.update(subsystem=subsystem, season=season_key, prompt=prompt[:70])
             out_rows.append(result)
         return out_rows
 

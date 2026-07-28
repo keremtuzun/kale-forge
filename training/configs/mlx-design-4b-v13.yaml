@@ -1,0 +1,61 @@
+# Kale Forge Design Model — adapter v13 (MLX LoRA)
+#
+# v13 is v12's config with the learning rate corrected. v12 diverged, and the reason was a
+# config mistake rather than anything about the data:
+#
+#   Trainable parameters went from 2.753M (rank 8, 6 layers) to 7.340M (rank 16, 8 layers) —
+#   2.7x — while peak learning rate stayed at 1e-4, the value the smaller adapter was tuned
+#   for. In mlx_lm, `scale` multiplies the LoRA update directly and is independent of rank, so
+#   more rank at the same scale means larger updates, not normalised ones. Train loss held
+#   around 0.5-1.0 through iteration 340 and then went 1.99 → 5.71 → 7.73. Killed at ~500.
+#
+#   Cosine decay gave no protection: it is almost flat near the start, so the LR was still
+#   9.97e-05 at iteration 440. A schedule that only bites late does not stop a blow-up in the
+#   early-middle of the run.
+#
+# The correction is peak LR 1e-4 → 3e-5, keeping the capacity increase. Everything else is
+# unchanged from v12, including the reason v12 existed at all:
+#
+#   max_seq_length 3072 — the actual defect being fixed. 47.7% of v11's cad_geometry rows were
+#   silently truncated at 2048, which taught the model to emit JSON that never closes and cost
+#   it half its CAD validity. Verified against design-v12: longest row 2948 tokens, 0 truncated.
+#
+# What the v12 attempt should have done, and what this one does: change the one thing that was
+# broken and keep the capacity bump modest enough to stay stable. If v13 improves on v10, the
+# truncation fix is the credible explanation. If it had improved after five simultaneous
+# changes, it would have explained nothing.
+#
+# THE HOST IS AN 8 GB M2. v12 peaked at 6.931 GB before it was stopped — the tightest margin
+# this recipe has run at, and the reason grad_accumulation_steps stays at 4 and batch_size at 1.
+#
+# Early-abort rule for this run: validation loss is evaluated every 100 iterations and must be
+# monotonically improving through iteration 300. v12's val went 1.563 → 1.056 → 0.791 → 1.712
+# and the train loss blew up 140 iterations later. That turn is visible early and is worth
+# acting on rather than waiting for the run to finish being wrong.
+model: mlx-community/Qwen3-4B-Instruct-2507-4bit
+train: true
+data: datasets/processed/design-v12
+fine_tune_type: lora
+adapter_path: models/adapters/kale-design-qwen3-4b-v13
+seed: 42
+iters: 1400
+batch_size: 1
+grad_accumulation_steps: 4
+learning_rate: 0.00003
+lr_schedule:
+  name: cosine_decay
+  arguments: [0.00003, 1400, 0.000003]
+  warmup: 80
+  warmup_init: 0.000003
+num_layers: 8
+lora_parameters:
+  rank: 16
+  dropout: 0.05
+  scale: 20.0
+max_seq_length: 3072
+mask_prompt: true
+grad_checkpoint: true
+steps_per_report: 20
+steps_per_eval: 100
+save_every: 100
+val_batches: 25

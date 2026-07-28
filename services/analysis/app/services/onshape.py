@@ -56,6 +56,50 @@ class OnshapeConnection:
         return {"document_id":did,"workspace_id":wid,"url":f"{base}/documents/{did}/w/{wid}",
                 "translation":result.get("requestState","submitted"), "mode":"updated" if document_id else "created"}
 
+    def publish_parametric(self, user_id: str, name: str, source: str,
+                           document_id: str = "", workspace_id: str = "") -> dict[str, Any]:
+        """Publish the design as an editable Feature Studio rather than an imported mesh.
+
+        The OBJ path (`publish`) round-trips the robot through triangles, and a triangle has no
+        wall thickness, no tooth count and no centre distance — so what arrives in Onshape can
+        be looked at and not edited. This uploads generated FeatureScript instead: every part
+        is a feature, every dimension is a number in the source, and the frame parameters are
+        exposed in the feature dialog.
+
+        Onshape has no single "create a Feature Studio with these contents" call, so this is
+        two: create the element, then write its contents.
+        """
+        creds = self._credentials.get(user_id)
+        if creds is None:
+            raise RuntimeError("Connect an Onshape account first")
+        access, secret, base, _owner_id = creds
+        with httpx.Client(auth=(access, secret), timeout=90) as client:
+            if document_id and workspace_id:
+                did, wid = document_id, workspace_id
+            else:
+                created = client.post(f"{base}/api/v10/documents",
+                                      json={"name": name}).raise_for_status().json()
+                did = created["id"]
+                wid = created["defaultWorkspace"]["id"]
+
+            studio = client.post(f"{base}/api/v10/featurestudios/d/{did}/w/{wid}",
+                                 json={"name": f"{name} — Kale source"})
+            studio.raise_for_status()
+            eid = studio.json()["id"]
+
+            contents = client.post(
+                f"{base}/api/v10/featurestudios/d/{did}/w/{wid}/e/{eid}/content",
+                json={"contents": source})
+            contents.raise_for_status()
+
+        return {"document_id": did, "workspace_id": wid, "element_id": eid,
+                "url": f"{base}/documents/{did}/w/{wid}/e/{eid}",
+                "translation": "DONE", "mode": "featurescript",
+                "editable": True,
+                "note": ("Published as a Feature Studio. Add the 'Kale FRC Robot' feature in a "
+                         "Part Studio to build it; every dimension stays editable in the "
+                         "source and in the feature dialog.")}
+
     def copy_public_workspace(self, user_id: str, name: str) -> dict[str, Any]:
         creds = self._credentials.get(user_id)
         if creds is None: raise RuntimeError("Connect an Onshape account first")

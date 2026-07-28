@@ -1,0 +1,52 @@
+# Kale Forge Design Model — adapter v11 (MLX LoRA)
+#
+# v11 is the season revision. v10 taught the model what a mechanism is made of; v11 teaches it
+# what a mechanism is *for*, by conditioning every family on the season and deriving every
+# target from that season's field and rules rather than from a stored answer.
+#
+# Corpus design-v11, four new or reworked families:
+#   season_rules  — the field and the rulebook as derivations, plus ~420 sampled sizing
+#                   problems (frame budget, launch angle and exit velocity, climb reach,
+#                   hopper capacity) whose inputs are drawn at random so no answer is
+#                   memorisable. This is the family carrying the generalisation.
+#   strategy      — archetype selection with the scoring arithmetic behind it.
+#   binder        — technical-binder subsystem write-ups: requirement, options, calculation,
+#                   validation, open risks. Numbers come from the same spec the Design Studio
+#                   builds, so the format is learned without the facts being invented.
+#   design_intent — now presented with the season block, and a third of the examples ask for a
+#                   frame that does not fit so the target is the resized one with the reason.
+#
+# Held out of CAD training entirely (still named in design_intent, geometry never shown):
+# ground-to-feeder tunnel intake, variable-hood flywheel shooter, telescoping box elevator,
+# four-bar linkage arm, winch-driven carriage climb, serpentine tunnel indexer, paddle-wheel
+# agitator hopper. The last two are the 2026 mechanisms, held out on purpose: the point of
+# training on this season is not to reproduce this season's robots, and a model that can build
+# an indexer it was never shown has learned what an indexer is.
+#
+# Iterations up from v10's 800: the corpus is smaller in rows but the binder and season_math
+# targets are long and structured, so the schema discipline needs more passes. Everything else
+# is v10's recipe, which produced the best validation loss of any design adapter — changing one
+# thing at a time is the only way the eval means anything.
+#
+# NOTE: on this host the run happens off the iCloud Desktop, on local disk (/private/tmp), with
+# the non-Anaconda MLX env at work/mlx-training-env — iCloud read latency otherwise stalls
+# imports for tens of minutes. Paths below are the repo-canonical locations; the launch script
+# copies dataset + adapter to /private/tmp and copies the adapter back here.
+model: mlx-community/Qwen3-4B-Instruct-2507-4bit
+train: true
+data: datasets/processed/design-v11
+fine_tune_type: lora
+adapter_path: models/adapters/kale-design-qwen3-4b-v11
+seed: 42
+iters: 900
+batch_size: 1
+grad_accumulation_steps: 4
+learning_rate: 0.0001
+num_layers: 6
+max_seq_length: 2048
+mask_prompt: true
+grad_checkpoint: true
+steps_per_report: 20
+steps_per_eval: 200
+save_every: 200
+val_batches: 8

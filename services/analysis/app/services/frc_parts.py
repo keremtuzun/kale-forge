@@ -599,7 +599,7 @@ def motor_loads(spec: dict[str, Any]) -> list[dict[str, Any]]:
         loads.append({"name": f"{steer['name']} steer {index + 1}", "subsystem": "drivetrain",
                       "breaker_a": steer["breaker_a"], "stall_a": steer["stall_a"]})
 
-    for subsystem, key in (("intake", "intake"), ("shooter", "shooter"),
+    for subsystem, key in (("intake", "intake"), ("hopper", "hopper"), ("shooter", "shooter"),
                            ("elevator", "elevator"), ("arm", "manipulator"), ("climber", "climber")):
         block = spec.get(key) or {}
         if not block.get("included"):

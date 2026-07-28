@@ -168,17 +168,21 @@ class DesignStudio:
         (self.root / design_id / "design.json").write_text(json.dumps(record, indent=2))
         return record
 
-    def create(self, kind: str, prompt: str, name: str = "", owner_id: str = "") -> dict[str, Any]:
+    def create(self, kind: str, prompt: str, name: str = "", owner_id: str = "",
+               season: str = "") -> dict[str, Any]:
         if kind not in {"pcb", "robot"}:
             raise ValueError("kind must be pcb or robot")
         design_id = secrets.token_hex(8)
         target = self.root / design_id
         target.mkdir()
-        spec = self._pcb_spec(prompt) if kind == "pcb" else self._robot_spec(prompt)
+        spec = self._pcb_spec(prompt) if kind == "pcb" else self._robot_spec(prompt, season)
         spec["name"] = name.strip()[:72] or _title(prompt, kind)
         record = {
             "id": design_id, "owner_id": owner_id, "kind": kind, "name": spec["name"], "status": "generated",
             "revision": 1, "prompt": prompt, "spec": spec, "history": [],
+            # The season sticks to the design. A revision must not silently re-infer it from
+            # the combined prompt and hand back a robot for a different game.
+            "season": (spec.get("season") or {}).get("key", "") if kind == "robot" else "",
             "created_at": _now(), "updated_at": _now(), "artifacts": [],
             "warnings": self._warnings(kind),
         }
@@ -223,7 +227,8 @@ class DesignStudio:
         previous = {"revision": record["revision"], "prompt": record["prompt"], "spec": record["spec"],
                     "updated_at": record["updated_at"]}
         combined = f"{record['prompt']}\nRevision request: {prompt}"
-        spec = self._pcb_spec(combined) if record["kind"] == "pcb" else self._robot_spec(combined)
+        spec = (self._pcb_spec(combined) if record["kind"] == "pcb"
+                else self._robot_spec(combined, record.get("season", "")))
         spec["name"] = record["name"]
         record["history"] = (record.get("history") or []) + [previous]
         record["revision"] += 1
@@ -297,10 +302,12 @@ class DesignStudio:
                 "intent": prompt[-1000:]}
 
     @staticmethod
-    def _robot_spec(prompt: str) -> dict[str, Any]:
+    def _robot_spec(prompt: str, season: str = "") -> dict[str, Any]:
         """Synthesize a robot spec: explicit prompt facts, then the self-hosted model, then
-        prompt-seeded defaults. See services/robot_spec.py for the layering rules."""
-        return build_robot_spec(prompt)
+        prompt-seeded defaults. See services/robot_spec.py for the layering rules.
+
+        ``season`` is the team's explicit choice; empty means infer it from the prompt."""
+        return build_robot_spec(prompt, season=season)
 
     def _render_pcb(self, target: Path, record: dict[str, Any]) -> list[str]:
         spec = record["spec"]
@@ -501,6 +508,41 @@ class DesignStudio:
                             intake_motor["diameter_in"] * frc_parts.IN, 40, pivot_y, pivot_z + 20,
                             "intake", f"{intake_motor['name']} on the static gearbox")
 
+        if spec.get("hopper", {}).get("included"):
+            hp = spec["hopper"]
+            bias = hp.get("position_bias", 0.42)
+            hop_y = l * bias
+            floor_z = 120.0
+            fw = hp.get("floor_width_in", 20.0) * 25.4
+            fd = hp.get("floor_depth_in", 14.0) * 25.4
+            wall = hp.get("wall_height_in", 10.0) * 25.4
+            mesh.box("hopper_floor", fw, fd, 2.4, w / 2, hop_y, floor_z, "hopper",
+                     f"{hp.get('type', 'hopper')} floor plate")
+            mesh.box("hopper_back_wall", fw, 2.4, wall, w / 2, hop_y + fd / 2, floor_z + wall / 2,
+                     "hopper", "hopper wall")
+            for side, sx in (("left", -1), ("right", 1)):
+                mesh.box(f"hopper_{side}_wall", 2.4, fd, wall, w / 2 + sx * fw / 2, hop_y,
+                         floor_z + wall / 2, "hopper", "hopper wall")
+                mesh.box(f"hopper_{side}_funnel", fw * 0.34, 2.4, wall * 0.75,
+                         w / 2 + sx * fw * 0.3, hop_y - fd / 2 + 40, floor_z + wall * 0.4,
+                         "hopper", "funnel panel, floor width onto one exit lane")
+            wheel_d = hp.get("wheel_diameter_in", 4.0) * 25.4
+            mesh.cylinder_x("hopper_index_shaft", fw + 30, 12.7, w / 2, hop_y - fd * 0.18,
+                            floor_z - wheel_d / 2 + hp.get("wheel_proud_in", 0.5) * 25.4,
+                            "hopper", "index shaft")
+            for index in range(max(3, int(hp.get("wheel_count", 4)))):
+                x = w / 2 - fw / 2 + (index + 0.5) * (fw / max(3, int(hp.get("wheel_count", 4))))
+                mesh.cylinder_x(f"hopper_index_wheel_{index + 1}", 23, wheel_d, x,
+                                hop_y - fd * 0.18,
+                                floor_z - wheel_d / 2 + hp.get("wheel_proud_in", 0.5) * 25.4,
+                                "hopper", "index wheel, standing proud of the floor")
+            exit_w = hp.get("exit_lane_width_in", 6.5) * 25.4
+            for lane in range(int(hp.get("lanes", 1))):
+                offset = (lane - (int(hp.get("lanes", 1)) - 1) / 2) * (exit_w + 25)
+                mesh.box(f"hopper_exit_lane_{lane + 1}", exit_w, 76, wall * 0.6, w / 2 + offset,
+                         hop_y - fd / 2 - 38, floor_z + wall * 0.3, "hopper",
+                         "exit lane, one gamepiece wide")
+
         if spec["shooter"]["included"]:
             bias = spec["shooter"].get("position_bias", 0.66)
             flywheel_d = spec["shooter"].get("flywheel_diameter_in", 4.0) * 25.4
@@ -690,18 +732,82 @@ class DesignStudio:
         mass = spec.get("mass_estimate", {})
         model = spec.get("model", {})
 
+        season = spec.get("season") or {}
+
         lines = [f"# Design dossier, {record['name']}", "",
-                 f"Profile: **{spec['profile']['label']}**  ",
+                 f"Season: **{season.get('label', spec['profile']['label'])}**"
+                 + (f" — {season['selected_by']}  " if season.get("selected_by") else "  "),
                  f"Knowledge set: `{spec['profile']['knowledge_version']}`  ",
-                 f"Parts catalog: `{spec['profile'].get('parts_version', '')}`  "]
+                 f"Parts catalog: `{spec['profile'].get('parts_version', '')}`  ",
+                 f"Season model: `{season.get('season_version', '')}`  "]
         if model.get("used"):
             lines.append(f"Architecture selected by the self-hosted model "
                          f"(`{model.get('model_version') or model.get('provider')}`).")
         else:
             lines.append(f"Architecture selected deterministically, {model.get('reason', 'model not used')}.")
+        if season.get("design_targets"):
+            lines += ["", f"## What {season['label']} asks for", "", season.get("summary", ""), "",
+                      "| Target | Value | Derived from | What it means for this robot |",
+                      "| --- | --- | --- | --- |"]
+            lines += [f"| {row['target']} | {row['value']} | {row['from']} | {row['means']} |"
+                      for row in season["design_targets"]]
+            if season.get("scoring_math"):
+                lines += ["", "### The arithmetic behind the strategy", ""]
+                lines += [f"- {item}" for item in season["scoring_math"]]
+            lines += ["", f"> {season.get('verify', '')}"]
+
+        if spec.get("rule_check"):
+            failed = [row for row in spec["rule_check"] if not row["ok"]]
+            lines += ["", "## Construction rule check", "",
+                      "| Check | Rule | Result | Detail |", "| --- | --- | --- | --- |"]
+            lines += [f"| {row['check']} | {row['rule']} | {'pass' if row['ok'] else '**FAILS**'} "
+                      f"| {row['detail']} |" for row in spec["rule_check"]]
+            for row in failed:
+                lines += ["", f"> **{row['check']} fails {row['rule']}.** {row['fix']}"]
+            lines += ["", "These four checks are the ones a synthesised robot can actually get "
+                          "wrong. Passing them means nothing was caught here — it is not an "
+                          "inspection and does not replace one."]
+
         lines += ["", "## Subsystems", ""]
         lines += [f"- **{name.title()}**, {spec.get('manipulator' if name == 'arm' else name, {}).get('type', '')}"
                   for name in spec["subsystems"]] or ["- Bare chassis"]
+
+        shot = (spec.get("shooter") or {}).get("shot")
+        if shot:
+            lines += ["", "## The shot", "",
+                      f"- Target: **{shot['target']}** with its opening at "
+                      f"{shot['target_height_in']:g} in; release around "
+                      f"{shot['release_height_in']:g} in.",
+                      f"- Cheapest launch angle for {shot['design_range_ft']:g} ft is "
+                      f"**{shot['optimal_angle_deg']:g}°** (45° + ½·atan(Δh/d)), needing "
+                      f"**{shot['required_exit_fps']:g} ft/s** at the exit — that is "
+                      f"{shot['required_surface_speed_fps']:g} ft/s of flywheel surface speed.",
+                      f"- A cross-field shot at {shot['long_range_ft']:g} ft needs "
+                      f"{shot['required_exit_fps_long']:g} ft/s.",
+                      f"- This design exits at **{shot['achieved_exit_fps']:g} ft/s**, reaching "
+                      f"about {shot['achieved_range_ft']:g} ft with a {shot['apex_in']:g} in apex "
+                      f"and a {shot['entry_angle_deg']:g}° entry angle — "
+                      + ("clears the design range."
+                         if shot["makes_design_range"] else
+                         "**short of the design range**; raise the surface speed or the reduction."),
+                      f"- {shot['caveat']}"]
+
+        hopper = spec.get("hopper") or {}
+        if hopper.get("included"):
+            lines += ["", "## Hopper throughput", "",
+                      f"- {hopper['type']}: {hopper['floor_width_in']:g} × "
+                      f"{hopper['floor_depth_in']:g} in floor, {hopper['wall_height_in']:g} in "
+                      f"walls, {hopper['lanes']} exit lane"
+                      f"{'s' if hopper['lanes'] > 1 else ''} at "
+                      f"{hopper['exit_lane_width_in']:g} in wide.",
+                      f"- Holds roughly **{hopper['capacity_estimate']} "
+                      f"{season.get('gamepiece', {}).get('name', 'gamepieces')}** and feeds about "
+                      f"**{hopper['feed_rate_per_s']:g} per second** through "
+                      f"{hopper['gear_reduction']} off a {hopper['motor']}.",
+                      f"- Index wheels stand {hopper['wheel_proud_in']:g} in above the floor: "
+                      f"flush and the piece slips, too high and it climbs over.",
+                      f"- {hopper['sensor']}. {hopper['access']}.",
+                      f"- {hopper['caveat']}"]
 
         if drivetrain:
             lines += ["", "## Drivetrain", "",
@@ -769,17 +875,15 @@ class DesignStudio:
 
     @staticmethod
     def _featurescript(record: dict[str, Any]) -> str:
-        spec=record["spec"]; f=spec["frame"]; e=spec["elevator"]
-        extras = []
-        if spec["intake"]["included"]:
-            extras.append('        fCuboid(context, id + "intakeEnvelope", { "corner1" : vector(2,-8,2) * inch, "corner2" : vector(definition.width/inch-2,6,8) * inch });')
-        if spec["shooter"]["included"]:
-            extras.append('        fCuboid(context, id + "shooterEnvelope", { "corner1" : vector(4,definition.length/inch*.48,7) * inch, "corner2" : vector(definition.width/inch-4,definition.length/inch*.88,18) * inch });')
-        if e["included"]:
-            extras += ['        fCuboid(context, id + "elevatorLeft", { "corner1" : vector(definition.width/inch*.34,definition.length/inch*.52,3) * inch, "corner2" : vector(definition.width/inch*.42,definition.length/inch*.60,definition.height/inch) * inch });',
-                       '        fCuboid(context, id + "elevatorRight", { "corner1" : vector(definition.width/inch*.58,definition.length/inch*.52,3) * inch, "corner2" : vector(definition.width/inch*.66,definition.length/inch*.60,definition.height/inch) * inch });']
-        extra_source = "\n".join(extras)
-        return f'''FeatureScript 2500;\nimport(path : "onshape/std/common.fs", version : "2500.0");\nannotation {{ "Feature Type Name" : "Kale FRC Robot Layout" }}\nexport const kaleRobot = defineFeature(function(context is Context, id is Id, definition is map)\n    precondition {{ annotation {{ "Name" : "Frame width" }} definition.width is Length; annotation {{ "Name" : "Frame length" }} definition.length is Length; annotation {{ "Name" : "Layout height" }} definition.height is Length; }}\n    {{\n        fCuboid(context, id + "leftRail2x1", {{ "corner1" : vector(0,0,2.5) * inch, "corner2" : vector(2,definition.length/inch,3.5) * inch }});\n        fCuboid(context, id + "rightRail2x1", {{ "corner1" : vector(definition.width/inch-2,0,2.5) * inch, "corner2" : vector(definition.width/inch,definition.length/inch,3.5) * inch }});\n        fCuboid(context, id + "frontRail2x1", {{ "corner1" : vector(2,0,2.5) * inch, "corner2" : vector(definition.width/inch-2,2,3.5) * inch }});\n        fCuboid(context, id + "rearRail2x1", {{ "corner1" : vector(2,definition.length/inch-2,2.5) * inch, "corner2" : vector(definition.width/inch-2,definition.length/inch,3.5) * inch }});\n{extra_source}\n    }});\n// Exemplar-grounded defaults: {f["width_in"]} x {f["length_in"]} in; profile {spec["profile"]["id"]}; layout height {e["max_height_in"]} in.\n'''
+        """The whole robot as editable FeatureScript, generated from its own CAD tree.
+
+        This used to emit four frame rails and a couple of envelope blocks — a sketch of a
+        robot, not the robot. Everything the design actually specifies now comes through, so
+        what lands in Onshape carries the same dimensions the dossier, the BOM and the cut
+        list were written from. See `frc_featurescript` for why a mesh could never do that.
+        """
+        from app.services.frc_featurescript import build_featurescript
+        return build_featurescript(record["spec"], record.get("name", "Kale FRC Robot"))
 
 
 _studio: DesignStudio | None = None
