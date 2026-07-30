@@ -1,8 +1,8 @@
 """Kale Forge Design Studio — self-contained Vercel Python function.
 
 GET /                             → the Design Studio page (prompt in, engineered design out).
-GET /?json=1&prompt=...&season=…  → the design spec as JSON (deterministic synthesis).
-GET /?seasons=1                   → the seasons the studio can build for.
+GET /studio?json=1&prompt=...&season=…  → the design spec as JSON (deterministic synthesis).
+GET /studio?seasons=1             → the seasons the studio can build for.
 
 The synthesis is the repo's own stdlib modules (frc_parts / frc_season /
 frc_robot_knowledge / robot_spec), bundled under ./app so this deploys as one function. It
@@ -69,6 +69,25 @@ def make_spec(prompt: str, season: str = "") -> dict:
     return spec
 
 
+# The studio requires a signed-in Kale Forge account. Sessions are issued by the main app's
+# auth API (proxied at /api on the same domain, so the browser's cookie flows here too); the
+# function verifies the forwarded cookie against that API before generating anything.
+_AUTH_ME_URL = os.environ.get("KALE_AUTH_ME_URL",
+                              "https://kale.150.136.151.230.nip.io/api/auth/me")
+
+
+def _cookie_is_signed_in(cookie_header: str) -> bool:
+    if not cookie_header:
+        return False
+    import urllib.request  # noqa: PLC0415
+    request = urllib.request.Request(_AUTH_ME_URL, headers={"Cookie": cookie_header})
+    try:
+        with urllib.request.urlopen(request, timeout=6) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
 class handler(BaseHTTPRequestHandler):
     def _send(self, code: int, body: bytes, content_type: str,
               extra: dict[str, str] | None = None) -> None:
@@ -127,6 +146,10 @@ class handler(BaseHTTPRequestHandler):
                        "application/json")
             return
         if qs.get("json", ["0"])[0] == "1":
+            if not _cookie_is_signed_in(self.headers.get("Cookie") or ""):
+                self._send(401, json.dumps({"error": "Sign in to generate designs."}).encode(),
+                           "application/json")
+                return
             prompt = (qs.get("prompt", [""])[0] or "").strip()
             if len(prompt) < 4:
                 self._send(400, json.dumps({"error": "prompt too short"}).encode(), "application/json")
@@ -215,6 +238,23 @@ PAGE = r"""<!doctype html>
   @keyframes sp{to{transform:rotate(360deg)}}
   .hint{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:4;color:var(--muted);font-size:12px;background:color-mix(in srgb,var(--surface) 80%,transparent);border:1px solid var(--line);padding:5px 11px;border-radius:999px}
   @media (max-width:820px){.stage{grid-template-columns:1fr;grid-template-rows:44% 1fr}.dossier{border-right:0;border-bottom:1px solid var(--line)}.ctrls{width:150px}}
+  #gate{position:fixed;inset:0;z-index:40;display:grid;place-items:center;background:color-mix(in srgb,var(--bg) 86%,transparent);backdrop-filter:blur(10px)}
+  #gate[hidden]{display:none}
+  .gate-card{width:min(92vw,380px);border:1px solid var(--line-strong);border-radius:14px;background:var(--surface);box-shadow:0 30px 70px rgba(0,0,0,.45);padding:22px}
+  .gate-card h1{font-size:19px;letter-spacing:-.02em;margin:0}
+  .gate-card p{color:var(--muted);font-size:13px;line-height:1.55;margin:8px 0 0}
+  .gate-tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--surface-2);border-radius:9px;padding:5px;margin-top:16px}
+  .gate-tabs button{appearance:none;border:0;background:transparent;color:var(--muted);font:650 13px var(--sans);padding:8px;border-radius:6px;cursor:pointer}
+  .gate-tabs button.on{background:var(--surface);color:var(--ink);box-shadow:0 2px 8px rgba(0,0,0,.3)}
+  #gate label{display:block;font:600 11px var(--sans);color:var(--muted);margin:13px 0 5px}
+  #gate input{width:100%;background:var(--bg);border:1px solid var(--line-strong);border-radius:8px;color:var(--ink);padding:9px 11px;font:500 14px var(--sans)}
+  #gate input:focus{outline:none;border-color:var(--brand)}
+  #gate .btn.primary{width:100%;margin-top:16px;padding:11px}
+  #gate-err{display:none;color:var(--danger);font-size:12px;line-height:1.5;margin:12px 0 0;border:1px solid color-mix(in srgb,var(--danger) 40%,transparent);border-radius:8px;padding:8px 10px}
+  #who{display:none;align-items:center;gap:8px;color:var(--muted);font-size:12px;white-space:nowrap}
+  #who b{color:var(--ink);font-weight:650}
+  #who button{appearance:none;border:0;background:none;color:var(--muted);font:600 12px var(--sans);cursor:pointer;padding:4px}
+  #who button:hover{color:var(--danger)}
 </style>
 </head>
 <body>
@@ -226,6 +266,7 @@ PAGE = r"""<!doctype html>
       <input id="q" autocomplete="off" placeholder="Describe a robot — e.g. 'MK5i swerve on Krakens at R2 with a fast over-bumper intake and a climber'">
       <button class="btn primary" type="submit">Generate</button>
     </form>
+    <span id="who"><b id="who-name"></b><button id="signout" type="button" title="Sign out">sign out</button></span>
   </div>
   <div class="stage">
     <div class="dossier" id="dossier">
@@ -249,6 +290,64 @@ PAGE = r"""<!doctype html>
     </div>
   </div>
 </div>
+
+<div id="gate" hidden>
+  <div class="gate-card">
+    <h1>Sign in to the Design Studio</h1>
+    <p>Designs are generated for signed-in accounts. Creating one takes ten seconds — an email is just your key back in.</p>
+    <div class="gate-tabs"><button type="button" id="tab-in" class="on">Sign in</button><button type="button" id="tab-up">Create account</button></div>
+    <form id="gate-form">
+      <div id="f-name" style="display:none"><label for="g-name">Name</label><input id="g-name" autocomplete="name"></div>
+      <label for="g-email">Email</label><input id="g-email" type="email" autocomplete="email" required>
+      <label for="g-pass">Password</label><input id="g-pass" type="password" autocomplete="current-password" required minlength="8">
+      <div id="gate-err"></div>
+      <button class="btn primary" type="submit" id="gate-go">Sign in</button>
+    </form>
+  </div>
+</div>
+
+<script>
+// Account gate: the studio stays hidden until /api/auth/me answers 200. Sessions come from
+// the main app's auth API through the same-domain /api proxy, so the cookie is first-party.
+(() => {
+  const gate = document.getElementById('gate'), err = document.getElementById('gate-err');
+  const tabIn = document.getElementById('tab-in'), tabUp = document.getElementById('tab-up');
+  const nameRow = document.getElementById('f-name'), go = document.getElementById('gate-go');
+  const who = document.getElementById('who'), whoName = document.getElementById('who-name');
+  let mode = 'in';
+  const setMode = m => { mode = m;
+    tabIn.classList.toggle('on', m === 'in'); tabUp.classList.toggle('on', m === 'up');
+    nameRow.style.display = m === 'up' ? '' : 'none';
+    go.textContent = m === 'in' ? 'Sign in' : 'Create account';
+    document.getElementById('g-pass').autocomplete = m === 'in' ? 'current-password' : 'new-password';
+    err.style.display = 'none';
+  };
+  tabIn.onclick = () => setMode('in'); tabUp.onclick = () => setMode('up');
+  const open = () => { gate.hidden = false; who.style.display = 'none'; };
+  const close = user => { gate.hidden = true;
+    if (user && user.name) { whoName.textContent = user.name; who.style.display = 'flex'; } };
+  window.__requireSignIn = open;
+  fetch('/api/auth/me').then(r => r.ok ? r.json().then(close) : open()).catch(open);
+  document.getElementById('gate-form').addEventListener('submit', async e => {
+    e.preventDefault(); err.style.display = 'none';
+    const body = { email: document.getElementById('g-email').value.trim(),
+                   password: document.getElementById('g-pass').value };
+    if (mode === 'up') body.name = document.getElementById('g-name').value.trim();
+    try {
+      const r = await fetch(mode === 'in' ? '/api/auth/login' : '/api/auth/register', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (!r.ok) { const d = await r.json().catch(() => ({}));
+        err.textContent = d.detail || d.error || 'That did not work — check the details and try again.';
+        err.style.display = 'block'; return; }
+      close(await r.json());
+    } catch (_e) { err.textContent = 'Could not reach the sign-in service.'; err.style.display = 'block'; }
+  });
+  document.getElementById('signout').addEventListener('click', async () => {
+    try { await fetch('/api/auth/logout', { method: 'POST' }); } catch (_e) {}
+    open();
+  });
+})();
+</script>
 
 <script type="importmap">
 {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
@@ -286,7 +385,7 @@ seasonSel.addEventListener('change', applySeasonExample);
 
 // The season list is served by the same function; a failure here leaves the selector empty
 // and the season is read out of the prompt instead, which still produces a design.
-fetch('/?seasons=1').then(r => r.json()).then(data => {
+fetch('/studio?seasons=1').then(r => r.json()).then(data => {
   seasonSel.innerHTML = data.seasons.map(s =>
     `<option value="${s.key}">${s.year ? s.year + ' ' + s.game : s.game}</option>`).join('');
   data.seasons.forEach(s => { seasonInfo[s.key] = s; });
@@ -301,8 +400,10 @@ form.addEventListener('submit', async (e) => {
   $('#dossier-empty') && ($('#dossier-empty').style.display='none');
   $('#view-empty').style.display='grid'; $('#spin').style.display='block';
   try {
-    const res = await fetch('/?json=1&prompt=' + encodeURIComponent(prompt)
+    const res = await fetch('/studio?json=1&prompt=' + encodeURIComponent(prompt)
                             + '&season=' + encodeURIComponent(seasonSel.value || ''));
+    if (res.status === 401) { window.__requireSignIn && window.__requireSignIn();
+      $('#spin').style.display='none'; return; }
     const spec = await res.json();
     if (spec.error) throw new Error(spec.error);
     renderDossier(spec);
