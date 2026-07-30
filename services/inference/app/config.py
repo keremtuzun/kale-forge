@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 
 class Settings(BaseModel):
-    provider: str = "stub"  # stub | local_llamacpp | local_transformers | local_vllm
+    provider: str = "stub"  # stub | local_llamacpp | local_transformers | local_vllm | local_mlx
     model_path: str = ""
     adapter_path: str = ""
     vllm_url: str = "http://localhost:8010/v1"

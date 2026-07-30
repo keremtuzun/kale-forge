@@ -32,8 +32,12 @@ embeddings and reranking. **No external AI APIs are used for anything** — see
 
 ### Design Studio — prompt to hardware
 
-The Design Studio generates PCB and FRC robot concepts from a prompt. Robot synthesis is
-layered, most authoritative first:
+The Design Studio generates PCB and FRC robot concepts from a prompt. **You pick the season
+first** — 2026 REBUILT or 2025 REEFSCAPE — and that choice is what makes the robot a robot
+*for a game* rather than a generic chassis. See
+[the season model](#the-season-model--what-a-game-asks-for) below.
+
+Robot synthesis is layered, most authoritative first:
 
 1. **Explicit prompt facts.** "MK4n modules on Krakens at L2+ with a 3-stage elevator" is a
    specification, not a hint — named hardware and stated numbers always win.
@@ -52,6 +56,36 @@ explaining every choice. Catalog: `services/analysis/app/services/frc_parts.py`.
 > Every dimension is a **nominal published envelope** for packaging and first-order sizing.
 > Confirm each part against its vendor drawing, and each constraint against the current game
 > manual, before machining anything.
+
+### The season model — what a game asks for
+
+`services/analysis/app/services/frc_season.py` holds each season as four things: the field as
+dimensioned elements, the scoring table and ranking bonuses, the construction rules that differ
+between years, and **design targets derived from those three rather than stored**.
+
+That last part is the point. A model told "the 2026 robot is 27 inches wide" has memorised a
+number. A model told "the perimeter budget is 110 inches, so a square frame is at most 27.5 and
+28 × 28 fails inspection" has learned the constraint, and can apply it to a season nobody has
+played yet. Everything downstream works the same way:
+
+- **The frame budget outranks a stated frame.** 28 × 28 in is 112 in of perimeter: legal in 2025
+  (120 in), illegal in 2026 (110 in). Ask for one in a 2026 design and it is scaled to 27.5 ×
+  27.5 with the reason recorded on the spec, rather than quietly built.
+- **The shot is solved, not looked up.** From the goal opening height and a working distance,
+  the cheapest launch angle is 45° + ½·atan(Δh/d); that gives a required exit velocity, which
+  gives a required flywheel surface speed — halved or not depending on whether the gamepiece is
+  squeezed against a fixed hood or a counter-rotating pair. The design is then checked against it.
+- **A rule check runs over the finished spec** — perimeter, stowed height, propulsion motor
+  count and estimated weight — and is *reported, not enforced*. Passing means nothing was
+  caught, not that the robot is legal.
+- **Bulk gamepiece handling is a first-class subsystem.** The `hopper` (spindexer, belt-floor,
+  funnel-to-tower and friends) is sized volumetrically, feeds one lane out however many go in,
+  and is gated on a beam-break rather than a timer.
+
+Seasons carry their own archetypes and scoring arithmetic, so "what should we build" has an
+answer with numbers behind it. Every figure is the published value restated as an engineering
+input, always with the verification caveat attached — rules move by team update, and the manual
+is the only authority.
 
 ### CAD fidelity — the parts a design is made of
 

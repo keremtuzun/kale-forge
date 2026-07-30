@@ -7,6 +7,16 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
+# Load .env for the services, which read plain os.getenv. docker-compose consumes .env
+# natively, but local dev never did — so the header's promise that .env selects the
+# inference provider was silently false and the stack always ran the stub.
+if [[ -f .env ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
+
 if [[ ! -x .venv/bin/uvicorn ]]; then
   echo "No virtualenv found. Run ./scripts/setup.sh first." >&2
   exit 1

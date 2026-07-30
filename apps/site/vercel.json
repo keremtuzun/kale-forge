@@ -1,0 +1,32 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "rewrites": [
+    { "source": "/studio", "destination": "/api/studio" },
+    { "source": "/api/:path*", "destination": "https://kale.150.136.151.230.nip.io/api/:path*" },
+    { "source": "/_next/:path*", "destination": "https://kale.150.136.151.230.nip.io/_next/:path*" },
+    { "source": "/brand/:path*", "destination": "https://kale.150.136.151.230.nip.io/brand/:path*" },
+    { "source": "/login", "destination": "https://kale.150.136.151.230.nip.io/login" },
+    { "source": "/signup", "destination": "https://kale.150.136.151.230.nip.io/signup" },
+    { "source": "/forgot-password", "destination": "https://kale.150.136.151.230.nip.io/forgot-password" },
+    { "source": "/reset-password", "destination": "https://kale.150.136.151.230.nip.io/reset-password" },
+    { "source": "/account", "destination": "https://kale.150.136.151.230.nip.io/account" },
+    { "source": "/app", "destination": "https://kale.150.136.151.230.nip.io/app" },
+    { "source": "/design", "destination": "https://kale.150.136.151.230.nip.io/design" },
+    { "source": "/models", "destination": "https://kale.150.136.151.230.nip.io/models" },
+    { "source": "/projects/:path*", "destination": "https://kale.150.136.151.230.nip.io/projects/:path*" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains" },
+        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), payment=()" }
+      ]
+    }
+  ]
+}

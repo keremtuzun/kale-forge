@@ -6,15 +6,22 @@ from app.services.design_studio import DesignStudio
 from app.services.robot_spec import build_robot_spec
 
 
+# 27 x 27, not 28 x 28: the reference envelope tracks the most restrictive recent perimeter
+# budget (110 in), and a 28 in square frame is 112 in of perimeter. Asking for one here would
+# be testing the resize path rather than the synthesis path — that has its own test below.
 PROMPT = (
-    "Design a 28 x 28 inch FRC robot on a swerve-ready frame without swerve modules, "
+    "Design a 27 x 27 inch FRC robot on a swerve-ready frame without swerve modules, "
     "with a coaxial slapdown intake, dual flywheel shooter, dead-axle arm, and climber."
 )
 
 
-def _spec(prompt: str) -> dict:
-    """Specs for tests are built without the model pass so they stay hermetic and fast."""
-    return build_robot_spec(prompt, use_model=False)
+def _spec(prompt: str, season: str = "offseason") -> dict:
+    """Specs for tests are built without the model pass so they stay hermetic and fast.
+
+    The season is pinned rather than inferred: these tests are about synthesis, and leaving the
+    season to the default would silently rewrite their expectations the year the default moves.
+    """
+    return build_robot_spec(prompt, use_model=False, season=season)
 
 
 def _render(spec: dict, tmp_path, name: str = "Reference Robot") -> dict:
@@ -26,13 +33,50 @@ def _render(spec: dict, tmp_path, name: str = "Reference Robot") -> dict:
 
 def test_reference_profile_omits_modules_and_selects_real_subsystems():
     spec = _spec(PROMPT)
-    assert spec["frame"]["width_in"] == 28
-    assert spec["frame"]["length_in"] == 28
+    assert spec["frame"]["width_in"] == 27
+    assert spec["frame"]["length_in"] == 27
     assert spec["drive"]["type"] == "swerve-ready"
     assert spec["drive"]["modules_included"] is False
     assert set(spec["subsystems"]) == {"intake", "shooter", "arm", "climber"}
     assert spec["intake"]["type"] == "coaxial slapdown"
     assert spec["reference_basis"]
+
+
+def test_season_perimeter_budget_resizes_an_illegal_frame():
+    """The same 28 x 28 request is legal in 2025 and is not in 2026.
+
+    2026 allows 110 in of perimeter against 2025's 120, so a frame that passed inspection last
+    year is 2 in over this year. Building it anyway and staying quiet would be the worst of the
+    available options, so the frame is scaled and the reason is recorded on the spec.
+    """
+    big = PROMPT.replace("27 x 27", "28 x 28")
+    legal = _spec(big, season="2025-reefscape")
+    assert (legal["frame"]["width_in"], legal["frame"]["length_in"]) == (28, 28)
+    assert legal["constraints"]["frame_note"] == ""
+
+    resized = _spec(big, season="2026-rebuilt")
+    assert resized["frame"]["width_in"] == 27.5
+    assert resized["constraints"]["frame_perimeter_in"] <= 110.0
+    assert "110" in resized["constraints"]["frame_note"]
+    assert all(row["ok"] for row in resized["rule_check"] if row["check"] == "Frame perimeter")
+
+
+def test_season_drives_the_default_architecture():
+    """A bare request produces a different robot in each season, from the season's own numbers."""
+    prompt = "Design a competition robot that scores as fast as it can and climbs at the buzzer."
+    rebuilt = _spec(prompt, season="2026-rebuilt")
+    reefscape = _spec(prompt, season="2025-reefscape")
+
+    assert rebuilt["season"]["key"] == "2026-rebuilt"
+    assert rebuilt["hopper"]["included"] is True          # bulk fuel handling is the 2026 problem
+    assert reefscape["elevator"]["included"] is True      # L4 at 72 in is the 2025 problem
+    assert reefscape["hopper"]["included"] is False
+    assert rebuilt["frame"]["width_in"] < reefscape["frame"]["width_in"]
+
+    shot = rebuilt["shooter"]["shot"]
+    assert shot["target_height_in"] == 72.0              # the HUB opening, not a stored constant
+    assert 40 < shot["optimal_angle_deg"] < 80
+    assert shot["required_exit_fps"] > 0
 
 
 def test_revision_can_remove_a_subsystem():
@@ -50,7 +94,10 @@ def test_robot_renderer_creates_detailed_dimensioned_assembly(tmp_path):
     assert "g chassis_left_2x1" in obj
     assert "g swerve_ready_corner_1" in obj
     assert "g intake_front_roller" in obj
-    assert "g shooter_lower_flywheel" in obj
+    # Which flywheel groups appear depends on whether the prompt-seeded pick landed on a single
+    # or a split shooter, and asserting one of them makes the test a hash check on the prompt
+    # text. What matters here is that the shooter rendered at all.
+    assert "_flywheel" in obj and "g shooter_" in obj
     assert "g arm_left_beam" in obj
     assert "g climber_left_outer" in obj
     assert len(manifest["components"]) >= 35
@@ -226,3 +273,59 @@ def test_new_account_worked_example_is_private_editable_and_explicit(tmp_path, m
     revised = studio.edit(record["id"], "Make the intake 4 inches wider", "user-123")
     assert revised["revision"] == 2
     get_settings.cache_clear()
+
+
+# ── Onshape editability: the reason a mesh export is not enough ─────────────
+def test_featurescript_carries_every_part_and_stays_parametric():
+    """What lands in Onshape must be editable, which a mesh can never be.
+
+    The check is deliberately about *dimensions surviving the trip*: a tube's wall, a gear's
+    tooth count and a frame's size all have to appear as numbers in the source, because those
+    are exactly the facts an OBJ throws away.
+    """
+    from app.services.frc_featurescript import build_featurescript, featurescript_stats
+
+    spec = _spec("2026 turreted fuel cycler with a spindexer and an L3 climb",
+                 season="2026-rebuilt")
+    source = build_featurescript(spec, "Test Robot")
+    stats = featurescript_stats(source)
+
+    # Every modelled part reaches the feature tree, and nothing falls through unmodelled.
+    assert stats["parts"] >= spec["cad"]["feature_total"]
+    assert stats["unmodelled"] == 0
+
+    # It has to be syntactically plausible FeatureScript, not a fragment.
+    assert source.startswith("FeatureScript ")
+    assert source.count("{") == source.count("}")
+    assert source.count("(") == source.count(")")
+
+    # The frame is a feature parameter, so the model rebuilds when it changes.
+    assert "isLength(definition.frameWidth" in source
+    assert "isLength(definition.frameLength" in source
+
+    # Every part's measures are named vars, not literals buried in calls — and every part's
+    # position rides the frame scale factors, so the dialog parameters actually move geometry.
+    assert stats["variables"] >= 3 * stats["parts"]
+    assert "* scaleX" in source and "* scaleZ" in source
+    # Chassis members stretch along their own axis with the frame.
+    assert "_len * scaleZ" in source or "_len * scaleX" in source
+
+    # A gear's pitch diameter is emitted as its derivation from a named tooth-count var, not
+    # as the number it produced — otherwise editing the tooth count would move nothing.
+    assert "_teeth / " in source or "/ sin(PI / " in source
+    # Tube walls are real subtractions, so wall thickness stays a dimension.
+    assert "kaleTube(context" in source and "BooleanOperationType.SUBTRACTION" in source
+    # No Python repr leaked into a source comment.
+    assert "{'name'" not in source and "': '" not in source
+
+
+def test_featurescript_tracks_the_season_envelope():
+    """The rule limits travel with the geometry, so the file can be checked against them."""
+    from app.services.frc_featurescript import build_featurescript
+
+    rebuilt = build_featurescript(_spec("fuel cycler", season="2026-rebuilt"))
+    reefscape = build_featurescript(_spec("coral scorer", season="2025-reefscape"))
+
+    assert "KALE_PERIMETER_LIMIT_IN = 110.0" in rebuilt
+    assert "KALE_PERIMETER_LIMIT_IN = 120.0" in reefscape
+    assert "2026 REBUILT" in rebuilt and "2025 REEFSCAPE" in reefscape

@@ -45,6 +45,10 @@ def _build_provider(settings) -> Provider:
         from app.providers.vllm_client import VLLMProvider
 
         return VLLMProvider(settings.vllm_url, settings.model_version)
+    if p == "local_mlx":
+        from app.providers.mlx_local import MLXProvider
+
+        return MLXProvider(settings.model_path, settings.adapter_path, settings.model_version)
     return StubProvider(settings.model_version)
 
 

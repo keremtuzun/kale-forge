@@ -1,0 +1,79 @@
+# Kale Forge Design Model — adapter v12 (MLX LoRA)
+#
+# v12 exists to fix a measured defect in v11, not to try a new idea. v11 kept the season
+# revision's intent quality (9/9 valid, 9 enum-clean, 9 distinct) and regressed hard on CAD
+# (3/9 valid against v10's 6/9). The cause was measured, not guessed:
+#
+#   47.7% of design-v11's cad_geometry rows exceeded max_seq_length 2048 and were truncated
+#   during training — max 2934 tokens, median 2020, sitting exactly on the limit. Every other
+#   family was at 0%. A truncated CAD target teaches the model to emit JSON that never closes,
+#   which is precisely the observed failure.
+#
+# It was a latent bug in v10 too (37.3% over, median 1814) that the season block and the richer
+# hopper/turret assemblies pushed over the edge. MLX prints the warning at startup; it was read
+# past. The corpus was never the problem, so v12 does not change the recipe — it changes the
+# window the recipe is trained through.
+#
+# THE HOST IS AN 8 GB M2. v11 peaked at 5.382 GB. That is the constraint that decides what
+# "more precision" is allowed to mean here, and it is why the knobs below are picked rather
+# than all turned up:
+#
+#   max_seq_length 2048 → 3072   the fix. Costs activation memory, which is the expensive kind,
+#                                but 3072 clears the 2934-token longest CAD target with room.
+#                                Verified against the v12 corpus before launch: 0 rows truncated.
+#   iters 900 → 1400             more training, and free in memory terms.
+#   num_layers 6 → 8             more of the stack adapted. Modest: LoRA params and their
+#                                optimizer state are small next to activations.
+#   rank 8 → 16, dropout 0.05    double the adapter capacity for ~66 MB of optimizer state.
+#                                The dropout is deliberate — v11's train loss bounced between
+#                                0.126 and 0.663 on adjacent reports, which is a model with
+#                                capacity and nothing damping it.
+#   grad_accumulation_steps 4    UNCHANGED. Raising it would halve gradient noise but double
+#                                wall-clock, and the LR schedule below addresses the same
+#                                instability for free.
+#
+# lr_schedule is the other real fix. v11 ran a flat 1e-4 to the end and its final checkpoint
+# was three times worse than iteration 800 (val 0.279 vs 0.095) — the run was still taking
+# full-size steps when it should have been settling. Cosine decay to 8e-6 with a short warmup
+# means late iterations refine instead of bouncing, which is what "more training" has to mean
+# if the extra iterations are going to be worth their wall-clock.
+#
+# val_batches 8 → 25 is a measurement fix, not a training one. Eight batches made the
+# validation signal noisy enough that picking a checkpoint from it was guesswork — and that is
+# exactly what happened when iteration 800 and 900 disagreed by 3x. Evaluated every 100 steps
+# so checkpoint selection has something to select on.
+#
+# Expect roughly 4-5 hours: about 1.6x v11's per-iteration cost from the longer sequences and
+# the two extra layers, over 1.56x the iterations.
+#
+# NOTE: on this host the run happens off the iCloud Desktop, on local disk (/private/tmp), with
+# the non-Anaconda MLX env — iCloud read latency otherwise stalls imports for tens of minutes.
+# Paths below are the repo-canonical locations; scripts/train-design-adapter.sh copies the
+# dataset to /private/tmp and writes checkpoints into the repo, which is the durable location.
+model: mlx-community/Qwen3-4B-Instruct-2507-4bit
+train: true
+data: datasets/processed/design-v12
+fine_tune_type: lora
+adapter_path: models/adapters/kale-design-qwen3-4b-v12
+seed: 42
+iters: 1400
+batch_size: 1
+grad_accumulation_steps: 4
+learning_rate: 0.0001
+lr_schedule:
+  name: cosine_decay
+  arguments: [0.0001, 1400, 0.000008]
+  warmup: 60
+  warmup_init: 0.00001
+num_layers: 8
+lora_parameters:
+  rank: 16
+  dropout: 0.05
+  scale: 20.0
+max_seq_length: 3072
+mask_prompt: true
+grad_checkpoint: true
+steps_per_report: 20
+steps_per_eval: 100
+save_every: 100
+val_batches: 25

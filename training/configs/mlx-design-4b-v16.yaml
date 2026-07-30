@@ -1,0 +1,36 @@
+# Kale Forge Design Model — adapter v16 (MLX LoRA)
+#
+# v16 is not a fresh run: it is v15's final 200 iterations, finished on a REBALANCED corpus.
+#
+# v15 trained 600 of its 800 iterations on design-v13 before the session died. Its scorecard
+# said one precise thing: best-ever held-out CAD validity (5/7), intent regressed 9/9 → 7/9,
+# and the credible cause was design_intent's corpus share falling 37% → 31%. So the remaining
+# 200 iterations run on design-v14, which restores intent to 36.5% (1,800 rows) while keeping
+# every binder/cad_qa/cad_geometry gain. The tail of training is pointed at the one axis that
+# regressed.
+#
+# Mechanics: v16-work is seeded with v15's 0000600 checkpoint, so train-design-adapter.sh
+# resumes at 600/800 and — because Adam state is not restored — re-warms the LR over 60
+# iterations (the fix written after the raw resume destroyed v14). v15's checkpoint and its
+# promoted adapter are untouched; if this continuation goes wrong, v15 survives.
+#
+# Window check (Qwen3 tokenizer): longest design-v14 row 2,937 of 3,072, zero truncation.
+# Recipe identical to v14/v15 — the stable one. THE HOST IS AN 8 GB M2 (peaks ~6.4 GB).
+model: mlx-community/Qwen3-4B-Instruct-2507-4bit
+train: true
+data: datasets/processed/design-v14
+fine_tune_type: lora
+adapter_path: models/adapters/kale-design-qwen3-4b-v16
+seed: 42
+iters: 800
+batch_size: 1
+grad_accumulation_steps: 4
+learning_rate: 0.0001
+num_layers: 6
+max_seq_length: 3072
+mask_prompt: true
+grad_checkpoint: true
+steps_per_report: 20
+steps_per_eval: 100
+save_every: 100
+val_batches: 25

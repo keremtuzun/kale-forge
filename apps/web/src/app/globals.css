@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 210 20% 98%;
+  --foreground: 220 20% 12%;
+  --card: 0 0% 100%;
+  --card-foreground: 220 20% 12%;
+  --muted: 210 16% 93%;
+  --muted-foreground: 220 10% 40%;
+  --primary: 152 45% 34%;
+  --primary-foreground: 0 0% 100%;
+  --accent: 152 40% 92%;
+  --border: 220 13% 88%;
+}
+
+.dark {
+  --background: 220 24% 9%;
+  --foreground: 210 16% 92%;
+  --card: 220 22% 12%;
+  --card-foreground: 210 16% 92%;
+  --muted: 220 16% 18%;
+  --muted-foreground: 215 12% 62%;
+  --primary: 152 42% 46%;
+  --primary-foreground: 220 24% 9%;
+  --accent: 152 30% 20%;
+  --border: 220 16% 22%;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: hsl(var(--primary) / 0.18);
+}
+
+:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
