@@ -110,11 +110,43 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
     shape.lineTo(hw, hd - r); shape.quadraticCurveTo(hw, hd, hw - r, hd);
     shape.lineTo(-hw + r, hd); shape.quadraticCurveTo(-hw, hd, -hw, hd - r);
     shape.lineTo(-hw, -hd + r); shape.quadraticCurveTo(-hw, -hd, -hw + r, -hd);
-    if (pockets > 0) {
+    if (pockets > 0 && w > 3.2 && d > 3.2 && pockets >= 6) {
+      // A CNC-routed pocket grid, the way a real bellypan is machined: rounded-square
+      // pockets in a regular grid with uniform webs between them and a solid margin at the
+      // rails — not a scatter of circles. The web and margin are fixed machining numbers;
+      // the pocket size falls out of the plate.
+      const margin = Math.min(1.3, Math.max(0.7, Math.min(w, d) * 0.06));
+      const web = 0.55;
+      const availW = w - margin * 2, availD = d - margin * 2;
+      const target = Math.max(1.7, Math.sqrt((availW * availD) / pockets));
+      const cols = Math.max(1, Math.round((availW + web) / (target + web)));
+      const rows = Math.max(1, Math.round((availD + web) / (target + web)));
+      const pw = (availW - (cols - 1) * web) / cols;
+      const pd = (availD - (rows - 1) * web) / rows;
+      if (pw > 0.8 && pd > 0.8) {
+        const cr = Math.min(0.45, pw / 3, pd / 3);   // the router's corner radius
+        for (let i = 0; i < cols; i++) {
+          for (let j = 0; j < rows; j++) {
+            const cx = -availW / 2 + i * (pw + web) + pw / 2;
+            const cz = -availD / 2 + j * (pd + web) + pd / 2;
+            const x0 = cx - pw / 2, x1 = cx + pw / 2, z0 = cz - pd / 2, z1 = cz + pd / 2;
+            const hole = new THREE.Path();
+            hole.moveTo(x0 + cr, z0);
+            hole.lineTo(x1 - cr, z0); hole.absarc(x1 - cr, z0 + cr, cr, -Math.PI / 2, 0, false);
+            hole.lineTo(x1, z1 - cr); hole.absarc(x1 - cr, z1 - cr, cr, 0, Math.PI / 2, false);
+            hole.lineTo(x0 + cr, z1); hole.absarc(x0 + cr, z1 - cr, cr, Math.PI / 2, Math.PI, false);
+            hole.lineTo(x0, z0 + cr); hole.absarc(x0 + cr, z0 + cr, cr, Math.PI, Math.PI * 1.5, false);
+            shape.holes.push(hole);
+          }
+        }
+      }
+    } else if (pockets > 0) {
+      // Small plates (module plates, mounts) keep a modest bolt-circle of round lightening
+      // holes — at this scale that is what real plates use.
       const cols = Math.max(1, Math.round(Math.sqrt(pockets * w / Math.max(d, 0.01))));
       const rows = Math.max(1, Math.round(pockets / cols));
       const cw = w / cols, cd = d / rows;
-      const pr = Math.max(0.18, Math.min(cw, cd) * 0.30);
+      const pr = Math.max(0.16, Math.min(cw, cd) * 0.26);
       for (let i = 0; i < cols; i++) {
         for (let j = 0; j < rows; j++) {
           const cx = -hw + (i + 0.5) * cw, cz = -hd + (j + 0.5) * cd;
@@ -680,12 +712,15 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
   // Explode along the axis the assembly is actually removed on: mechanisms lift and move
   // outboard, the bellypan drops, the control system rises off the pan.
   function explodeVector(asm, W, L) {
-    if (asm.id === 'chassis') return new THREE.Vector3(0, -9, 0);
-    if (asm.id === 'electrical') return new THREE.Vector3(0, 7, 0);
-    if (asm.id.startsWith('swerve') || asm.id === 'drivetrain') {
-      return new THREE.Vector3(Math.sign(asm.origin[0] || 1) * 5, 4, Math.sign(asm.origin[2] || 1) * 5);
-    }
-    return new THREE.Vector3(Math.sign(asm.origin[0] || 1) * 4, 8, 0);
+    // A real exploded view separates VERTICALLY, like an assembly drawing: every part stays
+    // over its own footprint so nothing appears to leave the robot. Each assembly gets its
+    // own stratum so the layers read top-down as the build order.
+    const strata = {
+      chassis: -5.5, drivetrain: -2.5, electrical: 4.5, intake: 7,
+      hopper: 9.5, climber: 11.5, elevator: 13, arm: 15, shooter: 17,
+    };
+    if (asm.id.startsWith('swerve')) return new THREE.Vector3(0, -2.5, 0);
+    return new THREE.Vector3(0, strata[asm.id] !== undefined ? strata[asm.id] : 9, 0);
   }
 
   // ── interaction ──────────────────────────────────────────────────────────────

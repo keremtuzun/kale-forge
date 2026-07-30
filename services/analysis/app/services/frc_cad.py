@@ -30,7 +30,7 @@ from typing import Any
 
 from app.services.frc_parts import ELECTRONICS, MOTORS, STRUCTURE, SWERVE_MODULES
 
-CAD_VERSION = "kale-cad-2.0"
+CAD_VERSION = "kale-cad-2.1"
 
 # Materials the renderer and the BOM both understand.  Keeping this closed means a feature
 # can never arrive with a finish nobody knows how to draw or price.
@@ -723,6 +723,41 @@ def _hopper(spec: dict[str, Any], lane_x: float, c: Choices) -> dict[str, Any] |
                       + (["floor disc revolute about Y on the centre bearing"] if rotating else []))
 
 
+def _turret_stack(ring_bore: float) -> list[dict[str, Any]]:
+    """A real turret, bottom-up: base plate on the crossmembers, slew bearing on the base,
+    ring gear bolted to the rotating platform, the platform disc everything above rides on,
+    and the pinion + motor that drive it. Heights stack so every part rests on the one below
+    it — nothing floats:
+
+        0.000  base plate underside (on the crossmembers)
+        0.250  base plate top  →  slew bearing seat
+        0.750  bearing top     →  ring gear
+        1.200  ring gear top   →  platform disc
+        1.610  platform top    →  the shooter head's y0
+    """
+    r = ring_bore / 2
+    side = ring_bore + 3.2
+    stack: list[dict[str, Any]] = [
+        plate("turret base plate", (side, 0.250, side), _at(0, 0.125, 0), pockets=8,
+              note="bolts to two crossmembers; the slew bearing bolts to this"),
+        bearing("turret slew bearing", _at(0, 0.50, 0),
+                bore=ring_bore, od=ring_bore + 1.6, width=0.50),
+        gear("turret ring gear", 120, _at(0, 0.975, 0), dp=20, face=0.45,
+             bore=ring_bore - 0.4, mat="anodised"),
+        wheel("turret platform", ring_bore + 2.4, 0.32, _at(0, 1.45, 0), kind="smooth",
+              durometer="0.25 in 6061 disc — everything above this rotates"),
+        gear("turret pinion", 14, _at(r + 1.35, 0.975, 0), dp=20, face=0.45, bore=0.375),
+        motor("turret motor", "neo_550", _at(r + 1.35, 2.35, 0), _rot(180, 0, 0)),
+    ]
+    for sz in (-1, 1):
+        stack.append(hardstop("turret rotation stop",
+                              _at(-(r + 0.6), 1.45, sz * (r + 0.4))))
+    stack.append(_feat("chain_track", "turret energy chain", _at(0, 0.45, r + 0.9),
+                       size=[0.9, 0.7, ring_bore * 1.5], kind="energy chain",
+                       note="constant-force spring keeps it tensioned through the sweep"))
+    return stack
+
+
 def _shooter(spec: dict[str, Any], lane_x: float, c: Choices) -> dict[str, Any] | None:
     """Flywheel shooter — staged barrel or classic hooded pair — on a real pivot."""
     sh = spec.get("shooter") or {}
@@ -764,83 +799,67 @@ def _shooter(spec: dict[str, Any], lane_x: float, c: Choices) -> dict[str, Any] 
                                             _at(sx * (fw + 0.55), pivot_y + sy * (fw + 0.25), z), _rot(0, 0, 90)))
             features.append(motor(f"stage {s + 1} motor", mkey,
                                   _at(fw + 2.6, pivot_y + (-1 if s % 2 else 1) * (fw + 0.4), z), _rot(0, 0, 90)))
+        post_base = 1.61 if sh.get("turreted") else 0.0
         for sx in (-1, 1):
             features.append(bearing("pivot trunnion", _at(sx * (fw + 1.5), pivot_y, 0), _rot(0, 0, 90),
                                     bore=0.625, od=1.5, width=0.5))
-            features.append(tube("shooter post", TUBE_2X1, pivot_y, _at(sx * (fw + 1.5), pivot_y / 2, 0),
+            features.append(tube("shooter post", TUBE_2X1, pivot_y - post_base,
+                                 _at(sx * (fw + 1.5), (pivot_y + post_base) / 2, 0),
                                  _rot(90, 0, 0), bolts=2.0))
         if sh.get("turreted"):
-            features.append(gear("turret ring gear", 120, _at(0, 2.4, 0), dp=20, face=0.45,
-                                 bore=5.8, mat="anodised"))
-            features.append(gear("turret pinion", 14, _at(3.4, 2.4, 0), dp=20, face=0.45, bore=0.375))
-            features.append(bearing("turret slew bearing", _at(0, 2.0, 0), bore=5.0, od=6.4, width=0.5))
+            features += _turret_stack(5.4)
     else:
+        # On a turret the whole head sits on the rotating platform, so every head part is
+        # lifted by the platform's top face. A head drawn at fixed heights over a turret is
+        # how the old model ended up with posts starting mid-air.
+        turret = bool(sh.get("turreted"))
+        y0 = 1.61 if turret else 0.0
         for sy in (-1, 1):
             features.append(shaft("flywheel shaft", _HEX_BORE, width * 0.5,
-                                  _at(0, 4.5 + sy * (fw + 0.25), 0), _rot(0, 0, 90)))
+                                  _at(0, y0 + 4.5 + sy * (fw + 0.25), 0), _rot(0, 0, 90)))
             for sx in (-1, 1):
-                features.append(wheel("flywheel", fw_d, 0.8, _at(sx * 1.0, 4.5 + sy * (fw + 0.25), 0),
+                features.append(wheel("flywheel", fw_d, 0.8, _at(sx * 1.0, y0 + 4.5 + sy * (fw + 0.25), 0),
                                       _rot(0, 0, 90), kind="urethane", durometer="grey 60A"))
-                features.append(bearing("flywheel bearing", _at(sx * (fw + 0.9), 4.5 + sy * (fw + 0.25), 0),
+                features.append(bearing("flywheel bearing", _at(sx * (fw + 0.9), y0 + 4.5 + sy * (fw + 0.25), 0),
                                         _rot(0, 0, 90)))
             features.append(pulley("flywheel pulley", 24, 0.45,
-                                   _at(fw + 1.4, 4.5 + sy * (fw + 0.25), 0), _rot(0, 0, 90)))
+                                   _at(fw + 1.4, y0 + 4.5 + sy * (fw + 0.25), 0), _rot(0, 0, 90)))
             features.append(motor("flywheel motor", mkey,
-                                  _at(fw + 3.0, 4.5 + sy * (fw + 0.25), -1.4), _rot(0, 0, 90)))
+                                  _at(fw + 2.2, y0 + 4.5 + sy * (fw + 0.25), -1.4), _rot(0, 0, 90)))
         hood_name = "fixed hood" if c.shooter_hood_drive == "fixed" else "adjustable hood"
-        features.append(_feat("hood", hood_name, _at(0, 4.5, 0),
+        features.append(_feat("hood", hood_name, _at(0, y0 + 4.5, 0),
                               r=fw + 1.0, w=2.6, arc=180,
                               range_deg=[0, 0] if c.shooter_hood_drive == "fixed"
                                         else sh.get("hood_angle_deg", [18, 62])))
         if c.shooter_hood_drive == "servo":
-            features.append(_feat("actuator", "hood servo", _at(fw + 1.6, 5.6, 1.0),
+            features.append(_feat("actuator", "hood servo", _at(fw + 1.6, y0 + 5.6, 1.0),
                                   size=[1.6, 0.8, 0.8], kind="linear servo"))
         elif c.shooter_hood_drive == "rack":
-            features.append(gear("hood sector gear", 60, _at(fw + 1.2, 4.5, 0), _rot(0, 0, 90),
+            features.append(gear("hood sector gear", 60, _at(fw + 1.2, y0 + 4.5, 0), _rot(0, 0, 90),
                                  dp=20, face=0.3, mat="anodised"))
-            features.append(gear("hood pinion", 12, _at(fw + 1.2, 6.3, 0), _rot(0, 0, 90),
+            features.append(gear("hood pinion", 12, _at(fw + 1.2, y0 + 6.3, 0), _rot(0, 0, 90),
                                  dp=20, face=0.3, bore=0.375))
         for sx in (-1, 1):
-            features.append(tube("shooter post", TUBE_2X1, 4.4, _at(sx * 1.6, 2.2, 0), _rot(90, 0, 0)))
+            features.append(tube("shooter post", TUBE_2X1, 4.4, _at(sx * 1.6, y0 + 2.2, 0), _rot(90, 0, 0),
+                                 bolts=2.0))
         # How the gamepiece is presented to the flywheels is its own small mechanism.
         if c.shooter_feeder == "kicker":
-            features.append(wheel("kicker wheel", 3.0, 1.2, _at(0, 3.0, 1.8), _rot(0, 0, 90),
+            features.append(wheel("kicker wheel", 3.0, 1.2, _at(0, y0 + 3.0, 1.8), _rot(0, 0, 90),
                                   kind="compliant", durometer="40A"))
-            features.append(motor("kicker motor", "neo_550", _at(width * 0.4, 3.0, 1.8), _rot(0, 0, 90)))
+            features.append(motor("kicker motor", "neo_550", _at(width * 0.4, y0 + 3.0, 1.8), _rot(0, 0, 90)))
         elif c.shooter_feeder == "belt":
-            features.append(pulley("feeder pulley", 18, 0.5, _at(0, 3.0, 2.4), _rot(0, 0, 90)))
-            features.append(belt("feeder belt", _at(0, 3.0, 2.4), _at(0, 3.6, 1.2), 0.5))
-            features.append(motor("feeder motor", "neo_550", _at(width * 0.4, 3.0, 2.4), _rot(0, 0, 90)))
+            features.append(pulley("feeder pulley", 18, 0.5, _at(0, y0 + 3.0, 2.4), _rot(0, 0, 90)))
+            features.append(belt("feeder belt", _at(0, y0 + 3.0, 2.4), _at(0, y0 + 3.6, 1.2), 0.5))
+            features.append(motor("feeder motor", "neo_550", _at(width * 0.4, y0 + 3.0, 2.4), _rot(0, 0, 90)))
         else:
             features.append(shaft("feeder roller shaft", _HEX_BORE, width * 0.6,
-                                  _at(0, 3.1, 1.9), _rot(0, 0, 90)))
-            features.append(wheel("feeder roller", 2.0, width * 0.5, _at(0, 3.1, 1.9),
+                                  _at(0, y0 + 3.1, 1.9), _rot(0, 0, 90)))
+            features.append(wheel("feeder roller", 2.0, width * 0.5, _at(0, y0 + 3.1, 1.9),
                                   _rot(0, 0, 90), kind="compliant", durometer="35A"))
-            features.append(motor("feeder motor", "neo_550", _at(width * 0.4, 3.1, 1.9), _rot(0, 0, 90)))
-        features.append(polycarb("feeder guide", (width * 0.7, 0.093, 3.0), _at(0, 3.2, 1.6), _rot(-24, 0, 0)))
-        if sh.get("turreted"):
-            # A hooded shooter on a turret: one large-bore slew bearing carries the whole head,
-            # a ring gear drives it, and the energy chain is the part that actually takes the
-            # design time — it is modelled because if it is not modelled it is not packaged.
-            ring_bore = max(width * 0.45, 5.0)
-            features.append(bearing("turret slew bearing", _at(0, 0.9, 0),
-                                    bore=ring_bore, od=ring_bore + 1.4, width=0.5))
-            features.append(gear("turret ring gear", 120, _at(0, 1.4, 0), dp=20, face=0.45,
-                                 bore=ring_bore + 0.2, mat="anodised"))
-            features.append(gear("turret pinion", 14, _at(ring_bore / 2 + 1.2, 1.4, 0), dp=20,
-                                 face=0.45, bore=0.375))
-            features.append(motor("turret motor", "neo_550",
-                                  _at(ring_bore / 2 + 1.2, 3.4, 0), _rot(180, 0, 0)))
-            features.append(plate("turret plate", (ring_bore + 2.6, 0.250, ring_bore + 2.6),
-                                  _at(0, 1.9, 0), pockets=6,
-                                  note="everything above this rotates; keep the sweep inside the perimeter"))
-            for sz in (-1, 1):
-                features.append(hardstop("turret rotation stop",
-                                         _at(ring_bore / 2 + 0.4, 1.9, sz * (ring_bore / 2 + 0.4))))
-            features.append(_feat("chain_track", "turret energy chain",
-                                  _at(0, 0.55, ring_bore / 2 + 0.6),
-                                  size=[0.9, 0.7, ring_bore * 1.6], kind="energy chain",
-                                  note="constant-force spring keeps it tensioned through the sweep"))
+            features.append(motor("feeder motor", "neo_550", _at(width * 0.4, y0 + 3.1, 1.9), _rot(0, 0, 90)))
+        features.append(polycarb("feeder guide", (width * 0.7, 0.093, 3.0), _at(0, y0 + 3.2, 1.6), _rot(-24, 0, 0)))
+        if turret:
+            features += _turret_stack(max(width * 0.45, 5.0))
     bias = sh.get("position_bias", 0.65)
     return _asm("shooter", "Shooter", "mechanism", features,
                 origin=_at(lane_x, 1.2, -ln / 2 + bias * ln),
@@ -927,11 +946,17 @@ def _elevator(spec: dict[str, Any], lane_x: float, c: Choices) -> dict[str, Any]
                               rot=_rot(0, 0, 90)))
     features.append(_feat("tensioner", f"{rig} tensioner", _at(span / 2 - 1.5, 3.4, 0.7),
                           dia=1.0, w=0.45, rot=_rot(0, 0, 90)))
-    features.append(gearbox("elevator gearbox", (2.6, 3.0, 1.6), _at(-span / 2 - 1.2, 2.6, -0.6),
+    # The winch package hangs on a shelf off the upright, with the gearbox output on the
+    # rigging drive shaft's own axis — drawn floating beside the tower it reads as wrong,
+    # because it would be.
+    features.append(plate("gearbox mount shelf", (2.9, 0.190, 3.4), _at(-span / 2 - 1.15, 0.60, 0.7),
+                          pockets=2, note="bolts to the upright web; gearbox and motors hang on this"))
+    features.append(gearbox("elevator gearbox", (2.6, 3.0, 1.6), _at(-span / 2 - 1.15, 2.2, 0.7),
                             ratio=el.get("reduction", "12:1"), stages=2))
     mkey = el.get("motor_key", "neo_vortex")
     for i in range(int(el.get("motor_count", 2))):
-        features.append(motor("elevator motor", mkey, _at(-span / 2 - 1.2, 2.6, -1.6 - i * 2.4), _rot(0, 0, 90)))
+        features.append(motor("elevator motor", mkey,
+                              _at(-span / 2 - 1.15, 2.2, 0.7 - 1.9 - i * 2.1), _rot(0, 0, 90)))
     features.append(shaft("rigging drive shaft", _HEX_BORE, span, _at(0, 2.2, 0.7), _rot(0, 0, 90)))
     bias = el.get("position_bias", 0.55)
     return _asm("elevator", "Elevator", "mechanism", features,
@@ -1104,9 +1129,14 @@ def _electrical(spec: dict[str, Any]) -> dict[str, Any] | None:
         size = pl.get("size_mm") or [0, 0, 0]
         centre = pl.get("center_mm") or [0, 0, 0]
         sx, sy, sz = size[0] / 25.4, size[1] / 25.4, size[2] / 25.4
-        cx, cy, cz = centre[0] / 25.4 - w / 2, centre[2] / 25.4, centre[1] / 25.4 - ln / 2
-        by_key[pl["key"]] = _at(cx, cy + sz / 2, cz)
-        features.append(_feat("component", pl.get("name", pl["key"]), _at(cx, cy + sz / 2, cz),
+        cx, cz = centre[0] / 25.4 - w / 2, centre[1] / 25.4 - ln / 2
+        # Everything electrical bolts flat to the bellypan — the layout's z is advisory and
+        # was floating the battery half a foot in the air. The radio and RSL belong up on a
+        # mast in real life, but a component drawn at mast height with no mast under it reads
+        # as a floating box, so at concept level they mount to the pan like everything else.
+        cy = sz / 2 + 0.06
+        by_key[pl["key"]] = _at(cx, cy, cz)
+        features.append(_feat("component", pl.get("name", pl["key"]), _at(cx, cy, cz),
                               key=pl["key"], size=[round(sx, 3), round(sz, 3), round(sy, 3)],
                               rot=_rot(0, pl.get("rotation_deg", 0), 0),
                               note=pl.get("note") or None))
