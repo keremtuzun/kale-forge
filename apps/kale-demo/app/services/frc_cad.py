@@ -705,10 +705,17 @@ def _hopper(spec: dict[str, Any], lane_x: float, c: Choices) -> dict[str, Any] |
     features.append(_feat("tensioner", f"{c.hopper_drive} tensioner",
                           _at(drive_x + 0.7, shaft_y + 0.8, -depth * 0.04), dia=0.9, w=0.4,
                           rot=_rot(0, 0, 90)))
-    # Structure under it all: two rails the floor and walls bolt to.
+    # Structure under it all: two rails the floor and walls bolt to, and a corner post at
+    # each wall corner running down to the chassis — a glass box with nothing visibly
+    # holding it up reads as floating, because it would be.
     for sx in (-1, 1):
         features.append(tube("hopper support rail", TUBE_1X1, depth + 1.0,
                              _at(sx * (width / 2 - 0.6), floor_y - 0.8, 0), bolts=2.5))
+    for sx in (-1, 1):
+        for sz in (-1, 1):
+            features.append(tube("hopper corner post", TUBE_1X1, 2.4,
+                                 _at(sx * (width / 2 - 0.5), floor_y - 1.2, sz * (depth / 2 - 0.5)),
+                                 _rot(90, 0, 0)))
     features.append(plate("hopper access panel", (width * 0.6, 0.090, depth * 0.4),
                           _at(0, floor_y + wall_h + 0.1, depth * 0.2), pockets=3,
                           note="thumbscrewed — a jam clears without removing the shooter"))
@@ -889,6 +896,8 @@ def _elevator(spec: dict[str, Any], lane_x: float, c: Choices) -> dict[str, Any]
                              pockets=True, note="static tower, strong axis fore-aft"))
         features.append(fastener_row("upright bolt column", _at(sx * span / 2, 3.0, 1.0),
                                      max(2, int((h - 5) // 3)), [0, 3.0, 0], rot=_rot(90, 0, 0)))
+        features.append(gusset("tower foot gusset", (2.5, 2.0),
+                               _at(sx * span / 2, 0.10, 1.05), _rot(90, 0, 0)))
     features.append(tube("top tie", TUBE_1X1, span + 1, _at(0, h, 0), _rot(0, 90, 0)))
     features.append(tube("bottom tie", TUBE_1X1, span + 1, _at(0, 1.2, 0), _rot(0, 90, 0)))
     for i in range(c.elevator_braces):
@@ -1078,7 +1087,7 @@ def _climber(spec: dict[str, Any], lane_x: float, c: Choices) -> dict[str, Any] 
     for s in range(1, min(stages, len(ladder) - 1) + 1):
         inner_len = h * 0.8
         sec, wall = ladder[s]
-        cy = h * 0.55 + s * 3
+        cy = h * 0.5 + s * 1.5
         features.append(tube(f"climb stage {s}", sec, inner_len, _at(0, cy, 0), _rot(90, 0, 0),
                              wall=wall, mat="aluminium-dark",
                              note=f"nests inside {ladder[s - 1][0][0]:g}x{ladder[s - 1][0][1]:g}"))
