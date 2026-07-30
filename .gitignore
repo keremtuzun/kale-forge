@@ -62,3 +62,6 @@ work/
 # Training and eval run logs: run output, not source. The durable artifacts of a run are
 # its checkpoints (models/adapters/) and its scorecard (models/evaluations/).
 logs/
+
+# Vercel project links and absorbed nested-repo histories
+.vercel/

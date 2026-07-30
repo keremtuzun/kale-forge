@@ -1,0 +1,45 @@
+# Kale Forge Design Model — adapter v15 (MLX LoRA)
+#
+# v15 is v14's recipe fed the design-v13 corpus. The recipe is untouched because v14's fresh
+# run vindicated it: stable train loss to iteration 640 (val 0.510 at 600, no NaN, peak mem
+# 6.369 GB) — the run was killed by the session ending, not by the optimizer. What shipped as
+# "v14" and lost to v10 on the eval was the RESUMED run, which restarted Adam with zero moments
+# at full LR and drove val 0.454 → 9.878 in 100 iterations. The lesson is in the train script
+# now (re-warm on resume); the recipe was never the problem.
+#
+# What changed is the data. design-v13 (4,533 rows vs v12's 3,768) scales the families that
+# carry CAD detail and design justification, per the direction to train on CAD-model and
+# technical-binder data:
+#
+#   binder        143 →  480   now covers the drivetrain too (module choice, free speed vs
+#                              stall thrust, encoder placement), sampled across ~110 robots
+#   cad_qa        262 →  624   cut lists, travel, exit velocity, winch torque across 55 more
+#                              sampled robots
+#   cad_geometry  429 →  495   growth capped by the per-structure dedup — that cap is what
+#                              keeps this family teaching derivation rather than recitation
+#   season_rules  726          held at v12 level; this family carries the generalisation
+#   design_intent 1400         unchanged
+#
+# Window check (Qwen3 tokenizer, chat template applied): longest row 2955 of 3072, zero rows
+# truncated in any split — the defect that halved v11's CAD validity stays fixed.
+#
+# THE HOST IS AN 8 GB M2. v14 peaked at 6.369 GB on this exact recipe and window; nothing in
+# a data-only change moves that number.
+model: mlx-community/Qwen3-4B-Instruct-2507-4bit
+train: true
+data: datasets/processed/design-v13
+fine_tune_type: lora
+adapter_path: models/adapters/kale-design-qwen3-4b-v15
+seed: 42
+iters: 800
+batch_size: 1
+grad_accumulation_steps: 4
+learning_rate: 0.0001
+num_layers: 6
+max_seq_length: 3072
+mask_prompt: true
+grad_checkpoint: true
+steps_per_report: 20
+steps_per_eval: 100
+save_every: 100
+val_batches: 25

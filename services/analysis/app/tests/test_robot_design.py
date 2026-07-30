@@ -303,9 +303,16 @@ def test_featurescript_carries_every_part_and_stays_parametric():
     assert "isLength(definition.frameWidth" in source
     assert "isLength(definition.frameLength" in source
 
-    # A gear's pitch diameter is emitted as its derivation, not as the number it produced —
-    # otherwise editing the tooth count would move nothing.
-    assert "/ 20" in source or "/ 20.0" in source
+    # Every part's measures are named vars, not literals buried in calls — and every part's
+    # position rides the frame scale factors, so the dialog parameters actually move geometry.
+    assert stats["variables"] >= 3 * stats["parts"]
+    assert "* scaleX" in source and "* scaleZ" in source
+    # Chassis members stretch along their own axis with the frame.
+    assert "_len * scaleZ" in source or "_len * scaleX" in source
+
+    # A gear's pitch diameter is emitted as its derivation from a named tooth-count var, not
+    # as the number it produced — otherwise editing the tooth count would move nothing.
+    assert "_teeth / " in source or "/ sin(PI / " in source
     # Tube walls are real subtractions, so wall thickness stays a dimension.
     assert "kaleTube(context" in source and "BooleanOperationType.SUBTRACTION" in source
     # No Python repr leaked into a source comment.

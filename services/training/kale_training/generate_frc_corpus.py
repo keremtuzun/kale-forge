@@ -752,6 +752,8 @@ _BINDER_QUESTIONS = [
 ]
 
 _BINDER_OPTIONS: dict[str, list[str]] = {
+    "drivetrain": ["a four-module swerve drivebase", "a six-wheel west-coast drop-centre",
+                   "a four-wheel tank"],
     "intake": ["a fixed under-bumper roller", "an over-the-bumper pivot", "a four-bar deploy"],
     "hopper": ["a rotating-floor spindexer", "a belt-floor hopper", "a serpentine tunnel"],
     "shooter": ["a fixed hooded shooter", "a turreted hooded shooter", "a staged barrel"],
@@ -761,17 +763,24 @@ _BINDER_OPTIONS: dict[str, list[str]] = {
 }
 
 
-def _binder_examples(rng: random.Random, start: int, requests: list[tuple[str, str]]) -> list[dict[str, Any]]:
+def _binder_examples(rng: random.Random, start: int, requests: list[tuple[str, str]],
+                     cap: int | None = None) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     index = start
     for request, season_key in requests:
         spec = build_robot_spec(request, use_model=False, season=season_key)
         season = SEASONS[spec["season"]["key"]]
-        for block_key, label in (("intake", "intake"), ("hopper", "hopper"), ("shooter", "shooter"),
+        for block_key, label in (("drivetrain", "drivetrain"), ("intake", "intake"),
+                                 ("hopper", "hopper"), ("shooter", "shooter"),
                                  ("elevator", "elevator"), ("manipulator", "arm"),
                                  ("climber", "climber")):
             block = spec.get(block_key) or {}
-            if not block.get("included"):
+            # The drivetrain block has no "included" flag; a binder entry only makes sense
+            # when something is actually driven — installed modules or a west-coast gearbox.
+            if block_key == "drivetrain":
+                if not (block.get("module_count") or block.get("type") == "west-coast"):
+                    continue
+            elif not block.get("included"):
                 continue
             options = _BINDER_OPTIONS.get(block_key, [])
             lines = [f"## {label.title()} — {block.get('type', block.get('architecture', ''))}", ""]
@@ -805,12 +814,23 @@ def _binder_examples(rng: random.Random, start: int, requests: list[tuple[str, s
                     + f"\n\nSeason: {season['label']}\n\nRobot:\n" + _fenced(request))
             rows.append(_row(SYSTEM_KNOWLEDGE, user, "\n".join(lines), "binder", index))
             index += 1
+    if cap is not None and len(rows) > cap:
+        # Trim after a shuffle so the cap drops rows evenly rather than whole late requests.
+        rng.shuffle(rows)
+        rows = rows[:cap]
     return rows
 
 
 def _binder_requirement(key: str, spec: dict[str, Any], season: dict[str, Any]) -> str:
     gp = season["gamepiece"]
     rules = season["rules"]
+    if key == "drivetrain":
+        frame = spec.get("frame") or {}
+        return (f"Move a {frame.get('width_in', 27):g} × {frame.get('length_in', 27):g} in robot "
+                f"at competition weight across the field faster than the defence can rotate, "
+                f"inside the {rules['propulsion_motors']}-propulsion-motor limit. Free speed is "
+                f"the ceiling, not the requirement — the requirement is acceleration out of every "
+                f"scoring position with the battery sagging, repeated for the whole match.")
     if key == "intake":
         return (f"Acquire {gp['name']} from the floor at driving speed without stopping. "
                 f"{gp['handling']} The roller has to reach past the bumper and out-run the "
@@ -855,6 +875,27 @@ def _binder_requirement(key: str, spec: dict[str, Any], season: dict[str, Any]) 
 
 def _binder_calculation(key: str, spec: dict[str, Any], season: dict[str, Any]) -> list[str]:
     block = spec.get(key) or {}
+    if key == "drivetrain":
+        lines = [f"Free speed = motor free RPM ÷ {block.get('drive_ratio', 6.0):g} drive "
+                 f"reduction × π × {block.get('wheel_diameter_in', 4):g} in wheel = "
+                 f"{block.get('free_speed_fps', 0):g} ft/s"
+                 + (f" at the {block.get('drive_ratio_label', 'selected')} ratio"
+                    if block.get("drive_ratio_label") else "") + ".",
+                 f"Stall thrust ≈ stall torque × reduction × motor count ÷ wheel radius = "
+                 f"{block.get('stall_thrust_lbf', 0):g} lbf across "
+                 f"{block.get('drive_motors', 4)} × {block.get('motor', 'drive motor')} — an "
+                 f"upper bound that ignores traction, so the usable number is the friction "
+                 f"limit, roughly weight × 1.1 on clean carpet."]
+        if block.get("module_count"):
+            lines.append(f"{block.get('module_count')} × {block.get('module', 'swerve module')} "
+                         f"({block.get('module_mass_lb', 0):g} lb of modules) with "
+                         f"{block.get('steer_ratio', 0):g}:1 steering; the drive encoder lives "
+                         f"in the module — {block.get('encoder', 'integrated encoder')}.")
+        else:
+            lines.append(f"{block.get('module', 'drop-centre gearbox')} with the centre wheel "
+                         f"dropped ~{block.get('center_drop_in', 0.125):g} in so the robot turns "
+                         f"on four contact patches instead of six.")
+        return lines
     if key == "intake":
         return [f"Roller surface speed = free RPM ÷ reduction × π × diameter = "
                 f"{block['roller_surface_speed_fps']:g} ft/s off a {block['motor']} through "
@@ -937,6 +978,12 @@ def _binder_calculation(key: str, spec: dict[str, Any], season: dict[str, Any]) 
 
 def _binder_validation(key: str, rng: random.Random) -> str:
     return {
+        "drivetrain": rng.choice([
+            "Drive a full match on a charged battery, logging bus voltage and loop times; the "
+            "sprint speed that matters is the one measured in the last thirty seconds.",
+            "Time a field-length sprint both directions and measure pushing force against a "
+            "wall on a scale — free speed and stall thrust are ceilings, these are the floors.",
+        ]),
         "intake": rng.choice([
             "Bench rig at the design compression, then floor tests at full drive speed in both "
             "directions. Count acquisitions out of fifty, not out of five.",
@@ -981,6 +1028,10 @@ def _binder_risks(key: str, spec: dict[str, Any]) -> list[str]:
               "Harness routing was planned with the mechanism; verify service loops at every "
               "moving joint before the first event."]
     specific = {
+        "drivetrain": ["Tread wears fastest on the inside modules during defence; measure it "
+                       "between matches, not between events.",
+                       "Brushless drive motors mask a failing encoder until odometry drifts — "
+                       "watch the module deltas in the log, not the driver's impression."],
         "intake": ["Compliant wheels wear and change compression across an event — keep spares "
                    "and re-measure between days.",
                    "The deployed arm is the most-hit part of the robot; the pivot and its hard "
@@ -1448,7 +1499,9 @@ def _cad_geometry_examples(rng: random.Random, start: int, count: int,
     mechanism it has not seen and one that has simply memorised the ones it has.
     """
     rows: list[dict[str, Any]] = []
-    requests = _CAD_REQUESTS + _typed_cad_requests(rng) + _varied_cad_requests(rng, 260)
+    # Sample at least as many robots as the target row count: the per-structure cap discards
+    # repeats, so a request pool smaller than the ask silently under-fills the family.
+    requests = _CAD_REQUESTS + _typed_cad_requests(rng) + _varied_cad_requests(rng, max(260, count))
     pairs: list[tuple[str, str, dict[str, Any]]] = []
     for request, season_key in requests:
         spec = build_robot_spec(request, use_model=False, season=season_key)
@@ -1478,7 +1531,7 @@ def _cad_geometry_examples(rng: random.Random, start: int, count: int,
     return rows
 
 
-def _cad_qa_examples(rng: random.Random, start: int) -> list[dict[str, Any]]:
+def _cad_qa_examples(rng: random.Random, start: int, extra: int = 0) -> list[dict[str, Any]]:
     """Dimensioned questions whose answers are computed from the same CAD tree.
 
     These are the questions a mentor asks at a design review, and every number in the answer
@@ -1486,7 +1539,10 @@ def _cad_qa_examples(rng: random.Random, start: int) -> list[dict[str, Any]]:
     """
     rows: list[dict[str, Any]] = []
     index = start
-    for request, season_key in _CAD_REQUESTS + _typed_cad_requests(rng):
+    requests = _CAD_REQUESTS + _typed_cad_requests(rng)
+    if extra:
+        requests += _varied_cad_requests(rng, extra)
+    for request, season_key in requests:
         spec = build_robot_spec(request, use_model=False, season=season_key)
         cad, frame = spec["cad"], spec["frame"]
 
@@ -1665,20 +1721,25 @@ def _load_existing(dataset_dir: Path) -> list[dict[str, Any]]:
 
 def generate(output_dir: Path, intent_count: int = 320, electrical_count: int = 90,
              seed: int = 1701, merge: list[Path] | None = None,
-             cad_count: int = 90, season_math_count: int = 260) -> dict[str, Any]:
+             cad_count: int = 90, season_math_count: int = 260,
+             binder_extra: int = 0, binder_cap: int | None = None,
+             qa_extra: int = 0) -> dict[str, Any]:
     rng = random.Random(seed)
     rows: list[dict[str, Any]] = []
     rows += [_intent_example(rng, index) for index in range(intent_count)]
     rows += _season_rule_examples(rng, len(rows))
     rows += _season_math_examples(rng, len(rows), season_math_count)
     rows += _strategy_examples(rng, len(rows))
-    rows += _binder_examples(rng, len(rows), _CAD_REQUESTS + _typed_cad_requests(rng)[:24])
+    binder_requests = _CAD_REQUESTS + _typed_cad_requests(rng)[:24]
+    if binder_extra:
+        binder_requests += _varied_cad_requests(rng, binder_extra)
+    rows += _binder_examples(rng, len(rows), binder_requests, cap=binder_cap)
     rows += _parts_examples(rng, len(rows))
     rows += _electrical_examples(rng, len(rows), electrical_count)
     rows += _technique_examples(rng, len(rows))
     rows += _diagnosis_examples(len(rows))
     rows += _cad_geometry_examples(rng, len(rows), cad_count)
-    rows += _cad_qa_examples(rng, len(rows))
+    rows += _cad_qa_examples(rng, len(rows), extra=qa_extra)
 
     families: dict[str, int] = {}
     for row in rows:
@@ -1739,13 +1800,21 @@ def main() -> None:
     parser.add_argument("--electrical-count", type=int, default=90)
     parser.add_argument("--cad-count", type=int, default=90)
     parser.add_argument("--season-math-count", type=int, default=260)
+    parser.add_argument("--binder-extra", type=int, default=0,
+                        help="additional sampled robots feeding the binder family")
+    parser.add_argument("--binder-cap", type=int, default=None,
+                        help="hard cap on binder rows after sampling")
+    parser.add_argument("--qa-extra", type=int, default=0,
+                        help="additional sampled robots feeding the cad_qa family")
     parser.add_argument("--seed", type=int, default=1701)
     parser.add_argument("--merge", nargs="*", default=[],
                         help="existing processed dataset dirs to fold in (e.g. datasets/processed/design-v2)")
     args = parser.parse_args()
     manifest = generate(Path(args.out), args.intent_count, args.electrical_count, args.seed,
                         [Path(item) for item in args.merge], cad_count=args.cad_count,
-                        season_math_count=args.season_math_count)
+                        season_math_count=args.season_math_count,
+                        binder_extra=args.binder_extra, binder_cap=args.binder_cap,
+                        qa_extra=args.qa_extra)
     print(json.dumps(manifest, indent=2))
 
 

@@ -1,0 +1,11 @@
+[project]
+name = "kale-demo"
+version = "0.2.0"
+description = "Kale Forge Design Studio — self-contained FRC robot synthesis + per-design 3D drivetrain viewer"
+requires-python = ">=3.9"
+dependencies = []
+
+# Vercel's Python runtime serves every request through this single handler
+# (BaseHTTPRequestHandler subclass). The bundled ./app package is stdlib-only.
+[tool.vercel]
+entrypoint = "api.design:handler"

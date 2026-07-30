@@ -118,3 +118,37 @@ def test_streaming(client):
     assert resp.status_code == 200
     assert "data:" in resp.text
     assert "[DONE]" in resp.text
+
+
+class TestMLXProvider:
+    def test_build_provider_selects_mlx(self):
+        from app.config import Settings
+        from app.main import _build_provider
+        from app.providers.mlx_local import MLXProvider
+
+        provider = _build_provider(Settings(provider="local_mlx", model_path="some/model",
+                                            adapter_path="models/adapters/x",
+                                            model_version="v-test"))
+        assert isinstance(provider, MLXProvider)
+        assert provider.adapter_path == "models/adapters/x"
+        assert provider.model_version == "v-test"
+
+    def test_load_requires_model_path(self):
+        from app.providers.base import ProviderUnavailable
+        from app.providers.mlx_local import MLXProvider
+
+        with pytest.raises(ProviderUnavailable):
+            MLXProvider("").load()
+
+    def test_load_requires_existing_adapter_dir(self):
+        from app.providers.base import ProviderUnavailable
+        from app.providers.mlx_local import MLXProvider
+
+        with pytest.raises(ProviderUnavailable):
+            MLXProvider("some/model", adapter_path="/nonexistent/adapter").load()
+
+    def test_fence_stripping(self):
+        from app.providers.mlx_local import _strip_fences
+
+        assert _strip_fences('```json\n{"a": 1}\n```') == '{"a": 1}'
+        assert _strip_fences('{"a": 1}') == '{"a": 1}'

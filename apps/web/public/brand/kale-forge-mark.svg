@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-labelledby="kf-title kf-desc">
+  <title id="kf-title">Kale Forge</title>
+  <desc id="kf-desc">A machined letter K struck on an anvil, with a glowing amber node at the arm junction and sparks.</desc>
+  <rect x="6" y="6" width="108" height="108" rx="24" fill="#111f1a" stroke="#2b4a3e" stroke-width="2"/>
+  <!-- anvil base -->
+  <path d="M30 96 h60 l-6 8 H36 Z" fill="#2f4d42"/>
+  <path d="M38 88 h44 v8 H38 Z" fill="#3ddc84"/>
+  <path d="M82 88 l14 -5 v5 Z" fill="#3ddc84"/>
+  <!-- K stem -->
+  <path d="M28 22 h16 v64 H28 Z" fill="#28483c"/>
+  <path d="M32 26 h8 v56 h-8 Z" fill="#3ddc84"/>
+  <rect x="33.5" y="34" width="5" height="3" fill="#111f1a"/>
+  <rect x="33.5" y="41" width="5" height="3" fill="#111f1a"/>
+  <!-- upper arm -->
+  <path d="M50 52 L78 22 h14 L62 56 Z" fill="#28483c"/>
+  <path d="M54 51 L79 26 h5 L61 52 Z" fill="#3ddc84"/>
+  <!-- lower arm -->
+  <path d="M50 56 L80 86 h12 L62 52 Z" fill="#28483c"/>
+  <path d="M55 57 L80 82 h6 L61 56 Z" fill="#3ddc84"/>
+  <!-- strike point -->
+  <circle cx="52" cy="54" r="11" fill="#ffab2e" opacity=".16"/>
+  <circle cx="52" cy="54" r="6.5" fill="#ffab2e"/>
+  <circle cx="52" cy="54" r="2.8" fill="#fff3d6"/>
+  <!-- sparks -->
+  <path d="M66 40 l5 -6" stroke="#ffab2e" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M70 48 l7 -3" stroke="#ffab2e" stroke-width="2" stroke-linecap="round" opacity=".8"/>
+  <circle cx="80" cy="37" r="2.1" fill="#ffab2e"/>
+  <circle cx="87" cy="45" r="1.5" fill="#ffab2e" opacity=".75"/>
+</svg>

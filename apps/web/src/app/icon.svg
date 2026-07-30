@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="32" height="32" role="img" aria-label="Kale Forge">
+  <rect x="0" y="0" width="120" height="120" rx="26" fill="#111f1a"/>
+  <path d="M38 88 h44 v8 H38 Z" fill="#3ddc84"/>
+  <path d="M82 88 l14 -5 v5 Z" fill="#3ddc84"/>
+  <path d="M32 26 h8 v56 h-8 Z" fill="#3ddc84"/>
+  <path d="M54 51 L79 26 h5 L61 52 Z" fill="#3ddc84"/>
+  <path d="M55 57 L80 82 h6 L61 56 Z" fill="#3ddc84"/>
+  <circle cx="52" cy="54" r="7" fill="#ffab2e"/>
+</svg>
