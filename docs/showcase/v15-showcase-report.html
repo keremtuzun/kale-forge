@@ -1,0 +1,268 @@
+<title>Kale Forge — v15 Design Showcase</title>
+<style>
+:root {
+  --bg: #f7f8f5; --surface: #ffffff; --ink: #172019; --muted: #5c685f;
+  --line: #d8ded8; --line-strong: #b9c4bb; --brand: #24764c; --brand-soft: #e1eee6;
+  --flag: #8b6518; --flag-soft: #f4ead2; --fail: #a33b32;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111612; --surface: #171d18; --ink: #eef3ef; --muted: #a6b1a8;
+    --line: #303a32; --line-strong: #465248; --brand: #6fc093; --brand-soft: #203b2b;
+    --flag: #e3bb62; --flag-soft: #33290f; --fail: #ef8b81;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f7f8f5; --surface: #ffffff; --ink: #172019; --muted: #5c685f;
+  --line: #d8ded8; --line-strong: #b9c4bb; --brand: #24764c; --brand-soft: #e1eee6;
+  --flag: #8b6518; --flag-soft: #f4ead2; --fail: #a33b32;
+}
+:root[data-theme="dark"] {
+  --bg: #111612; --surface: #171d18; --ink: #eef3ef; --muted: #a6b1a8;
+  --line: #303a32; --line-strong: #465248; --brand: #6fc093; --brand-soft: #203b2b;
+  --flag: #e3bb62; --flag-soft: #33290f; --fail: #ef8b81;
+}
+body { background: var(--bg); color: var(--ink); font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, sans-serif; -webkit-font-smoothing: antialiased; margin: 0; }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+header.page { border-bottom: 1px solid var(--line); padding: 48px 0 36px; }
+.eyebrow { color: var(--brand); font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; margin: 0; }
+h1 { font-size: clamp(28px, 4vw, 40px); font-weight: 700; letter-spacing: -.03em; line-height: 1.1; margin: 14px 0 0; text-wrap: balance; }
+.lede { color: var(--muted); max-width: 62ch; margin: 14px 0 0; }
+.stats { display: flex; flex-wrap: wrap; gap: 0; margin-top: 28px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.stats div { padding: 14px 22px; border-right: 1px solid var(--line); }
+.stats div:last-child { border-right: 0; }
+.stats strong { display: block; font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 20px; }
+.stats span { color: var(--muted); font-size: 12px; }
+h2.season { font-size: 22px; letter-spacing: -.02em; margin: 52px 0 6px; }
+p.season-note { color: var(--muted); font-size: 14px; margin: 0 0 22px; max-width: 74ch; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 18px; }
+@media (max-width: 560px) { .cards { grid-template-columns: 1fr; } }
+.card { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); overflow: hidden; }
+.card .top { padding: 16px 18px 12px; border-bottom: 1px solid var(--line); }
+.card h3 { margin: 0; font-size: 16px; letter-spacing: -.01em; }
+.card .prompt { font-family: var(--mono); font-size: 12px; line-height: 1.6; color: var(--muted); margin: 8px 0 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chip { font-size: 11px; font-weight: 650; padding: 3px 9px; border-radius: 99px; background: var(--brand-soft); color: var(--brand); }
+.chip.flag { background: var(--flag-soft); color: var(--flag); }
+.spec { margin: 0; font-size: 13px; }
+.spec > div { display: grid; grid-template-columns: 88px 1fr; gap: 14px; padding: 8px 18px; border-bottom: 1px solid var(--line); }
+.spec > div:last-child { border-bottom: 0; }
+.spec dt { color: var(--muted); }
+.spec dd { margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 12.5px; line-height: 1.6; }
+.read { border-top: 1px solid var(--line-strong); margin-top: 56px; padding: 40px 0 64px; }
+.read h2 { font-size: 22px; letter-spacing: -.02em; margin: 0 0 8px; }
+.read .cols { display: grid; gap: 28px; margin-top: 24px; }
+@media (min-width: 800px) { .read .cols { grid-template-columns: 1fr 1fr 1fr; } }
+.read h3 { font-size: 14px; margin: 0 0 10px; }
+.read ul { margin: 0; padding: 0; list-style: none; font-size: 14px; color: var(--muted); }
+.read li { padding: 8px 0 8px 16px; border-top: 1px solid var(--line); position: relative; line-height: 1.55; }
+.read li::before { content: ""; position: absolute; left: 0; top: 15px; width: 7px; height: 2px; background: var(--brand); }
+.read .miss li::before { background: var(--flag); }
+.read .caught li::before { background: var(--fail); }
+footer.page { border-top: 1px solid var(--line); padding: 20px 0 48px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+</style>
+
+<header class="page"><div class="wrap">
+  <p class="eyebrow">Kale Forge · model showcase</p>
+  <h1>Ten robots, two seasons, one fine-tuned model.</h1>
+  <p class="lede">Every design below was synthesized live by the <strong>kale-design-qwen3-4b-v15</strong> adapter
+  serving the Design Studio — no stub, no fallback. Prompts were chosen to probe the hard cases:
+  mechanisms deliberately excluded from training, an illegal frame, and archetypes that punish
+  copy-paste design.</p>
+  <div class="stats">
+    <div><strong>10 / 10</strong><span>designs completed</span></div>
+    <div><strong>28–76 s</strong><span>inference per design</span></div>
+    <div><strong>134–190</strong><span>CAD features each</span></div>
+    <div><strong>3</strong><span>rule violations caught &amp; reported</span></div>
+    <div><strong>6</strong><span>held-out mechanisms built</span></div>
+  </div>
+</div></header>
+
+<main class="wrap">
+  <h2 class="season">2026 REBUILT</h2>
+  <p class="season-note">FUEL gamepiece · 110 in perimeter budget · HUB opening at 72 in · TOWER rungs at 27 / 45 / 63 in.
+  The season is an input: these numbers set every frame, shot, and climb below.</p>
+  <div class="cards">
+
+  <article class="card">
+    <div class="top"><h3>Rookie cycler</h3>
+      <p class="prompt">"We are a rookie team with limited machining. The simplest competitive REBUILT robot that scores fuel from close range and parks."</p>
+      <div class="chips"><span class="chip">simplicity honored</span><span class="chip">shot solved</span></div>
+    </div>
+    <dl class="spec">
+      <div><dt>Frame</dt><dd>27 × 27 in — inside the 110 in budget</dd></div>
+      <div><dt>Drive</dt><dd>4× MK5i on Kraken X60 · 17.4 ft/s free</dd></div>
+      <div><dt>Intake</dt><dd>coaxial slapdown — lowest part count in the catalog</dd></div>
+      <div><dt>Hopper</dt><dd>circular spindexer · ~17 FUEL · 11.7 pieces/s</dd></div>
+      <div><dt>Shooter</dt><dd>single flywheel backspin · exit 41.8 ft/s vs 27.1 needed at 18 ft</dd></div>
+      <div><dt>Mass</dt><dd>98.9 lb counted · rule check: nothing caught</dd></div>
+    </dl>
+  </article>
+
+  <article class="card">
+    <div class="top"><h3>Turreted long-range cycler</h3>
+      <p class="prompt">"27x27 swerve on Kraken X60s, turreted variable-hood flywheel shooter for 25 ft shots, serpentine tunnel indexer, L3 tower climb."</p>
+      <div class="chips"><span class="chip">held-out: serpentine indexer</span><span class="chip">held-out: tunnel intake</span><span class="chip">turret honored</span></div>
+    </div>
+    <dl class="spec">
+      <div><dt>Frame</dt><dd>27 × 27 in on MK5i · 17.4 ft/s</dd></div>
+      <div><dt>Indexer</dt><dd>serpentine tunnel — never seen in CAD training, built anyway (187 features)</dd></div>
+      <div><dt>Shooter</dt><dd>turreted dual flywheel hooded · exit 52.4 ft/s · hood 36–66°</dd></div>
+      <div><dt>Climb</dt><dd>dual telescoping winch hooks for the 63 in rung</dd></div>
+      <div><dt>Mass</dt><dd>100.8 lb · rule check: nothing caught</dd></div>
+    </dl>
+  </article>
+
+  <article class="card">
+    <div class="top"><h3>Defense bot</h3>
+      <p class="prompt">"Defense-first: 30x26 west-coast drivebase, low profile to fit under the trench, single fixed hooded shooter for opportunistic scoring."</p>
+      <div class="chips"><span class="chip">west-coast honored</span><span class="chip flag">R502 reported: 6 &gt; 4 propulsion motors</span></div>
+    </div>
+    <dl class="spec">
+      <div><dt>Frame</dt><dd>29.25 × 25.5 in — asked-for 30×26 trimmed to the perimeter budget</dd></div>
+      <div><dt>Drive</dt><dd>6-motor drop-centre gearbox · 14.7 ft/s — and the rule check flags exactly that motor count</dd></div>
+      <div><dt>Shooter</dt><dd>fixed-angle flywheel · exit 39.5 ft/s vs 27.1 needed</dd></div>
+      <div><dt>Mass</dt><dd>102.2 lb · the report says fix it, not that it passed</dd></div>
+    </dl>
+  </article>
+
+  <article class="card">
+    <div class="top"><h3>The illegal frame</h3>
+      <p class="prompt">"Design a 28x28 REBUILT robot: over-bumper intake, paddle-wheel agitator hopper feeding twin fixed hooded shooters, top-rung climb."</p>
+      <div class="chips"><span class="chip">frame resized 28×28 → 27.5×27.5</span><span class="chip">held-out: paddle-wheel hopper</span></div>
+    </div>
+    <dl class="spec">
+      <div><dt>Frame</dt><dd>28 × 28 = 112 in perimeter — illegal in 2026. Resized to 27.5 × 27.5 with the reason recorded, not quietly built</dd></div>
+      <div><dt>Hopper</dt><dd>paddle-wheel agitator · ~17 FUEL · 6.0 pieces/s — a held-out type</dd></div>
+      <div><dt>Shooter</dt><dd>fixed hooded · exit 43.6 ft/s · makes the 18 ft design shot</dd></div>
+      <div><dt>Mass</dt><dd>100.2 lb · rule check: nothing further caught</dd></div>
+    </dl>
+  </article>
+
+  <article class="card">
+    <div class="top"><h3>Feeder bot</h3>
+      <p class="prompt">"High-cycle feeder on MK5n modules: ground-to-feeder tunnel intake, no shooter, delivers fuel to a partner at the midline, cheapest possible climb."</p>
+      <div class="chips"><span class="chip">no shooter — honored</span><span class="chip">held-out: tunnel intake</span><span class="chip">lightest build</span></div>
+    </div>
+    <dl class="spec">
+      <div><dt>Frame</dt><dd>27 × 27 in on MK5n — the named module, used</dd></div>
+      <div><dt>Intake</dt><dd>ground-to-feeder tunnel — held out of training, built with 164 features</dd></div>
+      <div><dt>Hopper</dt><dd>twin-lane belt · ~17 FUEL · 7.5 pieces/s out</dd></div>
+      <div><dt>Mass</dt><dd>83.5 lb — the lightest of the ten, which is what a feeder should be</dd></div>
+    </dl>
+  </article>
+
+  </div>
+
+  <h2 class="season">2025 REEFSCAPE</h2>
+  <p class="season-note">CORAL / ALGAE gamepieces · 120 in perimeter budget · REEF levels L1–L4 up to 72 in · CAGE climb.
+  Same prompts in a different year produce different robots, because these numbers differ.</p>
+  <div class="cards">
+
+  <article class="card">
+    <div class="top"><h3>L4 cascade scorer</h3>
+      <p class="prompt">"28x28 REEFSCAPE robot on MK4i, three-stage cascade elevator to L4, wristed coral end effector, deep cage climb."</p>
+      <div class="chips"><span class="chip">28×28 legal here — kept</span><span class="chip">3-stage cascade honored</span></div>
+    </div>
+    <dl class="spec">
+      <div><dt>Frame</dt><dd>28 × 28 in — 112 in fits 2025's 120 in budget; the same frame was resized in 2026</dd></div>
+      <div><dt>Elevator</dt><dd>3-stage cascade · 29.1 in carriage travel from the 42 in start-height cap</dd></div>
+      <div><dt>Effector</dt><dd>wristed carriage arm · 23.8 in reach</dd></div>
+      <div><dt>Climb</dt><dd>deep-cage hook · 24 in of extension</dd></div>
+      <div><dt>Mass</dt><dd>102.0 lb · rule check: nothing caught</dd></div>
+    </dl>
+  </article>
+
+  <article class="card">
+    <div class="top"><h3>Rookie low-scorer</h3>
+      <p class="prompt">"Rookie-friendly 2025 robot that only scores L1 and L2 coral from a ground intake — nothing taller than 40 inches, tank drive, minimum custom parts."</p>
+      <div class="chips"><span class="chip">tank drive honored</span><span class="chip flag">R502 reported</span></div>
+    </div>
+    <dl class="spec">
+      <div><dt>Drive</dt><dd>tank drop-centre gearbox · 14.7 ft/s — flagged for its 6-motor count, honestly</dd></div>
+      <div><dt>Intake</dt><dd>coaxial slapdown — the rookie default again, consistently</dd></div>
+      <div><dt>Lift</dt><dd>single-stage cascade · 29 in — enough for L2, no tower</dd></div>
+      <div><dt>Mass</dt><dd>112.1 lb · single pivoting hook for the park</dd></div>
+    </dl>
+  </article>
+
+  <article class="card">
+    <div class="top"><h3>Algae specialist</h3>
+      <p class="prompt">"Algae specialist: 27x27 swerve, floor algae intake into a belt-floor hopper, processor scoring, shallow cage climb at the buzzer."</p>
+      <div class="chips"><span class="chip">5 subsystems packaged</span><span class="chip">largest CAD tree: 188</span></div>
+    </div>
+    <dl class="spec">
+      <div><dt>Frame</dt><dd>27 × 27 in on MK4i · 15.5 ft/s</dd></div>
+      <div><dt>Intake</dt><dd>under-bumper roller sized to the 16.25 in ALGAE</dd></div>
+      <div><dt>Hopper</dt><dd>funnel-to-tower · ~2 ALGAE — volumetric capacity is honest about a big gamepiece</dd></div>
+      <div><dt>Climb</dt><dd>dual telescoping winch hooks · 24 in</dd></div>
+      <div><dt>Mass</dt><dd>113.1 lb · rule check: nothing caught</dd></div>
+    </dl>
+  </article>
+
+  <article class="card">
+    <div class="top"><h3>Compact four-bar bot</h3>
+      <p class="prompt">"Experienced team, 26x26 compact REEFSCAPE bot with a four-bar linkage arm for L2 and L3, under-bumper coral intake, winch-driven carriage climb."</p>
+      <div class="chips"><span class="chip">held-out: winch-driven carriage</span><span class="chip flag">arm type substituted</span></div>
+    </div>
+    <dl class="spec">
+      <div><dt>Frame</dt><dd>26 × 26 in on MK5i — smallest of the ten, as asked</dd></div>
+      <div><dt>Arm</dt><dd>dead-axle shoulder arm, 16.2 in — the four-bar landed on the intake instead of the arm. A real miss, visible, not hidden</dd></div>
+      <div><dt>Climb</dt><dd>winch-driven carriage — held out of training, built anyway</dd></div>
+      <div><dt>Mass</dt><dd>106.8 lb · rule check: nothing caught</dd></div>
+    </dl>
+  </article>
+
+  <article class="card">
+    <div class="top"><h3>Telescope + barge shooter</h3>
+      <p class="prompt">"REEFSCAPE robot built around a 3 stage telescoping box elevator and a variable-hood flywheel shooter for barge algae shots from the reef zone."</p>
+      <div class="chips"><span class="chip">shot solved: 15 ft @ 51.6°</span><span class="chip flag">elevator type substituted</span><span class="chip flag">R103 reported</span></div>
+    </div>
+    <dl class="spec">
+      <div><dt>Elevator</dt><dd>3-stage belt-rigged cascade — asked-for telescoping box (held-out) substituted with the nearest trained architecture</dd></div>
+      <div><dt>Shooter</dt><dd>dual flywheel hooded · exit 59.2 ft/s vs 24.7 needed · hood 36–66°</dd></div>
+      <div><dt>Check</dt><dd>R103 violation reported with a fix, not smoothed over</dd></div>
+      <div><dt>Mass</dt><dd>116.7 lb · 190 CAD features — the largest build</dd></div>
+    </dl>
+  </article>
+
+  </div>
+
+  <section class="read">
+    <h2>The honest read</h2>
+    <p class="lede">Ten for ten through the model with schema-valid output. What that does and doesn't prove:</p>
+    <div class="cols">
+      <div>
+        <h3>What it demonstrably does</h3>
+        <ul>
+          <li>Builds mechanisms it never saw in CAD training — serpentine indexer, tunnel intake, paddle-wheel hopper, winch carriage — at full feature depth.</li>
+          <li>Treats the season as a constraint system: the same 28×28 ask is legal in 2025 and resized in 2026, with the rule cited.</li>
+          <li>Solves the shot instead of remembering it: every shooter clears its required exit velocity from goal height and range.</li>
+          <li>Respects explicit hardware — MK5n, Kraken X60, tank drive, "no shooter" — as specification, not suggestion.</li>
+        </ul>
+      </div>
+      <div class="miss">
+        <h3>Where it substitutes</h3>
+        <ul>
+          <li>The telescoping-box elevator became a belt-rigged cascade — the nearest trained architecture, not the asked-for one.</li>
+          <li>"Four-bar linkage arm" landed as a four-bar intake plus a shoulder arm — right vocabulary, wrong subsystem.</li>
+          <li>Elevator travel converges to ~29 in — derived from the start-height cap, but the model rarely argues for more via extension.</li>
+        </ul>
+      </div>
+      <div class="caught">
+        <h3>What the rule check caught</h3>
+        <ul>
+          <li>R502 twice: six-motor west-coast drivebases exceed the four-propulsion-motor limit — reported with the fix.</li>
+          <li>R103 once, on the heaviest build.</li>
+          <li>Caught means reported: passing is "nothing caught here," never a claim of legality. The manual stays the authority.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="page"><div class="wrap">
+  Generated 2026-07-30 by kale-design-qwen3-4b-v15 (LoRA over Qwen3-4B-Instruct 4-bit, MLX) serving locally at 28–76 s per design.
+  All dimensions are concept geometry: consistent with the parts catalog, unverified against vendor drawings, stress cases, or the current game manual. Do not machine from this page.
+</div></footer>

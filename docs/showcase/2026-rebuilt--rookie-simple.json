@@ -1,0 +1,4740 @@
+{
+ "schema_version": "3.2",
+ "team_number": 8159,
+ "bumper_color": {
+  "name": "red",
+  "hex": "#a01722"
+ },
+ "design_seed": 705498004,
+ "profile": {
+  "id": "2026-rebuilt",
+  "label": "2026 REBUILT",
+  "season": "2026 REBUILT",
+  "knowledge_version": "frc-exemplars-2026.09",
+  "parts_version": "frc-parts-2026.07.25",
+  "cad_version": "kale-cad-2.0"
+ },
+ "model": {
+  "used": true,
+  "provider": "local_mlx",
+  "model_version": "kale-design-qwen3-4b-v15",
+  "reason": "model-selected architecture",
+  "latency_ms": 64260
+ },
+ "frame": {
+  "width_in": 27.0,
+  "length_in": 27.0,
+  "rail_height_in": 1,
+  "rail_width_in": 2,
+  "wall_in": 0.1,
+  "material": "6061-T6 aluminium",
+  "tube": "2x1x0.100 in",
+  "bellypan": "0.090 in pocketed plate",
+  "perimeter_in": 108.0
+ },
+ "drivetrain": {
+  "module": "SDS MK5i",
+  "module_key": "mk5i",
+  "module_count": 4,
+  "motor": "Kraken X60",
+  "motor_key": "kraken_x60",
+  "drive_ratio_label": "R2",
+  "drive_ratio": 6.03,
+  "steer_ratio": 26.0,
+  "wheel_diameter_in": 4.0,
+  "free_speed_fps": 17.37,
+  "stall_thrust_lbf": 756.8,
+  "drive_motors": 4,
+  "steer_motors": 4,
+  "module_mass_lb": 16.4,
+  "caveat": "Free speed is the unloaded ceiling and stall thrust ignores traction limits; both need a real current-limited simulation before you trust them.",
+  "type": "swerve",
+  "modules_included": true,
+  "steer_motor": "Kraken X60",
+  "steer_motor_key": "kraken_x60",
+  "second_can_bus": true,
+  "drop_in": 4.6,
+  "plate_in": [
+   4.1,
+   4.1
+  ],
+  "encoder": "CANcoder, SRX Mag, Thrifty AME or Helium Canandmag on the azimuth",
+  "vendor": "Swerve Drive Specialties",
+  "selection_reason": "SDS MK5i chosen as the default for a 4 in wheel"
+ },
+ "drive": {
+  "type": "swerve",
+  "modules": 4,
+  "modules_included": true,
+  "wheel_diameter_in": 4.0,
+  "motors": 8
+ },
+ "subsystems": [
+  "intake",
+  "hopper",
+  "shooter",
+  "climber"
+ ],
+ "scope": "robot",
+ "intake": {
+  "included": true,
+  "type": "coaxial slapdown",
+  "width_in": 23.0,
+  "roller_diameter_in": 2.5,
+  "roller_count": 1,
+  "roller_center_distance_in": 5.0,
+  "compliant_wheel": "30A green compliant wheels",
+  "compression_in": 0.5,
+  "gear_reduction": "4:1",
+  "roller_surface_speed_fps": 18.5,
+  "pivot_limit_deg": [
+   -12,
+   95
+  ],
+  "deploy": "powered pivot with metal hard stops",
+  "power_path": "coaxial belt through the pivot",
+  "indexer": true,
+  "motor_key": "neo_vortex",
+  "motor": "NEO Vortex",
+  "motor_count": 2,
+  "position_bias": 0.09,
+  "rigid_subassemblies": [
+   "static gearbox",
+   "intake arms",
+   "powered roller",
+   "belt reduction",
+   "indexer handoff"
+  ]
+ },
+ "hopper": {
+  "included": true,
+  "type": "circular spindexer",
+  "floor_width_in": 23.0,
+  "floor_depth_in": 14.9,
+  "wall_height_in": 11.2,
+  "lanes": 1,
+  "exit_lane_width_in": 6.66,
+  "gamepiece_diameter_in": 5.91,
+  "capacity_estimate": 17,
+  "wheel_diameter_in": 4.0,
+  "wheel_count": 5,
+  "wheel_proud_in": 0.5,
+  "gear_reduction": "15:1",
+  "feed_rate_per_s": 11.7,
+  "agitator": true,
+  "floor": "0.093 in polycarbonate floor plate over a plate frame",
+  "sensor": "beam-break at the exit gate, one staged piece at a time",
+  "access": "thumbscrew top panel so a jam clears without removing the shooter",
+  "motor_key": "neo_550",
+  "motor": "NEO 550",
+  "motor_count": 1,
+  "position_bias": 0.463,
+  "rigid_subassemblies": [
+   "hopper floor",
+   "outer wall",
+   "driven wheel shaft",
+   "exit gate",
+   "feeder handoff"
+  ],
+  "caveat": "Capacity is volumetric: floor area \u00d7 80% of the wall height \u00d7 60% random-pour packing, divided by one gamepiece. The real limit is usually what the exit lane clears without jamming, not what the box holds. Feed rate is a geometric ceiling \u2014 measure it with a full hopper while driving the obstacles."
+ },
+ "shooter": {
+  "included": true,
+  "type": "single flywheel backspin shooter",
+  "flywheel_diameter_in": 6.0,
+  "gamepiece_diameter_in": 5.91,
+  "compression_in": 0.5,
+  "hood_angle_deg": [
+   36,
+   66
+  ],
+  "motor_key": "falcon_500",
+  "motor": "Falcon 500",
+  "motor_count": 2,
+  "flywheel_stages": 1,
+  "stacked": false,
+  "barrel_length_in": 0.0,
+  "turreted": false,
+  "width_in": 11.9,
+  "gear_reduction": "2:1",
+  "flywheel_surface_speed_fps": 83.5,
+  "exit_velocity_fps": 41.8,
+  "flywheel_mass_lb": 0.79,
+  "spinup_time_s": 1.31,
+  "wheel": "grey 60A urethane flywheels on a 1/2 in hex shaft",
+  "turret_range_deg": [
+   0,
+   0
+  ],
+  "release_height_in": 20.9,
+  "shot": {
+   "target": "HUB",
+   "target_height_in": 72.0,
+   "release_height_in": 20.9,
+   "design_range_ft": 18.0,
+   "long_range_ft": 30.0,
+   "optimal_angle_deg": 51.7,
+   "required_exit_fps": 27.1,
+   "required_exit_fps_long": 33.3,
+   "required_surface_speed_fps": 54.2,
+   "achieved_exit_fps": 41.8,
+   "achieved_range_ft": 49.2,
+   "apex_in": 221.6,
+   "entry_angle_deg": 47.5,
+   "makes_design_range": true,
+   "makes_long_range": true,
+   "caveat": "Vacuum trajectory: no drag, no spin, no Magnus. A foam ball loses real range to air, so treat this as the optimistic ceiling and tune on the field."
+  },
+  "feed_path": "hopper \u2192 feeder tower \u2192 feeder \u2192 flywheel pair \u2192 hood",
+  "position_bias": 0.631,
+  "rigid_subassemblies": [
+   "feeder",
+   "left flywheel",
+   "right flywheel",
+   "hood"
+  ]
+ },
+ "elevator": {
+  "included": false,
+  "architecture": "continuous",
+  "stages": 1,
+  "max_height_in": 29.0,
+  "rail": "2x1 tube",
+  "reduction": "12:1",
+  "rigged": false,
+  "rigging": "rope/belt",
+  "bearing_blocks": "opposed, preloaded at every stage interface",
+  "tower_uprights": 2,
+  "carriage": "bolted carriage on the final stage",
+  "upright_span_in": 10.4,
+  "travel_in": 17.0,
+  "stage_travel_in": 17.0,
+  "stage_overlap_in": 6.0,
+  "carriage_speed_multiple": 1,
+  "drum_diameter_in": 2.0,
+  "load_path": "carriage \u2192 final stage \u2192 rigging \u2192 drum \u2192 gearbox",
+  "motor_key": "neo_vortex",
+  "motor": "NEO Vortex",
+  "motor_count": 2,
+  "position_bias": 0.543,
+  "rigid_subassemblies": [
+   "static frame",
+   "carriage"
+  ]
+ },
+ "manipulator": {
+  "included": false,
+  "type": "telescoping dead-axle shoulder arm",
+  "gamepiece": "fuel",
+  "reach_in": 17.1,
+  "segments": 1,
+  "segment_lengths_in": [
+   17.1
+  ],
+  "shoulder_pivot_deg": [
+   -15,
+   115
+  ],
+  "wrist": false,
+  "wrist_range_deg": [
+   0,
+   0
+  ],
+  "end_effector": "compliant-wheel gripper",
+  "reduction": "60:1",
+  "holding_torque_nm": 8.5,
+  "gravity_compensation": "feedforward sized on the horizontal holding case",
+  "shoulder_height_in": 8.7,
+  "pivot": "dead axle with serviceable bearing blocks",
+  "shaft": "1/2 in hex",
+  "motor_key": "neo_vortex",
+  "motor": "NEO Vortex",
+  "motor_count": 2,
+  "position_bias": 0.575,
+  "rigid_subassemblies": [
+   "shoulder gearbox",
+   "segment 1",
+   "end effector"
+  ]
+ },
+ "climber": {
+  "included": true,
+  "type": "dual telescoping winch hooks",
+  "stowed_height_in": 29.0,
+  "extended_height_in": 30.0,
+  "height_cap_in": 30.0,
+  "rise": {
+   "mode": "hoist the robot, not reach the rung",
+   "rung_od_in": 1.66,
+   "rung_spacing_in": 18.0,
+   "l2_rise_in": 39.2,
+   "l3_rise_in": 57.2,
+   "criteria": {
+    "L1": "no longer touching the carpet or the TOWER BASE",
+    "L2": "BUMPER covers completely above the LOW RUNG (27 in)",
+    "L3": "BUMPER covers completely above the MID RUNG (45 in)"
+   },
+   "note": "Levels score on where the robot's bumper covers end up, not on what it touches, and the height cap forbids extending to the rung. The mechanism grips a rung and lifts the whole robot; re-gripping one rung higher (18 in) is what earns the next level."
+  },
+  "stages": 2,
+  "tower": "2x2x0.125 in upright tied into two rails",
+  "winch_drum_diameter_in": 1.5,
+  "rope": "1/8 in Dyneema on a grooved drum",
+  "travel_in": 1.0,
+  "load_paths": 2,
+  "rope_tension_lbf": 52.5,
+  "drum_torque_nm": 4.45,
+  "reduction": "20:1",
+  "lift_load_lb": 105,
+  "hook": "carriage hook",
+  "engagement": "easy in, hard out: free entry, bears under load",
+  "bearing_blocks": "rolling blocks at both ends of every stage overlap",
+  "motor_key": "kraken_x60",
+  "motor": "Kraken X60",
+  "motor_count": 2,
+  "ratchet": "mechanical ratchet on the winch drum",
+  "rigid_subassemblies": [
+   "climber tower",
+   "winch gearbox",
+   "stage 1",
+   "stage 2",
+   "hook"
+  ]
+ },
+ "pneumatics": {
+  "included": false,
+  "components": [],
+  "note": ""
+ },
+ "constraints": {
+  "starting_perimeter_in": [
+   27.0,
+   27.0
+  ],
+  "frame_perimeter_in": 108.0,
+  "perimeter_limit_in": 110.0,
+  "start_height_limit_in": 30.0,
+  "extension_limit_in": 12.0,
+  "propulsion_motor_limit": 4,
+  "weight_limit_lb": 115.0,
+  "target_weight_lb": 105,
+  "bumper_gap_in": 0.25,
+  "service_clearance_in": 0.5,
+  "bumper_zone_in": [
+   2.5,
+   5.75
+  ],
+  "frame_note": "",
+  "rule_snapshot": "Limits shown are the published 2026 REBUILT figures. Rules move by team update \u2014 verify perimeter, height, extension, motor count and weight against the current manual before inspection."
+ },
+ "season": {
+  "key": "2026-rebuilt",
+  "label": "2026 REBUILT",
+  "game": "REBUILT",
+  "year": 2026,
+  "season_version": "kale-seasons-2026.07.28",
+  "gamepiece": {
+   "name": "fuel",
+   "form": "high-density foam ball",
+   "diameter_in": 5.91,
+   "mass_lb": [
+    0.448,
+    0.5
+   ],
+   "handling": "A 5.91 in sphere rolls, nests and is handled in bulk \u2014 the design problem is throughput and jam-free indexing, not single-piece precision. Foam wears: a ball late in an event compresses more easily than a fresh one, so a shooter tuned on day one drifts."
+  },
+  "gamepiece_diameter_in": 5.91,
+  "perimeter_in": 110.0,
+  "start_height_in": 30.0,
+  "weight_lb": 115.0,
+  "selected_by": "selected by the team",
+  "summary": "Two alliances score FUEL into their HUB, cross a BUMP or a TRENCH between zones, and climb the TOWER at the end of the match. A HUB only pays while it is active, so cycle timing and passing matter as much as raw capacity.",
+  "match": {
+   "auto_s": 20,
+   "teleop_s": 140,
+   "note": "HUBs alternate between active and inactive; all HUBs go active as time runs out. Scoring capacity is worth nothing during an inactive window, which is what makes passing and stealing real strategies."
+  },
+  "scoring": [
+   {
+    "phase": "auto",
+    "action": "FUEL in the active HUB",
+    "points": 1
+   },
+   {
+    "phase": "auto",
+    "action": "TOWER level 1 climb",
+    "points": 15,
+    "note": "per robot, maximum two robots"
+   },
+   {
+    "phase": "teleop",
+    "action": "FUEL in the active HUB",
+    "points": 1
+   },
+   {
+    "phase": "teleop",
+    "action": "FUEL in an inactive HUB",
+    "points": 0
+   },
+   {
+    "phase": "teleop",
+    "action": "TOWER level 2 climb",
+    "points": 20,
+    "note": "per robot"
+   },
+   {
+    "phase": "teleop",
+    "action": "TOWER level 3 climb",
+    "points": 30,
+    "note": "per robot"
+   }
+  ],
+  "ranking": [
+   {
+    "name": "Win",
+    "rp": 3
+   },
+   {
+    "name": "Tie",
+    "rp": 1
+   },
+   {
+    "name": "ENERGIZED",
+    "rp": 1,
+    "threshold": "FUEL in the active HUB: 100 regional / 240 DCMP / 360 CMP"
+   },
+   {
+    "name": "SUPERCHARGED",
+    "rp": 1,
+    "threshold": "FUEL in the active HUB: 360 regional / 360 DCMP / 500 CMP"
+   },
+   {
+    "name": "TRAVERSAL",
+    "rp": 1,
+    "threshold": "50 TOWER points in the match (all levels)"
+   }
+  ],
+  "field_elements": [
+   {
+    "name": "HUB",
+    "kind": "goal",
+    "size_in": [
+     47.0,
+     47.0
+    ],
+    "opening_across_in": 41.7,
+    "opening_shape": "hexagonal",
+    "opening_front_edge_in": 72.0,
+    "design_range_ft": 18.0,
+    "long_range_ft": 30.0,
+    "note": "A 47 \u00d7 47 in prism with a 41.7 in hexagonal opening whose front edge is 72 in off the carpet. The shot has to arrive above that edge and still be descending into the opening. The design and long ranges are Kale's sizing assumptions, not field dimensions: 18 ft is a comfortable working distance and 30 ft is roughly a cross-zone shot. Set them from where your strategy actually shoots."
+   },
+   {
+    "name": "TOWER",
+    "kind": "climb",
+    "size_in": [
+     49.25,
+     45.0,
+     78.25
+    ],
+    "upright_spacing_in": 32.25,
+    "upright_height_in": 72.1,
+    "rungs_in": {
+     "L1": 27.0,
+     "L2": 45.0,
+     "L3": 63.0
+    },
+    "rung_od_in": 1.66,
+    "rung_spacing_in": 18.0,
+    "rung_overhang_in": 5.875,
+    "support_structure_in": [
+     28.4,
+     43.38
+    ],
+    "level_criteria": {
+     "L1": "no longer touching the carpet or the TOWER BASE",
+     "L2": "BUMPER covers completely above the LOW RUNG (27 in)",
+     "L3": "BUMPER covers completely above the MID RUNG (45 in)"
+    },
+    "note": "Two uprights 32.25 in apart carry three 1.66 in OD pipe rungs at 27, 45 and 63 in, 18 in apart, each overhanging 5.875 in past the upright face. Levels are scored on where the ROBOT's BUMPERS are, not on what it touches: L2 needs the bumpers entirely above the 27 in rung and L3 entirely above the 45 in rung, while contacting a rung or upright. The robot hoists its own body up the tower \u2014 it does not extend a mast, because R107 caps total height at 30 in the whole time. Supporting structure crosses from upright to wall between 28.40 and 43.38 in, which a climbing robot has to clear."
+   },
+   {
+    "name": "DEPOT",
+    "kind": "source",
+    "size_in": [
+     42.0,
+     27.0
+    ],
+    "note": "42 \u00d7 27 in bounded by 3 in steel barriers \u2014 an intake wider than the opening cannot sweep it cleanly."
+   },
+   {
+    "name": "BUMP",
+    "kind": "obstacle",
+    "size_in": [
+     73.0,
+     44.4,
+     6.513
+    ],
+    "ramp_deg": 15.0,
+    "note": "A 6.513 in crest on 15\u00b0 ramps. Ground clearance and wheelbase decide whether a robot drives over it or beaches on it, and a full hopper spills across the crest."
+   },
+   {
+    "name": "TRENCH",
+    "kind": "obstacle",
+    "size_in": [
+     65.65,
+     47.0,
+     40.25
+    ],
+    "underpass_in": [
+     50.34,
+     22.25
+    ],
+    "note": "The underpass is 50.34 in wide and 22.25 in tall. A robot that fits under it has a second route between zones; one that does not is committed to the BUMP."
+   }
+  ],
+  "design_targets": [
+   {
+    "target": "Frame perimeter",
+    "value": "\u2264 110 in",
+    "from": "R104 starting configuration",
+    "means": "A square frame is at most 27.5 in on a side. Pick the rectangle deliberately \u2014 a wider frame buys intake width, a longer one buys mechanism room, and the budget spends on one or the other."
+   },
+   {
+    "target": "Starting height",
+    "value": "\u2264 30 in",
+    "from": "R104 starting configuration",
+    "means": "Everything, climber included, has to stow inside this before the match starts."
+   },
+   {
+    "target": "Height during the match",
+    "value": "\u2264 30 in, always",
+    "from": "R107 vertical extension limit",
+    "means": "This is not a starting-configuration limit \u2014 nothing may extend above it at any point in the match. It rules out a tall elevator and a telescoping climb mast outright. Measured perpendicular to the robot perimeter as if the robot were on a flat floor, which is why hanging partway up the TOWER is still legal: the robot's own height has not changed."
+   },
+   {
+    "target": "Horizontal extension",
+    "value": "\u2264 12 in beyond the perimeter",
+    "from": "R105",
+    "means": "Sets how far an intake or a turret may reach outside the frame. A turret whose shooter sweeps past the perimeter is the classic way to fail this."
+   },
+   {
+    "target": "Weight",
+    "value": "\u2264 115 lb (135 lb with bumpers)",
+    "from": "R103 / R408",
+    "means": "Budget it per subsystem at design time; a weight problem found in week six is a redesign."
+   },
+   {
+    "target": "Propulsion motors",
+    "value": "\u2264 4",
+    "from": "R502",
+    "means": "Motors that drive the robot across the carpet. Swerve steering motors do not count, so four modules are fine \u2014 but a six-motor west-coast drivebase is not."
+   },
+   {
+    "target": "Shot height",
+    "value": "clear 72 in, descending",
+    "from": "HUB opening front edge at 72 in",
+    "means": "From a release around 21 in the ball has to gain 51 in and still be falling when it arrives. A flat shot at rim height hits the edge; aim for an entry angle past 40\u00b0."
+   },
+   {
+    "target": "Aim window",
+    "value": "41.7 in opening",
+    "from": "HUB hexagonal opening",
+    "means": "A 41.7 in target is forgiving in azimuth and unforgiving in range \u2014 distance error, not heading error, is what misses."
+   },
+   {
+    "target": "Climb rise (whole robot)",
+    "value": "L2 \u2265 39 in of rise, L3 \u2265 57 in",
+    "from": "TOWER scoring criteria + R405 bumper zone",
+    "means": "Levels are scored on the ROBOT's position, not its reach: L2 needs the bumper covers entirely above the 45 in rung and L3 entirely above the 63 in rung, while contacting a rung or upright. With the bumper top at 5.75 in on the ground, that is the whole robot rising 57+ in for L3. Rungs are 18 in apart, so a mechanism that can re-grip one rung higher earns one more level."
+   },
+   {
+    "target": "Rung grip",
+    "value": "1.66 in OD pipe",
+    "from": "TOWER rung stock",
+    "means": "1-1/4 in Sch 40 pipe, overhanging 5.875 in past each upright face. Size the hook throat to that OD, and expect the support structure crossing between 28.4 and 43.38 in to be in the way on the way up."
+   },
+   {
+    "target": "Trench envelope",
+    "value": "\u2264 22.25 in tall, \u2264 50.34 in wide",
+    "from": "TRENCH underpass",
+    "means": "A robot under 22.25 in gets a second route between zones. That is a whole-robot decision made at architecture time, not a trim you apply later \u2014 the hopper, the shooter and the climber all have to live in it."
+   },
+   {
+    "target": "Bump clearance",
+    "value": "6.513 in crest, 15\u00b0 ramps",
+    "from": "BUMP",
+    "means": "Breakover, not ground clearance, is what beaches a robot: a long wheelbase lands its belly on the crest. Check the diagonal, and expect a loaded hopper to spill going over."
+   }
+  ],
+  "scoring_math": [
+   "An L3 climb is 30 points \u2014 the same as 30 FUEL, which at a realistic 4\u20136 FUEL per second of *active* HUB time is roughly six seconds of perfect scoring. A climb that takes longer than that and costs you the last active window is not free.",
+   "An auto L1 climb is 15 points for two robots, so an alliance that climbs in auto banks 30 points before teleop and only needs 20 more TOWER points for TRAVERSAL.",
+   "TRAVERSAL needs 50 TOWER points: L2 + L3 (50) does it, as does auto L1 \u00d72 (30) plus any single teleop climb.",
+   "ENERGIZED at 100 FUEL is an alliance total \u2014 roughly 33 per robot, which a competent cycler clears. SUPERCHARGED at 360 is 3.6\u00d7 that and is an alliance strategy, not a robot specification.",
+   "FUEL in an inactive HUB is worth zero. Capacity you cannot deliver during an active window is dead weight, which is the argument for passing and for storing."
+  ],
+  "archetypes": [
+   {
+    "name": "Turreted cycler",
+    "shape": "over-bumper intake \u2192 spindexer \u2192 feeder tower \u2192 turret + hooded shooter \u2192 L2/L3 climb",
+    "why": "A turret decouples aiming from driving, so the robot can shoot while crossing and can pass to a partner without turning. It costs a slew bearing, a wire-management path and a zeroing procedure.",
+    "against": "Complexity and packaging; a turret that leaves the frame perimeter is illegal."
+   },
+   {
+    "name": "Fixed wide shooter",
+    "shape": "wide intake \u2192 twin-lane hopper \u2192 two fixed hooded shooters \u2192 climb",
+    "why": "Two lanes double throughput without a turret, and a fixed shooter is far simpler to build, wire and tune.",
+    "against": "The drivebase has to aim, so every shot costs a rotation and defence hurts more."
+   },
+   {
+    "name": "Low-profile trench runner",
+    "shape": "under-22.25 in envelope, flat hopper, low shooter, L1/L2 climb",
+    "why": "Fitting under the TRENCH gives a route the tall robots cannot take, which is worth more than a few points of capacity in a congested match.",
+    "against": "Everything has to live under 22.25 in, which fights hopper volume and shot angle."
+   },
+   {
+    "name": "Defender / feeder",
+    "shape": "fast drivebase, wide floor intake, shuttling shooter, quick L1 climb",
+    "why": "Denying an active HUB window is worth as much as scoring in it, and shuttling fuel to a partner converts your floor time into their points.",
+    "against": "Scores little on its own; needs a strong alliance and a good driver."
+   }
+  ],
+  "verify": "Figures are the published field and rule values for 2026 REBUILT. Rules move by team update during the season \u2014 check the current manual and every team update before you cut metal or go to inspection."
+ },
+ "reference_basis": [
+  {
+   "name": "2025 Serpentheim CAD Release",
+   "kind": "full_robot",
+   "url": "https://cad.onshape.com/documents/9b4847a461c2a185e6ff320a/w/6df8cee50adeaba604998544/e/ed071581b5e32ec2f2371cae",
+   "lesson": "2x1 tube chassis; subsystem hierarchy; rigid assemblies and explicit mates"
+  },
+  {
+   "name": "6328 Crescendo shooter / robot",
+   "kind": "shooter",
+   "url": "https://cad.onshape.com/documents/9835aac8853d62a08e3c07ca/w/f30aeffcca5908da5dfd5c99/e/f183765154c242ac19e7644d",
+   "lesson": "split flywheel sides, feeder path, serviceable side plates"
+  },
+  {
+   "name": "2910 Rapid React robot",
+   "kind": "shooter_climber",
+   "url": "https://cad.onshape.com/documents/688a490dcb5a1fe1ee9d29b7/w/8c825c0c0ba4e183e6f824fa/e/cb595133c87d2eee9f83ca38",
+   "lesson": "hood, feeder and climber as separate top-level assemblies"
+  },
+  {
+   "name": "FRCDesign coaxial slapdown intake",
+   "kind": "intake",
+   "url": "https://cad.onshape.com/documents/17302d787e092ce11015f7ee/w/f7cf5c02c7655f0328a3a74a/e/f1456325e0175c4c081008c2",
+   "lesson": "static gearbox, rigid arm, top-level revolute mate and powered roller path"
+  },
+  {
+   "name": "FRCDesign roller-intake reference",
+   "kind": "intake",
+   "url": "https://frcdesign.org/mechanism-examples/",
+   "lesson": "roller center distance sets compression; series rollers hand off to an indexer; surface speed geared above approach speed; compliant-wheel durometer matched to the gamepiece; metal hard stops on the deploy arc"
+  },
+  {
+   "name": "2025 REV ION Starter Bot",
+   "kind": "full_robot",
+   "url": "https://docs.revrobotics.com/frc-kickoff-concepts/2025/starter-bot",
+   "lesson": "manufacturable single-stage elevator, wrist and intake packaging"
+  },
+  {
+   "name": "FRCDesign mechanism library",
+   "kind": "design_guidance",
+   "url": "https://frcdesign.org/mechanism-examples/",
+   "lesson": "layout sketches, dead axles, power transmission and subsystem boundaries"
+  },
+  {
+   "name": "WCP / REV structural tube and gusset catalog",
+   "kind": "design_guidance",
+   "url": "https://wcproducts.com/collections/structure",
+   "lesson": "model to stock sections \u2014 2x1x0.100, 1x1, 2x2x0.125 \u2014 so a cut list is orderable; gussets in double shear at every bolted corner"
+  },
+  {
+   "name": "2026 FRC Game Manual",
+   "kind": "rules",
+   "url": "https://firstfrc.blob.core.windows.net/frc2026/Manual/HTML/2026GameManual.htm",
+   "lesson": "current starting perimeter, height, bumper, safety and extension constraints"
+  },
+  {
+   "name": "WCP GreyT turret",
+   "kind": "shooter",
+   "url": "https://wcproducts.com/products/greyt-turret",
+   "lesson": "a turret is one large-bore bearing plus plate bearing blocks and a driven ring; the hard part is the wire path under the plate, not the rotation"
+  },
+  {
+   "name": "Open-alliance spindexer and hopper build threads",
+   "kind": "hopper",
+   "url": "https://www.chiefdelphi.com/c/technical/open-alliance/",
+   "lesson": "bulk ball indexing converges on a rotating floor that feeds one lane: raise the driven wheels slightly above the floor, funnel many lanes into one, and gate the last piece with a sensor rather than a timer"
+  },
+  {
+   "name": "Public team CAD and technical binder releases",
+   "kind": "design_guidance",
+   "url": "https://www.chiefdelphi.com/c/technical/robot-showcase/",
+   "lesson": "a technical binder states, per subsystem: the requirement, the options considered, the calculation that chose between them, the test that validated it and the failure mode still open \u2014 write the design that way and the review takes minutes"
+  }
+ ],
+ "techniques": [
+  {
+   "name": "Belly pan as a shear panel",
+   "why": "A four-rail rectangle racks under impact; a bolted plate makes it rigid.",
+   "how": "Pocket a 0.090 in plate and bolt it to every rail, not just the corners.",
+   "pitfall": "Pocketing away the bolt-line material and losing the shear path.",
+   "area": "chassis"
+  },
+  {
+   "name": "Bolt-together over welded frames",
+   "why": "A welded frame that bends is scrap; a bolted one is a replaced rail.",
+   "how": "Gussets in double shear at every corner, rivets or 10-32 through both walls.",
+   "pitfall": "Loading rivets in tension instead of shear.",
+   "area": "chassis"
+  },
+  {
+   "name": "Reserve the module corners first",
+   "why": "Swerve corners are non-negotiable volume; everything else moves around them.",
+   "how": "Place the four module envelopes before any mechanism sketch exists.",
+   "pitfall": "Routing a mechanism through a corner and discovering it at assembly.",
+   "area": "chassis"
+  },
+  {
+   "name": "Current limits before gear ratios",
+   "why": "The battery, not the motor curve, sets what the drivetrain can actually do.",
+   "how": "Set a per-motor supply limit, then pick the ratio that hits your target speed.",
+   "pitfall": "Choosing a fast ratio, browning out, and blaming the code.",
+   "area": "drivetrain"
+  },
+  {
+   "name": "Dedicated drivetrain CAN bus",
+   "why": "Eight modules of status frames will saturate a shared bus.",
+   "how": "Put drive and steer controllers on a CANivore, leave mechanisms on the RIO bus.",
+   "pitfall": "Debugging 'random' drivetrain stutter that is really bus utilisation.",
+   "area": "drivetrain"
+  },
+  {
+   "name": "Azimuth zeroing procedure",
+   "why": "A module that boots at the wrong angle drives into the wall on enable.",
+   "how": "Absolute encoder offsets stored in code, with a documented physical zeroing jig.",
+   "pitfall": "Re-zeroing by feel after every belt change.",
+   "area": "drivetrain"
+  },
+  {
+   "name": "One main breaker, no bypasses",
+   "why": "It is the only guaranteed way to kill the robot, and it is inspected.",
+   "how": "Battery + goes to the main breaker, breaker to the distributor, nothing else.",
+   "pitfall": "Tapping power upstream of the breaker for 'just one' accessory.",
+   "area": "electrical"
+  },
+  {
+   "name": "Wire gauge follows the breaker, not the motor",
+   "why": "The breaker decides how much current the wire will ever be asked to carry.",
+   "how": "40 A channel \u2192 10 AWG, 30 A \u2192 12 AWG, 10 A accessories \u2192 18 AWG.",
+   "pitfall": "18 AWG on a 40 A channel because it was the spool on the table.",
+   "area": "electrical"
+  },
+  {
+   "name": "Service loops and strain relief",
+   "why": "Wires break at the crimp when a mechanism pulls on them.",
+   "how": "Leave slack at every moving joint and anchor the harness on both sides of it.",
+   "pitfall": "A taut wire across a pivot that survives testing and fails in a match.",
+   "area": "electrical"
+  },
+  {
+   "name": "Radio placement is an RF decision",
+   "why": "Aluminium shadows and motor noise cause 'random' disconnects.",
+   "how": "Mount high, antennas clear on both faces, away from motors and CAN bundles.",
+   "pitfall": "Bolting it flat to the bellypan under the battery.",
+   "area": "electrical"
+  },
+  {
+   "name": "Layout sketch first",
+   "why": "Every downstream part references it, so changes stay cheap.",
+   "how": "One master sketch per subsystem carrying the critical dimensions.",
+   "pitfall": "Modelling parts directly and re-cutting them for every revision.",
+   "area": "cad"
+  },
+  {
+   "name": "Subassembly = one rigid body",
+   "why": "It makes mates solve and mirrors how the robot is actually assembled.",
+   "how": "Rigid-group everything that does not move relative to its neighbours.",
+   "pitfall": "Top-level assemblies with hundreds of loose parts.",
+   "area": "cad"
+  },
+  {
+   "name": "Mate the way it bolts together",
+   "why": "The assembly order in CAD should be the order on the build table.",
+   "how": "Fastened mates for bolted joints, revolute for pivots, slider for stages.",
+   "pitfall": "Position-only mates that hide an interference.",
+   "area": "cad"
+  },
+  {
+   "name": "Model to stock, not to shape",
+   "why": "A part that is not a stock section or a plate outline cannot be made in a school shop, and you find that out at fabrication instead of at review.",
+   "how": "Every structural member is a catalog section \u2014 2x1x0.100, 1x1, 2x2x0.125 \u2014 cut to a length you can write on a cut list. Everything else is 2D plate.",
+   "pitfall": "A 1.375 in square tube that exists in no supplier's catalog.",
+   "area": "cad"
+  },
+  {
+   "name": "One datum per mechanism",
+   "why": "Bearings that are located off three different faces never line up, and the shaft binds no matter how carefully each part was made.",
+   "how": "Pick one plate per mechanism as the datum and locate every bore from it; the opposite plate is a mirrored copy, not an independently dimensioned part.",
+   "pitfall": "Dimensioning the second side plate from the first side plate's edge.",
+   "area": "cad"
+  },
+  {
+   "name": "Centre distances are the design, holes are the consequence",
+   "why": "Belt and gear centre distances are set by the reduction and the pitch; if you place the holes first you get a ratio nobody can buy a belt for.",
+   "how": "Solve the centre distance from tooth counts and pitch, then place the bores. For HTD 5 mm, pitch diameter is teeth \u00d7 5 / \u03c0 mm.",
+   "pitfall": "Rounding a centre distance to a nice number and tensioning the belt to death.",
+   "area": "cad"
+  },
+  {
+   "name": "Fastener access is geometry",
+   "why": "A bolt you cannot get a wrench on is a bolt that never gets torqued, and the joint it holds is the one that fails at the first hard hit.",
+   "how": "Check a 1/4 in hex driver's swept cylinder at every fastener before the design is closed; move the hole, not the tool.",
+   "pitfall": "Discovering at assembly that the gearbox has to come off to reach a rail bolt.",
+   "area": "cad"
+  },
+  {
+   "name": "Compression is the design variable",
+   "why": "Too little and it never grabs; too much and it stalls or damages the gamepiece.",
+   "how": "Start near 0.5 in of compression on compliant wheels and tune on a test rig.",
+   "pitfall": "Setting compression by eye at 2 am and never measuring it.",
+   "area": "intake"
+  },
+  {
+   "name": "Coaxial pivot power",
+   "why": "Running roller power through the pivot axis removes a whole tensioning problem.",
+   "how": "Belt to a shaft on the pivot centreline, then out to the roller.",
+   "pitfall": "Non-coaxial routing whose belt tension changes through the deploy arc.",
+   "area": "intake"
+  },
+  {
+   "name": "Hard stops in metal, not in software",
+   "why": "Software limits fail when the encoder does.",
+   "how": "A physical stop at each end of the deploy arc plus a current-limited hold.",
+   "pitfall": "A 40 A motor grinding against a plastic stop.",
+   "area": "intake"
+  },
+  {
+   "name": "Surface speed must beat approach speed",
+   "why": "A roller slower than the robot's floor speed shoves the gamepiece away instead of pulling it in.",
+   "how": "Gear the roller so its surface speed (roller RPM x pi x diameter) is 1.5-2x the fastest intended approach speed; a 2 in roller off a NEO through ~4:1 clears this easily.",
+   "pitfall": "A direct-driven roller that stalls the motor and still cannot out-run the drivebase.",
+   "area": "intake"
+  },
+  {
+   "name": "Center distance sets compression, not eyeballing",
+   "why": "Compression is a dimension you cut into the plates, not a feel you dial in at 2 am.",
+   "how": "Fix the roller-to-bumper (or roller-to-roller) center distance so free wheel radius minus gap equals ~0.5 in of squish on a compliant wheel; put it in the layout sketch.",
+   "pitfall": "Slotted mounts 'adjusted to feel', so every rebuild grabs differently.",
+   "area": "intake"
+  },
+  {
+   "name": "Durometer picks the wheel, not diameter alone",
+   "why": "A soft compliant wheel conforms and grips; a hard one skips over a rigid gamepiece.",
+   "how": "Softer (30-35A green compliant) for hard/heavy pieces, firmer (40A+) for light foam; match the wheel to the gamepiece and keep spares \u2014 they wear.",
+   "pitfall": "One durometer chosen for spin-up that never actually grabs the game piece.",
+   "area": "intake"
+  },
+  {
+   "name": "Two-roller handoff into an indexer",
+   "why": "A single roller acquires; a second staged roller controls the piece into the feeder.",
+   "how": "Series rollers geared to increasing surface speed, then a positive indexer stage with a beam-break so the shooter/elevator gets one piece at a known position.",
+   "pitfall": "One fast roller that flings acquired pieces straight back out or jams two at once.",
+   "area": "intake"
+  },
+  {
+   "name": "Over-bumper vs under-bumper is a geometry decision",
+   "why": "The two solve different floor-clearance and deploy-volume problems, not style.",
+   "how": "Over-bumper reaches down past the bumper on a pivot for tall/rolling pieces; under-bumper stays low and fixed for flat pieces but needs a bumper gap cut.",
+   "pitfall": "Copying a top team's over-bumper arm for a gamepiece that a fixed roller would grab.",
+   "area": "intake"
+  },
+  {
+   "name": "One lane out, however many lanes in",
+   "why": "A shooter can only take one gamepiece at a time. Every mechanism that tries to hand it two at once jams, and the jam always happens under load in a match.",
+   "how": "Funnel the floor into a single exit lane, and make the last stage before the shooter positive \u2014 a driven roller or belt that owns the piece \u2014 with a beam-break telling the code exactly one is staged.",
+   "pitfall": "A wide hopper that dumps straight into the feeder and wedges two pieces in the throat.",
+   "area": "hopper"
+  },
+  {
+   "name": "Raise the driven wheels above the floor",
+   "why": "A rotating-floor indexer works by driving the gamepiece across a stationary surface. If the wheels are flush the piece rides on the floor and slips; too high and it climbs over.",
+   "how": "Set the wheel axis so roughly half an inch of wheel stands above the floor plate for a 6 in ball, then test with a full hopper, not one piece.",
+   "pitfall": "Tuning the indexer with three gamepieces and finding it stalls with twelve.",
+   "area": "hopper"
+  },
+  {
+   "name": "Test the hopper full, and test it on the bump",
+   "why": "Throughput measured with a half-empty hopper is fiction: the pieces at the bottom carry the weight of the ones above them, and driving over an obstacle throws the whole mass at one wall.",
+   "how": "Fill it to capacity, drive the real field obstacles, and count pieces per second out of the exit rather than watching it spin.",
+   "pitfall": "A hopper that indexes beautifully on the bench and packs solid in a match.",
+   "area": "hopper"
+  },
+  {
+   "name": "Compression is the jam knob",
+   "why": "Indexer compression trades throughput against current draw and jamming. Too loose and pieces slip; too tight and the motor heats, the bus sags and the pieces wedge.",
+   "how": "Set it as a dimension in the plates, then back it off in small steps while watching supply current until throughput stops improving.",
+   "pitfall": "Chasing jams by tightening compression, which is usually what caused them.",
+   "area": "hopper"
+  },
+  {
+   "name": "Give the hopper a floor you can open",
+   "why": "Every bulk handler jams eventually, and a jam you can clear in ten seconds between matches is a different problem from one that needs the shooter removed.",
+   "how": "Make one wall or the top plate a thumbscrew panel, and keep the exit lane visible.",
+   "pitfall": "A sealed hopper that has to come off the robot to clear one wedged piece.",
+   "area": "hopper"
+  },
+  {
+   "name": "Recovery time over top speed",
+   "why": "Cycle rate is set by how fast the wheel returns to setpoint after a shot.",
+   "how": "Add flywheel inertia and headroom rather than chasing peak RPM.",
+   "pitfall": "A fast, light wheel that needs two seconds between shots.",
+   "area": "shooter"
+  },
+  {
+   "name": "Split-side flywheels",
+   "why": "Independent sides let you spin the gamepiece and correct drift.",
+   "how": "Separate motors per side, coupled only through the gamepiece.",
+   "pitfall": "One shaft across both sides that makes spin impossible.",
+   "area": "shooter"
+  },
+  {
+   "name": "Serviceable side plates",
+   "why": "You will pull the flywheel more than once during competition.",
+   "how": "Bolt-on plates, dowel-located, that come off without dropping the shaft.",
+   "pitfall": "A shooter you have to disassemble the robot to reach.",
+   "area": "shooter"
+  },
+  {
+   "name": "Exit velocity is half the surface speed, with one wheel",
+   "why": "A gamepiece squeezed between a spinning wheel and a stationary hood leaves at roughly the mean of the two surfaces, so a single wheel gives half its own surface speed \u2014 teams routinely size a shooter as if it gave all of it.",
+   "how": "Compute surface speed as free RPM \u00f7 reduction \u00d7 \u03c0 \u00d7 wheel diameter, then halve it for a hooded single wheel, or keep it for counter-rotating pairs.",
+   "pitfall": "A shooter geared for a range it can only reach on paper.",
+   "area": "shooter"
+  },
+  {
+   "name": "Compression sets the energy transfer",
+   "why": "Too little compression and the wheel slips on the gamepiece; too much and the wheel stalls and the shot is short and inconsistent.",
+   "how": "Set the wheel-to-hood gap about half an inch under the gamepiece diameter and make the hood adjustable so it can be tuned on the practice field.",
+   "pitfall": "A welded-position hood that cannot be tuned once the game piece wears in.",
+   "area": "shooter"
+  },
+  {
+   "name": "Stage a barrel shooter so each pair adds speed",
+   "why": "A staged barrel accelerates progressively instead of dumping all the energy in one impulse, which is gentler on the gamepiece and easier on the motors.",
+   "how": "Each successive flywheel pair runs faster than the one before it and the pairs sit one gamepiece diameter apart down the barrel.",
+   "pitfall": "Running every stage at the same speed, so the later pairs just drag.",
+   "area": "shooter"
+  },
+  {
+   "name": "Turret on one large-bore bearing",
+   "why": "A turret carries moment loads, not just rotation; a stack of small bearings wobbles.",
+   "how": "One large-diameter X-contact or lazy-susan style bearing under the whole turret, driven by a geared ring or a capstan drive for low backlash.",
+   "pitfall": "A cantilevered turret on a single small bearing that shakes the shot loose.",
+   "area": "shooter"
+  },
+  {
+   "name": "Turret wire management with hard stops",
+   "why": "A turret that spins freely rips its own harness out mid-match.",
+   "how": "Limit rotation with physical hard stops and a wire-wrap service loop sized for the full sweep, or fit a slip ring if continuous rotation is genuinely needed.",
+   "pitfall": "Software-only rotation limits guarding a taut cable bundle.",
+   "area": "shooter"
+  },
+  {
+   "name": "Stage the acceleration down a barrel",
+   "why": "One impulse from a single flywheel pair wastes energy in slip and scuffs the gamepiece; several pairs in series each add a little speed.",
+   "how": "Run 2-3 flywheel pairs down a guided barrel at increasing surface speed, each pair lightly compressed, so the piece leaves at the sum of the stages.",
+   "pitfall": "Stages geared the same speed, so later pairs brake the piece instead of driving it.",
+   "area": "shooter"
+  },
+  {
+   "name": "Guide the piece, don't just launch it",
+   "why": "Exit angle repeatability comes from the guide path, not from the wheels.",
+   "how": "Constrain the piece through the whole barrel with polycarbonate guides and a fixed exit lip; keep the last stage closest to the exit.",
+   "pitfall": "An open path where the piece rattles and every shot leaves at a different angle.",
+   "area": "shooter"
+  },
+  {
+   "name": "Zero the turret like a swerve azimuth",
+   "why": "A turret that boots at the wrong angle aims at your own alliance wall.",
+   "how": "Absolute encoder on the azimuth with stored offsets and a documented zeroing jig.",
+   "pitfall": "Re-zeroing by eye in the pit and trusting it in the match.",
+   "area": "shooter"
+  },
+  {
+   "name": "Ratchet or brake before you need it",
+   "why": "A winch that back-drives drops the robot.",
+   "how": "Mechanical ratchet on the drum, not just motor brake mode.",
+   "pitfall": "Relying on brake mode after the match ends and power cuts.",
+   "area": "climber"
+  },
+  {
+   "name": "Load path into the frame",
+   "why": "The climber carries the entire robot weight through whatever it is bolted to.",
+   "how": "Tie the tower into two rails and the bellypan, in shear.",
+   "pitfall": "A tower bolted to a single crossmember that folds.",
+   "area": "climber"
+  },
+  {
+   "name": "Size the winch on drum torque, not motor torque",
+   "why": "The drum radius is a lever working against you: rope tension times drum radius is the torque the gearbox has to hold, and a bigger drum makes it worse.",
+   "how": "Tension is robot weight \u00f7 load paths; drum torque is tension \u00d7 drum radius; the reduction is that torque divided by what the motors give at a safe duty point, not at stall.",
+   "pitfall": "A 2 in drum chosen for rope capacity that doubles the required reduction.",
+   "area": "climber"
+  },
+  {
+   "name": "Two load paths beat one strong one",
+   "why": "Two hooks halve the tension in each rope and stop the robot swinging on a single point, which is what usually pulls a hook out of the cage.",
+   "how": "Dual telescoping hooks on a common shaft so they pay out together.",
+   "pitfall": "Two independent winches that drift out of sync and cock the robot.",
+   "area": "climber"
+  },
+  {
+   "name": "Stow inside the starting volume",
+   "why": "It is an inspection failure, not a design preference.",
+   "how": "Check the stowed height against the current manual before committing.",
+   "pitfall": "Discovering it at inspection on Thursday.",
+   "area": "climber"
+  },
+  {
+   "name": "Easy in, hard out cage engagement",
+   "why": "A deep-cage or bar hook must enter with almost no resistance and resist exit under load.",
+   "how": "Barb or hook geometry that slips in freely, then bears on a groove or shoulder when the winch loads it, pull-test the engagement before trusting it at the buzzer.",
+   "pitfall": "A hook that binds on entry in the last ten seconds, or slips out under swing.",
+   "area": "climber"
+  },
+  {
+   "name": "Bearing blocks between telescoping stages",
+   "why": "Metal-on-metal telescopes seize the moment a side load appears mid-climb.",
+   "how": "Rolling bearings or Delrin blocks at both ends of every stage overlap, taking load in both directions.",
+   "pitfall": "A telescope that extends freely on the bench and jams under the robot's weight.",
+   "area": "climber"
+  },
+  {
+   "name": "One-way bearing power take-off",
+   "why": "Sharing one motor between a shooter and a winch saves a motor, a breaker and a channel.",
+   "how": "Winch pulley on a one-way bearing on the shooter shaft: forward free-wheels for shooting, reverse locks the bearing and drives the winch.",
+   "pitfall": "An unguarded PTO that engages the winch every time the shooter reverses to clear a jam.",
+   "area": "climber"
+  }
+ ],
+ "design_notes": [],
+ "risks": [],
+ "intent": "We are a rookie team with limited machining. Design the simplest competitive REBUILT robot that scores fuel reliably from close range and parks at the end.",
+ "electrical": {
+  "distributor_key": "pdh",
+  "distributor": "REV Power Distribution Hub",
+  "channels_used": 16,
+  "high_current_free": 5,
+  "low_current_free": 3,
+  "assignments": [
+   {
+    "channel": 0,
+    "load": "Kraken X60 drive 1",
+    "subsystem": "drivetrain",
+    "breaker_a": 40,
+    "wire_awg": 10,
+    "stall_a": 366
+   },
+   {
+    "channel": 1,
+    "load": "Kraken X60 drive 2",
+    "subsystem": "drivetrain",
+    "breaker_a": 40,
+    "wire_awg": 10,
+    "stall_a": 366
+   },
+   {
+    "channel": 2,
+    "load": "Kraken X60 drive 3",
+    "subsystem": "drivetrain",
+    "breaker_a": 40,
+    "wire_awg": 10,
+    "stall_a": 366
+   },
+   {
+    "channel": 3,
+    "load": "Kraken X60 drive 4",
+    "subsystem": "drivetrain",
+    "breaker_a": 40,
+    "wire_awg": 10,
+    "stall_a": 366
+   },
+   {
+    "channel": 4,
+    "load": "Kraken X60 steer 1",
+    "subsystem": "drivetrain",
+    "breaker_a": 40,
+    "wire_awg": 10,
+    "stall_a": 366
+   },
+   {
+    "channel": 5,
+    "load": "Kraken X60 steer 2",
+    "subsystem": "drivetrain",
+    "breaker_a": 40,
+    "wire_awg": 10,
+    "stall_a": 366
+   },
+   {
+    "channel": 6,
+    "load": "Kraken X60 steer 3",
+    "subsystem": "drivetrain",
+    "breaker_a": 40,
+    "wire_awg": 10,
+    "stall_a": 366
+   },
+   {
+    "channel": 7,
+    "load": "Kraken X60 steer 4",
+    "subsystem": "drivetrain",
+    "breaker_a": 40,
+    "wire_awg": 10,
+    "stall_a": 366
+   },
+   {
+    "channel": 8,
+    "load": "NEO Vortex intake 1",
+    "subsystem": "intake",
+    "breaker_a": 40,
+    "wire_awg": 10,
+    "stall_a": 211
+   },
+   {
+    "channel": 9,
+    "load": "NEO Vortex intake 2",
+    "subsystem": "intake",
+    "breaker_a": 40,
+    "wire_awg": 10,
+    "stall_a": 211
+   },
+   {
+    "channel": 10,
+    "load": "NEO 550 hopper 1",
+    "subsystem": "hopper",
+    "breaker_a": 30,
+    "wire_awg": 12,
+    "stall_a": 100
+   },
+   {
+    "channel": 11,
+    "load": "Falcon 500 shooter 1",
+    "subsystem": "shooter",
+    "breaker_a": 40,
+    "wire_awg": 10,
+    "stall_a": 257
+   },
+   {
+    "channel": 12,
+    "load": "Falcon 500 shooter 2",
+    "subsystem": "shooter",
+    "breaker_a": 40,
+    "wire_awg": 10,
+    "stall_a": 257
+   },
+   {
+    "channel": 13,
+    "load": "Kraken X60 climber 1",
+    "subsystem": "climber",
+    "breaker_a": 40,
+    "wire_awg": 10,
+    "stall_a": 366
+   },
+   {
+    "channel": 14,
+    "load": "Kraken X60 climber 2",
+    "subsystem": "climber",
+    "breaker_a": 40,
+    "wire_awg": 10,
+    "stall_a": 366
+   },
+   {
+    "channel": 15,
+    "load": "VH-109 robot radio",
+    "subsystem": "controls",
+    "breaker_a": 10,
+    "wire_awg": 18,
+    "stall_a": 3
+   }
+  ],
+  "unassigned": [],
+  "main_breaker_a": 120,
+  "battery_lead_awg": 6,
+  "summed_stall_current_a": 4699,
+  "brownout_threshold_v": 6.8,
+  "brownout_current_a": 433,
+  "stall_headroom_pct": 9,
+  "notes": [
+   "Summed stall current across every motor is 4699 A. That is an arithmetic worst case, not a real operating point, no battery sources it and the robot never stalls everything at once.",
+   "The number to design against: on a nominal 12 m\u03a9 battery the bus reaches the ~6.8 V brownout threshold at roughly 433 A total draw. Set per-motor current limits so realistic simultaneous draw stays well under that.",
+   "The 120 A main breaker trips long before the summed stall figure, and every branch runs through it, nothing bypasses it except the battery lead itself.",
+   "Battery internal resistance rises sharply as a battery ages; an old battery browns out at a current a fresh one handles."
+  ],
+  "components": [
+   "120 A main breaker",
+   "12 V 18 Ah SLA robot battery",
+   "Anderson SB50 battery connector",
+   "REV Power Distribution Hub",
+   "roboRIO 2.0",
+   "VH-109 robot radio",
+   "Robot Signal Light",
+   "Pigeon 2.0 IMU"
+  ],
+  "placements": [
+   {
+    "key": "battery",
+    "name": "12 V 18 Ah SLA robot battery",
+    "vendor": "MK / Duracell (class)",
+    "sku": "ES17-12 class",
+    "mass_lb": 12.8,
+    "size_mm": [
+     77.0,
+     181.1,
+     166.9
+    ],
+    "center_mm": [
+     342.9,
+     480.1,
+     147.4
+    ],
+    "rotation_deg": 90,
+    "note": "Centred fore-aft-biased and low, it is the single largest mass on the robot.",
+    "verify": "Nominal envelope, confirm against the current vendor drawing before machining."
+   },
+   {
+    "key": "pdh",
+    "name": "REV Power Distribution Hub",
+    "vendor": "REV Robotics",
+    "sku": "REV-11-1850",
+    "mass_lb": 0.99,
+    "size_mm": [
+     226.1,
+     116.8,
+     38.1
+    ],
+    "center_mm": [
+     342.9,
+     233.2,
+     83.0
+    ],
+    "rotation_deg": 0,
+    "note": "Central so no branch run is long; keep the channel LEDs readable.",
+    "verify": "Nominal envelope, confirm against the current vendor drawing before machining."
+   },
+   {
+    "key": "main_breaker",
+    "name": "120 A main breaker",
+    "vendor": "Cooper Bussmann",
+    "sku": "18X-series (e.g. 185120F)",
+    "mass_lb": 0.18,
+    "size_mm": [
+     66.0,
+     29.2,
+     39.4
+    ],
+    "center_mm": [
+     615.8,
+     548.6,
+     83.7
+    ],
+    "rotation_deg": 0,
+    "note": "On an outside edge, visible and reachable without removing anything.",
+    "verify": "Nominal envelope, confirm against the current vendor drawing before machining."
+   },
+   {
+    "key": "sb50",
+    "name": "Anderson SB50 battery connector",
+    "vendor": "Anderson Power Products",
+    "sku": "SB50",
+    "mass_lb": 0.15,
+    "size_mm": [
+     52.1,
+     40.6,
+     30.5
+    ],
+    "center_mm": [
+     432.9,
+     548.6,
+     79.2
+    ],
+    "rotation_deg": 0,
+    "note": "Retained so the mating force never loads the 6 AWG lead.",
+    "verify": "Nominal envelope, confirm against the current vendor drawing before machining."
+   },
+   {
+    "key": "rio",
+    "name": "roboRIO 2.0",
+    "vendor": "National Instruments",
+    "sku": "roboRIO 2.0",
+    "mass_lb": 0.77,
+    "size_mm": [
+     114.3,
+     175.3,
+     38.1
+    ],
+    "center_mm": [
+     178.3,
+     329.2,
+     83.0
+    ],
+    "rotation_deg": 90,
+    "note": "Connector edge faces outboard; SD card and USB stay serviceable.",
+    "verify": "Nominal envelope, confirm against the current vendor drawing before machining."
+   },
+   {
+    "key": "pigeon",
+    "name": "Pigeon 2.0 IMU",
+    "vendor": "Cross The Road Electronics",
+    "sku": "Pigeon 2.0",
+    "mass_lb": 0.05,
+    "size_mm": [
+     41.9,
+     41.9,
+     11.4
+    ],
+    "center_mm": [
+     342.9,
+     342.9,
+     69.7
+    ],
+    "rotation_deg": 0,
+    "note": "Flat, rigid and near the rotation centre.",
+    "verify": "Nominal envelope, confirm against the current vendor drawing before machining."
+   },
+   {
+    "key": "radio",
+    "name": "VH-109 robot radio",
+    "vendor": "Vivid-Hosting",
+    "sku": "VH-109",
+    "mass_lb": 0.35,
+    "size_mm": [
+     110.5,
+     78.7,
+     26.7
+    ],
+    "center_mm": [
+     521.2,
+     308.6,
+     297.3
+    ],
+    "rotation_deg": 0,
+    "note": "Raised on a standoff mast, antennas clear of aluminium on both faces.",
+    "verify": "Nominal envelope, confirm against the current vendor drawing before machining."
+   },
+   {
+    "key": "rsl",
+    "name": "Robot Signal Light",
+    "vendor": "Allen-Bradley (class)",
+    "sku": "855PB-B12ME522",
+    "mass_lb": 0.3,
+    "size_mm": [
+     66.0,
+     66.0,
+     86.4
+    ],
+    "center_mm": [
+     342.9,
+     109.7,
+     407.2
+    ],
+    "rotation_deg": 0,
+    "note": "Highest practical point with an all-round sight line.",
+    "verify": "Nominal envelope, confirm against the current vendor drawing before machining."
+   },
+   {
+    "key": "canivore",
+    "name": "CANivore",
+    "vendor": "Cross The Road Electronics",
+    "sku": "CANivore",
+    "mass_lb": 0.09,
+    "size_mm": [
+     55.9,
+     43.2,
+     15.2
+    ],
+    "center_mm": [
+     178.3,
+     233.2,
+     71.6
+    ],
+    "rotation_deg": 0,
+    "note": "Dedicated drivetrain CAN FD bus; keep the USB run short.",
+    "verify": "Nominal envelope, confirm against the current vendor drawing before machining."
+   }
+  ]
+ },
+ "mass_estimate": {
+  "rows": [
+   {
+    "item": "frame rails + crossmembers (2x1)",
+    "lb": 11.3,
+    "counted": true
+   },
+   {
+    "item": "bellypan + gussets + fasteners",
+    "lb": 6.5,
+    "counted": true
+   },
+   {
+    "item": "4x SDS MK5i modules",
+    "counted": true,
+    "lb": 16.4
+   },
+   {
+    "item": "8x drive/steer motors",
+    "counted": true,
+    "lb": 10.8
+   },
+   {
+    "item": "intake structure + motors",
+    "counted": true,
+    "lb": 9.9
+   },
+   {
+    "item": "hopper structure + motors",
+    "counted": true,
+    "lb": 9.3
+   },
+   {
+    "item": "shooter structure + motors",
+    "counted": true,
+    "lb": 16.2
+   },
+   {
+    "item": "climber structure + motors",
+    "counted": true,
+    "lb": 12.7
+   },
+   {
+    "item": "control system + harness",
+    "lb": 5.8,
+    "counted": true
+   },
+   {
+    "item": "battery (normally excluded from the limit)",
+    "lb": 12.8,
+    "counted": false
+   },
+   {
+    "item": "bumpers (normally excluded from the limit)",
+    "lb": 15.0,
+    "counted": false
+   }
+  ],
+  "counted_lb": 98.9,
+  "excluded_lb": 27.8,
+  "total_lb": 126.7,
+  "target_lb": 105,
+  "margin_lb": 6.1,
+  "caveat": "First-order estimate from envelope masses and typical subsystem weights, compared against the target without bumpers or battery. It is for early trade studies only, weigh the real robot, and check what your season's manual actually excludes."
+ },
+ "rule_check": [
+  {
+   "check": "Frame perimeter",
+   "rule": "R104",
+   "ok": true,
+   "detail": "27 \u00d7 27 in = 108 in against a 110 in budget",
+   "fix": "Shrink to 27.5 in square or any rectangle summing to 55 in per side pair."
+  },
+  {
+   "check": "Stowed height",
+   "rule": "R104",
+   "ok": true,
+   "detail": "tallest stowed feature 29 in against 30 in",
+   "fix": "Fold, telescope or lower the tall subsystem into the starting envelope; this is an inspection failure, not a preference."
+  },
+  {
+   "check": "Height during the match",
+   "rule": "R107",
+   "ok": true,
+   "detail": "tallest deployed feature 30 in against a 30 in limit that applies for the whole match",
+   "fix": "Nothing may extend above this at any time \u2014 not a mast, not an elevator, not a climb hook. A climber has to raise the robot's own body up the structure instead of reaching up to it."
+  },
+  {
+   "check": "Propulsion motors",
+   "rule": "R502",
+   "ok": true,
+   "detail": "4 propulsion motors against a limit of 4 (swerve steering motors do not count)",
+   "fix": "Drop to 4 driven motors \u2014 for a west-coast drivebase that means 4 motors across both gearboxes, not six."
+  },
+  {
+   "check": "Weight (estimate)",
+   "rule": "R103",
+   "ok": true,
+   "detail": "first-order estimate 98.9 lb against 115 lb",
+   "fix": "Estimates are for trade studies. Weigh the real robot before you rely on this."
+  }
+ ],
+ "cad": {
+  "version": "kale-cad-2.0",
+  "units": "in",
+  "frame_of_reference": "origin at frame centre on the top face of the bellypan; +X right, +Y up, -Z toward the front of the robot",
+  "assemblies": [
+   {
+    "id": "chassis",
+    "name": "Chassis 27 \u00d7 27 in",
+    "kind": "structure",
+    "origin": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "features": [
+     {
+      "t": "tube",
+      "n": "side rail left",
+      "at": [
+       -13.0,
+       1.0,
+       0
+      ],
+      "sec": [
+       2.0,
+       1.0
+      ],
+      "len": 27.0,
+      "wall": 0.1,
+      "mat": "aluminium",
+      "bolt_pitch": 2.0,
+      "pockets": true,
+      "note": "2x1x0.100 in, strong axis vertical"
+     },
+     {
+      "t": "tube",
+      "n": "side rail right",
+      "at": [
+       13.0,
+       1.0,
+       0
+      ],
+      "sec": [
+       2.0,
+       1.0
+      ],
+      "len": 27.0,
+      "wall": 0.1,
+      "mat": "aluminium",
+      "bolt_pitch": 2.0,
+      "pockets": true,
+      "note": "2x1x0.100 in, strong axis vertical"
+     },
+     {
+      "t": "tube",
+      "n": "front rail",
+      "at": [
+       0,
+       1.0,
+       -13.0
+      ],
+      "sec": [
+       2.0,
+       1.0
+      ],
+      "len": 25.0,
+      "wall": 0.1,
+      "rot": [
+       0,
+       90,
+       0
+      ],
+      "mat": "aluminium",
+      "bolt_pitch": 2.0,
+      "pockets": true
+     },
+     {
+      "t": "tube",
+      "n": "back rail",
+      "at": [
+       0,
+       1.0,
+       13.0
+      ],
+      "sec": [
+       2.0,
+       1.0
+      ],
+      "len": 25.0,
+      "wall": 0.1,
+      "rot": [
+       0,
+       90,
+       0
+      ],
+      "mat": "aluminium",
+      "bolt_pitch": 2.0,
+      "pockets": true
+     },
+     {
+      "t": "tube",
+      "n": "crossmember",
+      "at": [
+       0,
+       1.0,
+       -2.7
+      ],
+      "sec": [
+       1.0,
+       1.0
+      ],
+      "len": 25.0,
+      "wall": 0.1,
+      "rot": [
+       0,
+       90,
+       0
+      ],
+      "mat": "aluminium",
+      "bolt_pitch": 2.5
+     },
+     {
+      "t": "tube",
+      "n": "crossmember",
+      "at": [
+       0,
+       1.0,
+       2.7
+      ],
+      "sec": [
+       1.0,
+       1.0
+      ],
+      "len": 25.0,
+      "wall": 0.1,
+      "rot": [
+       0,
+       90,
+       0
+      ],
+      "mat": "aluminium",
+      "bolt_pitch": 2.5
+     },
+     {
+      "t": "gusset",
+      "n": "corner gusset",
+      "at": [
+       -11.5,
+       2.0,
+       -11.5
+      ],
+      "size": [
+       3.0,
+       3.0
+      ],
+      "th": 0.09
+     },
+     {
+      "t": "gusset",
+      "n": "corner gusset",
+      "at": [
+       -11.5,
+       2.0,
+       11.5
+      ],
+      "size": [
+       3.0,
+       3.0
+      ],
+      "th": 0.09
+     },
+     {
+      "t": "gusset",
+      "n": "corner gusset",
+      "at": [
+       11.5,
+       2.0,
+       -11.5
+      ],
+      "size": [
+       3.0,
+       3.0
+      ],
+      "th": 0.09
+     },
+     {
+      "t": "gusset",
+      "n": "corner gusset",
+      "at": [
+       11.5,
+       2.0,
+       11.5
+      ],
+      "size": [
+       3.0,
+       3.0
+      ],
+      "th": 0.09
+     },
+     {
+      "t": "plate",
+      "n": "bellypan",
+      "at": [
+       0,
+       -0.045,
+       0
+      ],
+      "size": [
+       26.5,
+       0.09,
+       26.5
+      ],
+      "mat": "aluminium",
+      "pockets": 18,
+      "note": "0.090 in pocketed 6061, bolts to the rail underside"
+     },
+     {
+      "t": "plate",
+      "n": "front bumper backing",
+      "at": [
+       0,
+       2.0,
+       -14.1
+      ],
+      "size": [
+       28.5,
+       2.5,
+       0.75
+      ],
+      "mat": "plastic-black"
+     },
+     {
+      "t": "plate",
+      "n": "back bumper backing",
+      "at": [
+       0,
+       2.0,
+       14.1
+      ],
+      "size": [
+       28.5,
+       2.5,
+       0.75
+      ],
+      "mat": "plastic-black"
+     },
+     {
+      "t": "plate",
+      "n": "left bumper backing",
+      "at": [
+       -14.1,
+       2.0,
+       0
+      ],
+      "size": [
+       0.75,
+       2.5,
+       28.5
+      ],
+      "mat": "plastic-black"
+     },
+     {
+      "t": "plate",
+      "n": "right bumper backing",
+      "at": [
+       14.1,
+       2.0,
+       0
+      ],
+      "size": [
+       0.75,
+       2.5,
+       28.5
+      ],
+      "mat": "plastic-black"
+     }
+    ],
+    "mates": [
+     "bellypan fixed to rails",
+     "rails fixed to each other at the corners"
+    ],
+    "note": "Welded-free bolted tube frame; every joint is a gusset and four 10-32s."
+   },
+   {
+    "id": "swerve_0",
+    "name": "Swerve module 1",
+    "kind": "drivetrain",
+    "origin": [
+     -10.25,
+     0,
+     -10.25
+    ],
+    "features": [
+     {
+      "t": "plate",
+      "n": "module top plate",
+      "at": [
+       0,
+       2.4,
+       0
+      ],
+      "size": [
+       4.1,
+       0.19,
+       4.1
+      ],
+      "mat": "aluminium",
+      "pockets": 4
+     },
+     {
+      "t": "plate",
+      "n": "module bottom plate",
+      "at": [
+       0,
+       0.2,
+       0
+      ],
+      "size": [
+       4.1,
+       0.19,
+       4.1
+      ],
+      "mat": "aluminium",
+      "pockets": 4
+     },
+     {
+      "t": "standoff",
+      "n": "module standoff",
+      "at": [
+       -1.55,
+       1.2,
+       -1.55
+      ],
+      "dia": 0.375,
+      "len": 2.1999999999999997
+     },
+     {
+      "t": "standoff",
+      "n": "module standoff",
+      "at": [
+       -1.55,
+       1.2,
+       1.55
+      ],
+      "dia": 0.375,
+      "len": 2.1999999999999997
+     },
+     {
+      "t": "standoff",
+      "n": "module standoff",
+      "at": [
+       1.55,
+       1.2,
+       -1.55
+      ],
+      "dia": 0.375,
+      "len": 2.1999999999999997
+     },
+     {
+      "t": "standoff",
+      "n": "module standoff",
+      "at": [
+       1.55,
+       1.2,
+       1.55
+      ],
+      "dia": 0.375,
+      "len": 2.1999999999999997
+     },
+     {
+      "t": "motor",
+      "n": "drive motor",
+      "at": [
+       -1.0,
+       4.35,
+       -1.0
+      ],
+      "key": "kraken_x60",
+      "dia": 2.25,
+      "len": 3.7,
+      "rot": [
+       180,
+       0,
+       0
+      ]
+     },
+     {
+      "t": "motor",
+      "n": "steer motor",
+      "at": [
+       1.0,
+       4.35,
+       1.0
+      ],
+      "key": "kraken_x60",
+      "dia": 2.25,
+      "len": 3.7,
+      "rot": [
+       180,
+       0,
+       0
+      ]
+     },
+     {
+      "t": "wheel",
+      "n": "drive wheel",
+      "at": [
+       0.2,
+       -2.2,
+       0.2
+      ],
+      "dia": 4.0,
+      "w": 1.5,
+      "kind": "tread",
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "duro": "billet with grip tread"
+     },
+     {
+      "t": "bearing",
+      "n": "azimuth main bearing",
+      "at": [
+       0,
+       0.9,
+       0
+      ],
+      "bore": 2.5,
+      "od": 3.5,
+      "w": 0.4,
+      "flanged": true
+     },
+     {
+      "t": "bolts",
+      "n": "module through-bolts",
+      "at": [
+       -1.45,
+       2.5,
+       0
+      ],
+      "dia": 0.19,
+      "len": 0.75,
+      "rep": {
+       "n": 4,
+       "step": [
+        1.367,
+        0,
+        0
+       ]
+      }
+     },
+     {
+      "t": "gear",
+      "n": "drive pinion",
+      "at": [
+       -1.0,
+       2.05,
+       -1.0
+      ],
+      "teeth": 12,
+      "dp": 20,
+      "pd": 0.6,
+      "face": 0.35,
+      "bore": 0.312,
+      "mat": "steel"
+     },
+     {
+      "t": "gear",
+      "n": "drive spur",
+      "at": [
+       -0.1,
+       2.05,
+       -0.1
+      ],
+      "teeth": 40,
+      "dp": 20,
+      "pd": 2.0,
+      "face": 0.35,
+      "bore": 0.5,
+      "mat": "anodised",
+      "pockets": 6
+     },
+     {
+      "t": "gear",
+      "n": "idler",
+      "at": [
+       0.8,
+       2.05,
+       0.4
+      ],
+      "teeth": 22,
+      "dp": 20,
+      "pd": 1.1,
+      "face": 0.35,
+      "bore": 0.5,
+      "mat": "anodised",
+      "pockets": 5
+     },
+     {
+      "t": "bevel",
+      "n": "bevel pair",
+      "at": [
+       0.8,
+       0.55,
+       0.4
+      ],
+      "teeth": 20,
+      "pd": 1.6,
+      "face": 0.4
+     },
+     {
+      "t": "gear",
+      "n": "azimuth ring gear",
+      "at": [
+       0,
+       0.9,
+       0
+      ],
+      "teeth": 60,
+      "dp": 20,
+      "pd": 3.0,
+      "face": 0.4,
+      "bore": 1.4999999999999998,
+      "mat": "anodised"
+     },
+     {
+      "t": "gear",
+      "n": "azimuth pinion",
+      "at": [
+       1.0,
+       0.9,
+       1.0
+      ],
+      "teeth": 14,
+      "dp": 20,
+      "pd": 0.7,
+      "face": 0.4,
+      "bore": 0.312,
+      "mat": "steel"
+     },
+     {
+      "t": "shaft",
+      "n": "drive output shaft",
+      "at": [
+       0.2,
+       0.6,
+       0.2
+      ],
+      "dia": 0.5,
+      "len": 4.6,
+      "form": "hex",
+      "mat": "steel"
+     }
+    ],
+    "mates": [
+     "module plates bolt to the frame corner",
+     "azimuth revolute about Y"
+    ],
+    "note": "SDS MK5i chosen as the default for a 4 in wheel"
+   },
+   {
+    "id": "swerve_1",
+    "name": "Swerve module 2",
+    "kind": "drivetrain",
+    "origin": [
+     10.25,
+     0,
+     -10.25
+    ],
+    "features": [
+     {
+      "t": "plate",
+      "n": "module top plate",
+      "at": [
+       0,
+       2.4,
+       0
+      ],
+      "size": [
+       4.1,
+       0.19,
+       4.1
+      ],
+      "mat": "aluminium",
+      "pockets": 4
+     },
+     {
+      "t": "plate",
+      "n": "module bottom plate",
+      "at": [
+       0,
+       0.2,
+       0
+      ],
+      "size": [
+       4.1,
+       0.19,
+       4.1
+      ],
+      "mat": "aluminium",
+      "pockets": 4
+     },
+     {
+      "t": "standoff",
+      "n": "module standoff",
+      "at": [
+       -1.55,
+       1.2,
+       -1.55
+      ],
+      "dia": 0.375,
+      "len": 2.1999999999999997
+     },
+     {
+      "t": "standoff",
+      "n": "module standoff",
+      "at": [
+       -1.55,
+       1.2,
+       1.55
+      ],
+      "dia": 0.375,
+      "len": 2.1999999999999997
+     },
+     {
+      "t": "standoff",
+      "n": "module standoff",
+      "at": [
+       1.55,
+       1.2,
+       -1.55
+      ],
+      "dia": 0.375,
+      "len": 2.1999999999999997
+     },
+     {
+      "t": "standoff",
+      "n": "module standoff",
+      "at": [
+       1.55,
+       1.2,
+       1.55
+      ],
+      "dia": 0.375,
+      "len": 2.1999999999999997
+     },
+     {
+      "t": "motor",
+      "n": "drive motor",
+      "at": [
+       -1.0,
+       4.35,
+       -1.0
+      ],
+      "key": "kraken_x60",
+      "dia": 2.25,
+      "len": 3.7,
+      "rot": [
+       180,
+       0,
+       0
+      ]
+     },
+     {
+      "t": "motor",
+      "n": "steer motor",
+      "at": [
+       1.0,
+       4.35,
+       1.0
+      ],
+      "key": "kraken_x60",
+      "dia": 2.25,
+      "len": 3.7,
+      "rot": [
+       180,
+       0,
+       0
+      ]
+     },
+     {
+      "t": "wheel",
+      "n": "drive wheel",
+      "at": [
+       0.2,
+       -2.2,
+       0.2
+      ],
+      "dia": 4.0,
+      "w": 1.5,
+      "kind": "tread",
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "duro": "billet with grip tread"
+     },
+     {
+      "t": "bearing",
+      "n": "azimuth main bearing",
+      "at": [
+       0,
+       0.9,
+       0
+      ],
+      "bore": 2.5,
+      "od": 3.5,
+      "w": 0.4,
+      "flanged": true
+     },
+     {
+      "t": "bolts",
+      "n": "module through-bolts",
+      "at": [
+       -1.45,
+       2.5,
+       0
+      ],
+      "dia": 0.19,
+      "len": 0.75,
+      "rep": {
+       "n": 4,
+       "step": [
+        1.367,
+        0,
+        0
+       ]
+      }
+     }
+    ],
+    "mates": [
+     "module plates bolt to the frame corner",
+     "azimuth revolute about Y"
+    ],
+    "note": "SDS MK5i chosen as the default for a 4 in wheel"
+   },
+   {
+    "id": "swerve_2",
+    "name": "Swerve module 3",
+    "kind": "drivetrain",
+    "origin": [
+     10.25,
+     0,
+     10.25
+    ],
+    "features": [
+     {
+      "t": "plate",
+      "n": "module top plate",
+      "at": [
+       0,
+       2.4,
+       0
+      ],
+      "size": [
+       4.1,
+       0.19,
+       4.1
+      ],
+      "mat": "aluminium",
+      "pockets": 4
+     },
+     {
+      "t": "plate",
+      "n": "module bottom plate",
+      "at": [
+       0,
+       0.2,
+       0
+      ],
+      "size": [
+       4.1,
+       0.19,
+       4.1
+      ],
+      "mat": "aluminium",
+      "pockets": 4
+     },
+     {
+      "t": "standoff",
+      "n": "module standoff",
+      "at": [
+       -1.55,
+       1.2,
+       -1.55
+      ],
+      "dia": 0.375,
+      "len": 2.1999999999999997
+     },
+     {
+      "t": "standoff",
+      "n": "module standoff",
+      "at": [
+       -1.55,
+       1.2,
+       1.55
+      ],
+      "dia": 0.375,
+      "len": 2.1999999999999997
+     },
+     {
+      "t": "standoff",
+      "n": "module standoff",
+      "at": [
+       1.55,
+       1.2,
+       -1.55
+      ],
+      "dia": 0.375,
+      "len": 2.1999999999999997
+     },
+     {
+      "t": "standoff",
+      "n": "module standoff",
+      "at": [
+       1.55,
+       1.2,
+       1.55
+      ],
+      "dia": 0.375,
+      "len": 2.1999999999999997
+     },
+     {
+      "t": "motor",
+      "n": "drive motor",
+      "at": [
+       -1.0,
+       4.35,
+       -1.0
+      ],
+      "key": "kraken_x60",
+      "dia": 2.25,
+      "len": 3.7,
+      "rot": [
+       180,
+       0,
+       0
+      ]
+     },
+     {
+      "t": "motor",
+      "n": "steer motor",
+      "at": [
+       1.0,
+       4.35,
+       1.0
+      ],
+      "key": "kraken_x60",
+      "dia": 2.25,
+      "len": 3.7,
+      "rot": [
+       180,
+       0,
+       0
+      ]
+     },
+     {
+      "t": "wheel",
+      "n": "drive wheel",
+      "at": [
+       0.2,
+       -2.2,
+       0.2
+      ],
+      "dia": 4.0,
+      "w": 1.5,
+      "kind": "tread",
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "duro": "billet with grip tread"
+     },
+     {
+      "t": "bearing",
+      "n": "azimuth main bearing",
+      "at": [
+       0,
+       0.9,
+       0
+      ],
+      "bore": 2.5,
+      "od": 3.5,
+      "w": 0.4,
+      "flanged": true
+     },
+     {
+      "t": "bolts",
+      "n": "module through-bolts",
+      "at": [
+       -1.45,
+       2.5,
+       0
+      ],
+      "dia": 0.19,
+      "len": 0.75,
+      "rep": {
+       "n": 4,
+       "step": [
+        1.367,
+        0,
+        0
+       ]
+      }
+     }
+    ],
+    "mates": [
+     "module plates bolt to the frame corner",
+     "azimuth revolute about Y"
+    ],
+    "note": "SDS MK5i chosen as the default for a 4 in wheel"
+   },
+   {
+    "id": "swerve_3",
+    "name": "Swerve module 4",
+    "kind": "drivetrain",
+    "origin": [
+     -10.25,
+     0,
+     10.25
+    ],
+    "features": [
+     {
+      "t": "plate",
+      "n": "module top plate",
+      "at": [
+       0,
+       2.4,
+       0
+      ],
+      "size": [
+       4.1,
+       0.19,
+       4.1
+      ],
+      "mat": "aluminium",
+      "pockets": 4
+     },
+     {
+      "t": "plate",
+      "n": "module bottom plate",
+      "at": [
+       0,
+       0.2,
+       0
+      ],
+      "size": [
+       4.1,
+       0.19,
+       4.1
+      ],
+      "mat": "aluminium",
+      "pockets": 4
+     },
+     {
+      "t": "standoff",
+      "n": "module standoff",
+      "at": [
+       -1.55,
+       1.2,
+       -1.55
+      ],
+      "dia": 0.375,
+      "len": 2.1999999999999997
+     },
+     {
+      "t": "standoff",
+      "n": "module standoff",
+      "at": [
+       -1.55,
+       1.2,
+       1.55
+      ],
+      "dia": 0.375,
+      "len": 2.1999999999999997
+     },
+     {
+      "t": "standoff",
+      "n": "module standoff",
+      "at": [
+       1.55,
+       1.2,
+       -1.55
+      ],
+      "dia": 0.375,
+      "len": 2.1999999999999997
+     },
+     {
+      "t": "standoff",
+      "n": "module standoff",
+      "at": [
+       1.55,
+       1.2,
+       1.55
+      ],
+      "dia": 0.375,
+      "len": 2.1999999999999997
+     },
+     {
+      "t": "motor",
+      "n": "drive motor",
+      "at": [
+       -1.0,
+       4.35,
+       -1.0
+      ],
+      "key": "kraken_x60",
+      "dia": 2.25,
+      "len": 3.7,
+      "rot": [
+       180,
+       0,
+       0
+      ]
+     },
+     {
+      "t": "motor",
+      "n": "steer motor",
+      "at": [
+       1.0,
+       4.35,
+       1.0
+      ],
+      "key": "kraken_x60",
+      "dia": 2.25,
+      "len": 3.7,
+      "rot": [
+       180,
+       0,
+       0
+      ]
+     },
+     {
+      "t": "wheel",
+      "n": "drive wheel",
+      "at": [
+       0.2,
+       -2.2,
+       0.2
+      ],
+      "dia": 4.0,
+      "w": 1.5,
+      "kind": "tread",
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "duro": "billet with grip tread"
+     },
+     {
+      "t": "bearing",
+      "n": "azimuth main bearing",
+      "at": [
+       0,
+       0.9,
+       0
+      ],
+      "bore": 2.5,
+      "od": 3.5,
+      "w": 0.4,
+      "flanged": true
+     },
+     {
+      "t": "bolts",
+      "n": "module through-bolts",
+      "at": [
+       -1.45,
+       2.5,
+       0
+      ],
+      "dia": 0.19,
+      "len": 0.75,
+      "rep": {
+       "n": 4,
+       "step": [
+        1.367,
+        0,
+        0
+       ]
+      }
+     }
+    ],
+    "mates": [
+     "module plates bolt to the frame corner",
+     "azimuth revolute about Y"
+    ],
+    "note": "SDS MK5i chosen as the default for a 4 in wheel"
+   },
+   {
+    "id": "intake",
+    "name": "Intake",
+    "kind": "mechanism",
+    "origin": [
+     0,
+     1.2,
+     -11.07
+    ],
+    "features": [
+     {
+      "t": "tube",
+      "n": "intake side rail",
+      "at": [
+       -11.5,
+       0.6,
+       0
+      ],
+      "sec": [
+       1.0,
+       1.0
+      ],
+      "len": 4.9,
+      "wall": 0.1,
+      "mat": "aluminium",
+      "bolt_pitch": 2.0
+     },
+     {
+      "t": "tube",
+      "n": "intake side rail",
+      "at": [
+       11.5,
+       0.6,
+       0
+      ],
+      "sec": [
+       1.0,
+       1.0
+      ],
+      "len": 4.9,
+      "wall": 0.1,
+      "mat": "aluminium",
+      "bolt_pitch": 2.0
+     },
+     {
+      "t": "shaft",
+      "n": "roller 1 shaft",
+      "at": [
+       0,
+       0.6,
+       0.0
+      ],
+      "dia": 0.5,
+      "len": 24.0,
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "form": "hex",
+      "mat": "steel"
+     },
+     {
+      "t": "bearing",
+      "n": "roller bearing",
+      "at": [
+       -11.5,
+       0.6,
+       0.0
+      ],
+      "bore": 0.5,
+      "od": 1.125,
+      "w": 0.313,
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "flanged": true
+     },
+     {
+      "t": "bearing",
+      "n": "roller bearing",
+      "at": [
+       11.5,
+       0.6,
+       0.0
+      ],
+      "bore": 0.5,
+      "od": 1.125,
+      "w": 0.313,
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "flanged": true
+     },
+     {
+      "t": "wheel",
+      "n": "compliant wheel 1.1",
+      "at": [
+       -9.583,
+       0.6,
+       0.0
+      ],
+      "dia": 2.5,
+      "w": 2.1083333333333334,
+      "kind": "compliant",
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "duro": "30A green compliant wheels"
+     },
+     {
+      "t": "wheel",
+      "n": "compliant wheel 1.2",
+      "at": [
+       -5.75,
+       0.6,
+       0.0
+      ],
+      "dia": 2.5,
+      "w": 2.1083333333333334,
+      "kind": "compliant",
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "duro": "30A green compliant wheels"
+     },
+     {
+      "t": "wheel",
+      "n": "compliant wheel 1.3",
+      "at": [
+       -1.917,
+       0.6,
+       0.0
+      ],
+      "dia": 2.5,
+      "w": 2.1083333333333334,
+      "kind": "compliant",
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "duro": "30A green compliant wheels"
+     },
+     {
+      "t": "wheel",
+      "n": "compliant wheel 1.4",
+      "at": [
+       1.917,
+       0.6,
+       0.0
+      ],
+      "dia": 2.5,
+      "w": 2.1083333333333334,
+      "kind": "compliant",
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "duro": "30A green compliant wheels"
+     },
+     {
+      "t": "wheel",
+      "n": "compliant wheel 1.5",
+      "at": [
+       5.75,
+       0.6,
+       0.0
+      ],
+      "dia": 2.5,
+      "w": 2.1083333333333334,
+      "kind": "compliant",
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "duro": "30A green compliant wheels"
+     },
+     {
+      "t": "wheel",
+      "n": "compliant wheel 1.6",
+      "at": [
+       9.583,
+       0.6,
+       0.0
+      ],
+      "dia": 2.5,
+      "w": 2.1083333333333334,
+      "kind": "compliant",
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "duro": "30A green compliant wheels"
+     },
+     {
+      "t": "pulley",
+      "n": "roller 1 pulley",
+      "at": [
+       12.05,
+       0.6,
+       0.0
+      ],
+      "teeth": 18,
+      "pitch_mm": 5.0,
+      "pd": 1.128,
+      "w": 0.45,
+      "bore": 0.5,
+      "rot": [
+       0,
+       0,
+       90
+      ]
+     },
+     {
+      "t": "gearbox",
+      "n": "intake gearbox",
+      "at": [
+       12.9,
+       0.9,
+       -1.6
+      ],
+      "size": [
+       2.0,
+       2.2,
+       1.2
+      ],
+      "ratio": "4:1",
+      "stages": 2
+     },
+     {
+      "t": "motor",
+      "n": "intake motor",
+      "at": [
+       14.1,
+       0.9,
+       -1.6
+      ],
+      "key": "neo_vortex",
+      "dia": 2.2,
+      "len": 3.6,
+      "rot": [
+       0,
+       0,
+       90
+      ]
+     },
+     {
+      "t": "pulley",
+      "n": "gearbox output pulley",
+      "at": [
+       12.05,
+       0.9,
+       -1.6
+      ],
+      "teeth": 36,
+      "pitch_mm": 5.0,
+      "pd": 2.256,
+      "w": 0.45,
+      "bore": 0.5,
+      "rot": [
+       0,
+       0,
+       90
+      ]
+     },
+     {
+      "t": "belt",
+      "n": "reduction run",
+      "at": [
+       12.05,
+       0.9,
+       -1.6
+      ],
+      "to": [
+       12.05,
+       0.6,
+       -0.0
+      ],
+      "w": 0.35,
+      "kind": "HTD 5 mm 15 mm belt"
+     },
+     {
+      "t": "tensioner",
+      "n": "belt tensioner",
+      "at": [
+       12.75,
+       0.75,
+       -0.9
+      ],
+      "dia": 0.9,
+      "w": 0.4,
+      "rot": [
+       0,
+       0,
+       90
+      ]
+     },
+     {
+      "t": "shaft",
+      "n": "pivot dead axle",
+      "at": [
+       0,
+       1.6,
+       1.6
+      ],
+      "dia": 0.625,
+      "len": 25.0,
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "form": "round",
+      "mat": "steel"
+     },
+     {
+      "t": "bearing",
+      "n": "pivot bearing block",
+      "at": [
+       -11.9,
+       1.6,
+       1.6
+      ],
+      "bore": 0.625,
+      "od": 1.375,
+      "w": 0.5,
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "flanged": true
+     },
+     {
+      "t": "hardstop",
+      "n": "stowed hard stop",
+      "at": [
+       -11.9,
+       2.6,
+       2.4
+      ],
+      "size": [
+       0.75,
+       0.5,
+       0.75
+      ]
+     },
+     {
+      "t": "hardstop",
+      "n": "deployed hard stop",
+      "at": [
+       -11.9,
+       0.4,
+       2.6
+      ],
+      "size": [
+       0.75,
+       0.5,
+       0.75
+      ]
+     },
+     {
+      "t": "bearing",
+      "n": "pivot bearing block",
+      "at": [
+       11.9,
+       1.6,
+       1.6
+      ],
+      "bore": 0.625,
+      "od": 1.375,
+      "w": 0.5,
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "flanged": true
+     },
+     {
+      "t": "hardstop",
+      "n": "stowed hard stop",
+      "at": [
+       11.9,
+       2.6,
+       2.4
+      ],
+      "size": [
+       0.75,
+       0.5,
+       0.75
+      ]
+     },
+     {
+      "t": "hardstop",
+      "n": "deployed hard stop",
+      "at": [
+       11.9,
+       0.4,
+       2.6
+      ],
+      "size": [
+       0.75,
+       0.5,
+       0.75
+      ]
+     },
+     {
+      "t": "polycarb",
+      "n": "indexer guide",
+      "at": [
+       0,
+       2.2,
+       0.4
+      ],
+      "size": [
+       22.0,
+       0.093,
+       7.0
+      ],
+      "rot": [
+       -18,
+       0,
+       0
+      ]
+     }
+    ],
+    "mates": [
+     "side plates bolt to the front rail",
+     "roller shafts revolute in the plates",
+     "pivot revolute about the dead axle, limited by the hard stops"
+    ],
+    "note": "coaxial slapdown"
+   },
+   {
+    "id": "hopper",
+    "name": "Hopper / indexer",
+    "kind": "mechanism",
+    "origin": [
+     0.0,
+     2.4,
+     -0.999
+    ],
+    "features": [
+     {
+      "t": "polycarb",
+      "n": "hopper floor",
+      "at": [
+       0,
+       0.0,
+       0
+      ],
+      "size": [
+       23.0,
+       0.093,
+       14.9
+      ]
+     },
+     {
+      "t": "plate",
+      "n": "hopper back wall",
+      "at": [
+       0,
+       5.6,
+       7.45
+      ],
+      "size": [
+       23.0,
+       11.2,
+       0.093
+      ],
+      "mat": "aluminium",
+      "pockets": 2
+     },
+     {
+      "t": "plate",
+      "n": "hopper left wall",
+      "at": [
+       -11.5,
+       5.6,
+       0
+      ],
+      "size": [
+       0.093,
+       11.2,
+       14.9
+      ],
+      "mat": "aluminium",
+      "pockets": 2
+     },
+     {
+      "t": "plate",
+      "n": "hopper right wall",
+      "at": [
+       11.5,
+       5.6,
+       0
+      ],
+      "size": [
+       0.093,
+       11.2,
+       14.9
+      ],
+      "mat": "aluminium",
+      "pockets": 2
+     },
+     {
+      "t": "plate",
+      "n": "hopper left funnel",
+      "at": [
+       -7.415,
+       4.48,
+       -6.05
+      ],
+      "size": [
+       8.17,
+       8.4,
+       0.093
+      ],
+      "rot": [
+       0,
+       -28,
+       0
+      ],
+      "mat": "aluminium",
+      "pockets": 2
+     },
+     {
+      "t": "plate",
+      "n": "hopper right funnel",
+      "at": [
+       7.415,
+       4.48,
+       -6.05
+      ],
+      "size": [
+       8.17,
+       8.4,
+       0.093
+      ],
+      "rot": [
+       0,
+       28,
+       0
+      ],
+      "mat": "aluminium",
+      "pockets": 2
+     },
+     {
+      "t": "shaft",
+      "n": "hopper drive shaft",
+      "at": [
+       0,
+       -1.5,
+       -2.682
+      ],
+      "dia": 0.5,
+      "len": 24.2,
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "form": "hex",
+      "mat": "steel"
+     },
+     {
+      "t": "bearing",
+      "n": "hopper shaft bearing",
+      "at": [
+       -11.9,
+       -1.5,
+       -2.682
+      ],
+      "bore": 0.5,
+      "od": 1.125,
+      "w": 0.313,
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "flanged": true
+     },
+     {
+      "t": "bearing",
+      "n": "hopper shaft bearing",
+      "at": [
+       11.9,
+       -1.5,
+       -2.682
+      ],
+      "bore": 0.5,
+      "od": 1.125,
+      "w": 0.313,
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "flanged": true
+     },
+     {
+      "t": "wheel",
+      "n": "index wheel 1",
+      "at": [
+       -9.2,
+       -1.5,
+       -2.682
+      ],
+      "dia": 4.0,
+      "w": 0.9,
+      "kind": "compliant",
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "duro": "35A green compliant"
+     },
+     {
+      "t": "wheel",
+      "n": "index wheel 2",
+      "at": [
+       -4.6,
+       -1.5,
+       -2.682
+      ],
+      "dia": 4.0,
+      "w": 0.9,
+      "kind": "compliant",
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "duro": "35A green compliant"
+     },
+     {
+      "t": "wheel",
+      "n": "index wheel 3",
+      "at": [
+       0.0,
+       -1.5,
+       -2.682
+      ],
+      "dia": 4.0,
+      "w": 0.9,
+      "kind": "compliant",
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "duro": "35A green compliant"
+     },
+     {
+      "t": "wheel",
+      "n": "index wheel 4",
+      "at": [
+       4.6,
+       -1.5,
+       -2.682
+      ],
+      "dia": 4.0,
+      "w": 0.9,
+      "kind": "compliant",
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "duro": "35A green compliant"
+     },
+     {
+      "t": "wheel",
+      "n": "index wheel 5",
+      "at": [
+       9.2,
+       -1.5,
+       -2.682
+      ],
+      "dia": 4.0,
+      "w": 0.9,
+      "kind": "compliant",
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "duro": "35A green compliant"
+     },
+     {
+      "t": "wheel",
+      "n": "spindexer floor disc",
+      "at": [
+       0,
+       0.14,
+       0
+      ],
+      "dia": 14.9,
+      "w": 0.19,
+      "kind": "spindexer",
+      "duro": "0.19 in polycarb disc on a rim drive"
+     },
+     {
+      "t": "bearing",
+      "n": "spindexer centre bearing",
+      "at": [
+       0,
+       -0.3,
+       0
+      ],
+      "bore": 1.125,
+      "od": 2.0,
+      "w": 0.4,
+      "flanged": true
+     },
+     {
+      "t": "gear",
+      "n": "spindexer rim gear",
+      "at": [
+       0,
+       -0.55,
+       0
+      ],
+      "teeth": 96,
+      "dp": 20,
+      "pd": 4.8,
+      "face": 0.35,
+      "bore": 13.3,
+      "mat": "anodised"
+     },
+     {
+      "t": "gear",
+      "n": "spindexer pinion",
+      "at": [
+       6.85,
+       -0.55,
+       0
+      ],
+      "teeth": 16,
+      "dp": 20,
+      "pd": 0.8,
+      "face": 0.35,
+      "bore": 0.375,
+      "mat": "steel"
+     },
+     {
+      "t": "shaft",
+      "n": "agitator shaft",
+      "at": [
+       0,
+       6.944,
+       1.788
+      ],
+      "dia": 0.375,
+      "len": 18.4,
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "form": "round",
+      "mat": "steel"
+     },
+     {
+      "t": "polycarb",
+      "n": "agitator paddle 1",
+      "at": [
+       0,
+       6.944,
+       1.788
+      ],
+      "size": [
+       13.8,
+       0.093,
+       2.2
+      ]
+     },
+     {
+      "t": "polycarb",
+      "n": "agitator paddle 2",
+      "at": [
+       0,
+       6.944,
+       1.788
+      ],
+      "size": [
+       13.8,
+       0.093,
+       2.2
+      ],
+      "rot": [
+       0,
+       0,
+       60
+      ]
+     },
+     {
+      "t": "polycarb",
+      "n": "agitator paddle 3",
+      "at": [
+       0,
+       6.944,
+       1.788
+      ],
+      "size": [
+       13.8,
+       0.093,
+       2.2
+      ],
+      "rot": [
+       0,
+       0,
+       120
+      ]
+     },
+     {
+      "t": "polycarb",
+      "n": "exit lane 1 guide",
+      "at": [
+       0.0,
+       3.36,
+       -8.95
+      ],
+      "size": [
+       6.66,
+       6.72,
+       3.0
+      ]
+     },
+     {
+      "t": "wheel",
+      "n": "exit lane 1 roller",
+      "at": [
+       0.0,
+       1.0,
+       -9.85
+      ],
+      "dia": 2.0,
+      "w": 5.328,
+      "kind": "compliant",
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "duro": "40A"
+     },
+     {
+      "t": "sensor",
+      "n": "lane 1 beam-break",
+      "at": [
+       0.0,
+       1.6,
+       -9.45
+      ],
+      "size": [
+       0.5,
+       0.5,
+       0.5
+      ],
+      "kind": "beam-break",
+      "note": "one staged piece, sensed not timed"
+     },
+     {
+      "t": "hardstop",
+      "n": "lane 1 gate stop",
+      "at": [
+       3.33,
+       0.8,
+       -9.85
+      ],
+      "size": [
+       0.75,
+       0.5,
+       0.75
+      ]
+     },
+     {
+      "t": "gearbox",
+      "n": "hopper gearbox",
+      "at": [
+       13.3,
+       0.1,
+       1.49
+      ],
+      "size": [
+       2.0,
+       2.2,
+       1.2
+      ],
+      "ratio": "15:1",
+      "stages": 2
+     },
+     {
+      "t": "motor",
+      "n": "hopper motor",
+      "at": [
+       14.8,
+       0.1,
+       1.49
+      ],
+      "key": "neo_550",
+      "dia": 1.55,
+      "len": 2.3,
+      "rot": [
+       0,
+       0,
+       90
+      ]
+     },
+     {
+      "t": "sprocket",
+      "n": "hopper driven sprocket",
+      "at": [
+       12.4,
+       -1.5,
+       -2.682
+      ],
+      "teeth": 24,
+      "pitch_in": 0.25,
+      "pd": 1.915,
+      "w": 0.25,
+      "rot": [
+       0,
+       0,
+       90
+      ]
+     },
+     {
+      "t": "sprocket",
+      "n": "hopper drive sprocket",
+      "at": [
+       12.4,
+       0.1,
+       1.49
+      ],
+      "teeth": 12,
+      "pitch_in": 0.25,
+      "pd": 0.966,
+      "w": 0.25,
+      "rot": [
+       0,
+       0,
+       90
+      ]
+     },
+     {
+      "t": "belt",
+      "n": "hopper drive run",
+      "at": [
+       12.4,
+       0.1,
+       1.49
+      ],
+      "to": [
+       12.4,
+       -1.5,
+       -2.682
+      ],
+      "w": 0.35,
+      "kind": "#25 chain"
+     },
+     {
+      "t": "tensioner",
+      "n": "chain tensioner",
+      "at": [
+       13.1,
+       -0.7,
+       -0.596
+      ],
+      "dia": 0.9,
+      "w": 0.4,
+      "rot": [
+       0,
+       0,
+       90
+      ]
+     },
+     {
+      "t": "tube",
+      "n": "hopper support rail",
+      "at": [
+       -10.9,
+       -0.8,
+       0
+      ],
+      "sec": [
+       1.0,
+       1.0
+      ],
+      "len": 15.9,
+      "wall": 0.1,
+      "mat": "aluminium",
+      "bolt_pitch": 2.5
+     },
+     {
+      "t": "tube",
+      "n": "hopper support rail",
+      "at": [
+       10.9,
+       -0.8,
+       0
+      ],
+      "sec": [
+       1.0,
+       1.0
+      ],
+      "len": 15.9,
+      "wall": 0.1,
+      "mat": "aluminium",
+      "bolt_pitch": 2.5
+     },
+     {
+      "t": "plate",
+      "n": "hopper access panel",
+      "at": [
+       0,
+       11.3,
+       2.98
+      ],
+      "size": [
+       13.8,
+       0.09,
+       5.96
+      ],
+      "mat": "aluminium",
+      "pockets": 3,
+      "note": "thumbscrewed \u2014 a jam clears without removing the shooter"
+     }
+    ],
+    "mates": [
+     "support rails bolt to two crossmembers",
+     "index shaft revolute in the wall bearings",
+     "exit gate feeds the shooter one piece at a time",
+     "floor disc revolute about Y on the centre bearing"
+    ],
+    "note": "circular spindexer"
+   },
+   {
+    "id": "shooter",
+    "name": "Shooter",
+    "kind": "mechanism",
+    "origin": [
+     0.0,
+     1.2,
+     3.537
+    ],
+    "features": [
+     {
+      "t": "shaft",
+      "n": "flywheel shaft",
+      "at": [
+       0,
+       1.25,
+       0
+      ],
+      "dia": 0.5,
+      "len": 5.95,
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "form": "hex",
+      "mat": "steel"
+     },
+     {
+      "t": "wheel",
+      "n": "flywheel",
+      "at": [
+       -1.0,
+       1.25,
+       0
+      ],
+      "dia": 6.0,
+      "w": 0.8,
+      "kind": "urethane",
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "duro": "grey 60A"
+     },
+     {
+      "t": "bearing",
+      "n": "flywheel bearing",
+      "at": [
+       -3.9,
+       1.25,
+       0
+      ],
+      "bore": 0.5,
+      "od": 1.125,
+      "w": 0.313,
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "flanged": true
+     },
+     {
+      "t": "wheel",
+      "n": "flywheel",
+      "at": [
+       1.0,
+       1.25,
+       0
+      ],
+      "dia": 6.0,
+      "w": 0.8,
+      "kind": "urethane",
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "duro": "grey 60A"
+     },
+     {
+      "t": "bearing",
+      "n": "flywheel bearing",
+      "at": [
+       3.9,
+       1.25,
+       0
+      ],
+      "bore": 0.5,
+      "od": 1.125,
+      "w": 0.313,
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "flanged": true
+     },
+     {
+      "t": "pulley",
+      "n": "flywheel pulley",
+      "at": [
+       4.4,
+       1.25,
+       0
+      ],
+      "teeth": 24,
+      "pitch_mm": 5.0,
+      "pd": 1.504,
+      "w": 0.45,
+      "bore": 0.5,
+      "rot": [
+       0,
+       0,
+       90
+      ]
+     },
+     {
+      "t": "motor",
+      "n": "flywheel motor",
+      "at": [
+       6.0,
+       1.25,
+       -1.4
+      ],
+      "key": "falcon_500",
+      "dia": 2.25,
+      "len": 3.6,
+      "rot": [
+       0,
+       0,
+       90
+      ]
+     },
+     {
+      "t": "shaft",
+      "n": "flywheel shaft",
+      "at": [
+       0,
+       7.75,
+       0
+      ],
+      "dia": 0.5,
+      "len": 5.95,
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "form": "hex",
+      "mat": "steel"
+     },
+     {
+      "t": "wheel",
+      "n": "flywheel",
+      "at": [
+       -1.0,
+       7.75,
+       0
+      ],
+      "dia": 6.0,
+      "w": 0.8,
+      "kind": "urethane",
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "duro": "grey 60A"
+     },
+     {
+      "t": "bearing",
+      "n": "flywheel bearing",
+      "at": [
+       -3.9,
+       7.75,
+       0
+      ],
+      "bore": 0.5,
+      "od": 1.125,
+      "w": 0.313,
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "flanged": true
+     },
+     {
+      "t": "wheel",
+      "n": "flywheel",
+      "at": [
+       1.0,
+       7.75,
+       0
+      ],
+      "dia": 6.0,
+      "w": 0.8,
+      "kind": "urethane",
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "duro": "grey 60A"
+     },
+     {
+      "t": "bearing",
+      "n": "flywheel bearing",
+      "at": [
+       3.9,
+       7.75,
+       0
+      ],
+      "bore": 0.5,
+      "od": 1.125,
+      "w": 0.313,
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "flanged": true
+     },
+     {
+      "t": "pulley",
+      "n": "flywheel pulley",
+      "at": [
+       4.4,
+       7.75,
+       0
+      ],
+      "teeth": 24,
+      "pitch_mm": 5.0,
+      "pd": 1.504,
+      "w": 0.45,
+      "bore": 0.5,
+      "rot": [
+       0,
+       0,
+       90
+      ]
+     },
+     {
+      "t": "motor",
+      "n": "flywheel motor",
+      "at": [
+       6.0,
+       7.75,
+       -1.4
+      ],
+      "key": "falcon_500",
+      "dia": 2.25,
+      "len": 3.6,
+      "rot": [
+       0,
+       0,
+       90
+      ]
+     },
+     {
+      "t": "hood",
+      "n": "adjustable hood",
+      "at": [
+       0,
+       4.5,
+       0
+      ],
+      "r": 4.0,
+      "w": 2.6,
+      "arc": 180,
+      "range_deg": [
+       36,
+       66
+      ]
+     },
+     {
+      "t": "gear",
+      "n": "hood sector gear",
+      "at": [
+       4.2,
+       4.5,
+       0
+      ],
+      "teeth": 60,
+      "dp": 20,
+      "pd": 3.0,
+      "face": 0.3,
+      "bore": 0.5,
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "mat": "anodised"
+     },
+     {
+      "t": "gear",
+      "n": "hood pinion",
+      "at": [
+       4.2,
+       6.3,
+       0
+      ],
+      "teeth": 12,
+      "dp": 20,
+      "pd": 0.6,
+      "face": 0.3,
+      "bore": 0.375,
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "mat": "steel"
+     },
+     {
+      "t": "tube",
+      "n": "shooter post",
+      "at": [
+       -1.6,
+       2.2,
+       0
+      ],
+      "sec": [
+       2.0,
+       1.0
+      ],
+      "len": 4.4,
+      "wall": 0.1,
+      "rot": [
+       90,
+       0,
+       0
+      ],
+      "mat": "aluminium",
+      "bolt_pitch": 2.0
+     },
+     {
+      "t": "tube",
+      "n": "shooter post",
+      "at": [
+       1.6,
+       2.2,
+       0
+      ],
+      "sec": [
+       2.0,
+       1.0
+      ],
+      "len": 4.4,
+      "wall": 0.1,
+      "rot": [
+       90,
+       0,
+       0
+      ],
+      "mat": "aluminium",
+      "bolt_pitch": 2.0
+     },
+     {
+      "t": "pulley",
+      "n": "feeder pulley",
+      "at": [
+       0,
+       3.0,
+       2.4
+      ],
+      "teeth": 18,
+      "pitch_mm": 5.0,
+      "pd": 1.128,
+      "w": 0.5,
+      "bore": 0.5,
+      "rot": [
+       0,
+       0,
+       90
+      ]
+     },
+     {
+      "t": "belt",
+      "n": "feeder belt",
+      "at": [
+       0,
+       3.0,
+       2.4
+      ],
+      "to": [
+       0,
+       3.6,
+       1.2
+      ],
+      "w": 0.5,
+      "kind": "HTD 5 mm"
+     },
+     {
+      "t": "motor",
+      "n": "feeder motor",
+      "at": [
+       4.76,
+       3.0,
+       2.4
+      ],
+      "key": "neo_550",
+      "dia": 1.55,
+      "len": 2.3,
+      "rot": [
+       0,
+       0,
+       90
+      ]
+     },
+     {
+      "t": "polycarb",
+      "n": "feeder guide",
+      "at": [
+       0,
+       3.2,
+       1.6
+      ],
+      "size": [
+       8.33,
+       0.093,
+       3.0
+      ],
+      "rot": [
+       -24,
+       0,
+       0
+      ]
+     }
+    ],
+    "mates": [
+     "posts bolt to a crossmember",
+     "barrel revolute on the trunnions"
+    ],
+    "note": "single flywheel backspin shooter"
+   },
+   {
+    "id": "climber",
+    "name": "Climber",
+    "kind": "mechanism",
+    "origin": [
+     -8.1,
+     1.2,
+     9.45
+    ],
+    "features": [
+     {
+      "t": "tube",
+      "n": "climber tower",
+      "at": [
+       0,
+       14.5,
+       0
+      ],
+      "sec": [
+       2.0,
+       2.0
+      ],
+      "len": 29.0,
+      "wall": 0.125,
+      "rot": [
+       90,
+       0,
+       0
+      ],
+      "mat": "aluminium",
+      "bolt_pitch": 2.0,
+      "pockets": true
+     },
+     {
+      "t": "bolts",
+      "n": "tower bolt column",
+      "at": [
+       0,
+       3.0,
+       1.05
+      ],
+      "dia": 0.19,
+      "len": 0.75,
+      "rot": [
+       90,
+       0,
+       0
+      ],
+      "rep": {
+       "n": 7,
+       "step": [
+        0,
+        3.2,
+        0
+       ]
+      }
+     },
+     {
+      "t": "tube",
+      "n": "climb stage 1",
+      "at": [
+       0,
+       18.95,
+       0
+      ],
+      "sec": [
+       1.5,
+       1.5
+      ],
+      "len": 23.2,
+      "wall": 0.0625,
+      "rot": [
+       90,
+       0,
+       0
+      ],
+      "mat": "aluminium-dark",
+      "bolt_pitch": 2.0,
+      "note": "nests inside 2x2"
+     },
+     {
+      "t": "bearing",
+      "n": "stage 1 rolling block",
+      "at": [
+       0,
+       7.95,
+       -1.0
+      ],
+      "bore": 0.375,
+      "od": 0.875,
+      "w": 0.45,
+      "rot": [
+       90,
+       0,
+       0
+      ],
+      "flanged": true
+     },
+     {
+      "t": "bearing",
+      "n": "stage 1 rolling block",
+      "at": [
+       0,
+       7.95,
+       1.0
+      ],
+      "bore": 0.375,
+      "od": 0.875,
+      "w": 0.45,
+      "rot": [
+       90,
+       0,
+       0
+      ],
+      "flanged": true
+     },
+     {
+      "t": "tube",
+      "n": "climb stage 2",
+      "at": [
+       0,
+       21.95,
+       0
+      ],
+      "sec": [
+       1.0,
+       1.0
+      ],
+      "len": 23.2,
+      "wall": 0.0625,
+      "rot": [
+       90,
+       0,
+       0
+      ],
+      "mat": "aluminium-dark",
+      "bolt_pitch": 2.0,
+      "note": "nests inside 1.5x1.5"
+     },
+     {
+      "t": "bearing",
+      "n": "stage 2 rolling block",
+      "at": [
+       0,
+       10.95,
+       -1.0
+      ],
+      "bore": 0.375,
+      "od": 0.875,
+      "w": 0.45,
+      "rot": [
+       90,
+       0,
+       0
+      ],
+      "flanged": true
+     },
+     {
+      "t": "bearing",
+      "n": "stage 2 rolling block",
+      "at": [
+       0,
+       10.95,
+       1.0
+      ],
+      "bore": 0.375,
+      "od": 0.875,
+      "w": 0.45,
+      "rot": [
+       90,
+       0,
+       0
+      ],
+      "flanged": true
+     },
+     {
+      "t": "hook",
+      "n": "carriage hook",
+      "at": [
+       0,
+       31.23,
+       1.4
+      ],
+      "size": [
+       0.6,
+       1.8,
+       3.0
+      ],
+      "kind": "carriage hook"
+     },
+     {
+      "t": "drum",
+      "n": "grooved winch drum",
+      "at": [
+       0,
+       3.0,
+       -1.6
+      ],
+      "dia": 1.5,
+      "w": 2.2,
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "rope": "1/8 in Dyneema on a grooved drum"
+     },
+     {
+      "t": "gear",
+      "n": "winch ratchet",
+      "at": [
+       1.4,
+       3.0,
+       -1.6
+      ],
+      "teeth": 24,
+      "dp": 20,
+      "pd": 1.2,
+      "face": 0.32,
+      "bore": 0.5,
+      "rot": [
+       0,
+       0,
+       90
+      ],
+      "mat": "steel"
+     },
+     {
+      "t": "pawl",
+      "n": "ratchet pawl",
+      "at": [
+       1.4,
+       4.4,
+       -1.6
+      ],
+      "size": [
+       0.25,
+       1.2,
+       0.6
+      ]
+     },
+     {
+      "t": "gearbox",
+      "n": "winch gearbox",
+      "at": [
+       -1.8,
+       3.0,
+       -1.6
+      ],
+      "size": [
+       2.6,
+       3.0,
+       1.6
+      ],
+      "ratio": "100:1",
+      "stages": 3
+     },
+     {
+      "t": "motor",
+      "n": "climb motor",
+      "at": [
+       -3.4,
+       3.0,
+       -1.6
+      ],
+      "key": "kraken_x60",
+      "dia": 2.25,
+      "len": 3.7,
+      "rot": [
+       0,
+       0,
+       90
+      ]
+     },
+     {
+      "t": "motor",
+      "n": "climb motor",
+      "at": [
+       -5.8,
+       3.0,
+       -1.6
+      ],
+      "key": "kraken_x60",
+      "dia": 2.25,
+      "len": 3.7,
+      "rot": [
+       0,
+       0,
+       90
+      ]
+     },
+     {
+      "t": "rope",
+      "n": "winch rope",
+      "at": [
+       0,
+       3.0,
+       -1.0
+      ],
+      "to": [
+       0,
+       30.63,
+       -0.2
+      ],
+      "dia": 0.125,
+      "mat": "1/8 in Dyneema on a grooved drum"
+     }
+    ],
+    "mates": [
+     "tower tied into two frame rails",
+     "stages slide inside each other on the rolling blocks",
+     "ratchet holds the load with the motor unpowered"
+    ],
+    "note": "dual telescoping winch hooks"
+   },
+   {
+    "id": "electrical",
+    "name": "Control system",
+    "kind": "electrical",
+    "origin": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "features": [
+     {
+      "t": "component",
+      "n": "12 V 18 Ah SLA robot battery",
+      "at": [
+       0.0,
+       9.089,
+       5.402
+      ],
+      "key": "battery",
+      "size": [
+       3.031,
+       6.571,
+       7.13
+      ],
+      "rot": [
+       0,
+       90,
+       0
+      ],
+      "note": "Centred fore-aft-biased and low, it is the single largest mass on the robot."
+     },
+     {
+      "t": "component",
+      "n": "REV Power Distribution Hub",
+      "at": [
+       0.0,
+       4.018,
+       -4.319
+      ],
+      "key": "pdh",
+      "size": [
+       8.902,
+       1.5,
+       4.598
+      ],
+      "note": "Central so no branch run is long; keep the channel LEDs readable."
+     },
+     {
+      "t": "component",
+      "n": "120 A main breaker",
+      "at": [
+       10.744,
+       4.071,
+       8.098
+      ],
+      "key": "main_breaker",
+      "size": [
+       2.598,
+       1.551,
+       1.15
+      ],
+      "note": "On an outside edge, visible and reachable without removing anything."
+     },
+     {
+      "t": "component",
+      "n": "Anderson SB50 battery connector",
+      "at": [
+       3.543,
+       3.719,
+       8.098
+      ],
+      "key": "sb50",
+      "size": [
+       2.051,
+       1.201,
+       1.598
+      ],
+      "note": "Retained so the mating force never loads the 6 AWG lead."
+     },
+     {
+      "t": "component",
+      "n": "roboRIO 2.0",
+      "at": [
+       -6.48,
+       4.018,
+       -0.539
+      ],
+      "key": "rio",
+      "size": [
+       4.5,
+       1.5,
+       6.902
+      ],
+      "rot": [
+       0,
+       90,
+       0
+      ],
+      "note": "Connector edge faces outboard; SD card and USB stay serviceable."
+     },
+     {
+      "t": "component",
+      "n": "Pigeon 2.0 IMU",
+      "at": [
+       0.0,
+       2.969,
+       0.0
+      ],
+      "key": "pigeon",
+      "size": [
+       1.65,
+       0.449,
+       1.65
+      ],
+      "note": "Flat, rigid and near the rotation centre."
+     },
+     {
+      "t": "component",
+      "n": "VH-109 robot radio",
+      "at": [
+       7.02,
+       12.23,
+       -1.35
+      ],
+      "key": "radio",
+      "size": [
+       4.35,
+       1.051,
+       3.098
+      ],
+      "note": "Raised on a standoff mast, antennas clear of aluminium on both faces."
+     },
+     {
+      "t": "component",
+      "n": "Robot Signal Light",
+      "at": [
+       0.0,
+       17.732,
+       -9.181
+      ],
+      "key": "rsl",
+      "size": [
+       2.598,
+       3.402,
+       2.598
+      ],
+      "note": "Highest practical point with an all-round sight line."
+     },
+     {
+      "t": "component",
+      "n": "CANivore",
+      "at": [
+       -6.48,
+       3.118,
+       -4.319
+      ],
+      "key": "canivore",
+      "size": [
+       2.201,
+       0.598,
+       1.701
+      ],
+      "note": "Dedicated drivetrain CAN FD bus; keep the USB run short."
+     },
+     {
+      "t": "cable",
+      "n": "battery + to main breaker",
+      "at": [
+       0.0,
+       9.089,
+       5.402
+      ],
+      "to": [
+       10.744,
+       4.071,
+       8.098
+      ],
+      "gauge": "6 AWG",
+      "polarity": "+",
+      "dia": 0.26
+     },
+     {
+      "t": "cable",
+      "n": "main breaker to distributor",
+      "at": [
+       10.744,
+       4.071,
+       8.098
+      ],
+      "to": [
+       0.0,
+       4.018,
+       -4.319
+      ],
+      "gauge": "6 AWG",
+      "polarity": "+",
+      "dia": 0.26
+     },
+     {
+      "t": "cable",
+      "n": "battery - to distributor",
+      "at": [
+       0.0,
+       9.089,
+       5.402
+      ],
+      "to": [
+       0.0,
+       4.018,
+       -4.319
+      ],
+      "gauge": "6 AWG",
+      "polarity": "-",
+      "dia": 0.26
+     }
+    ],
+    "mates": [
+     "every component bolts through the bellypan"
+    ],
+    "note": "120 A main breaker, REV Power Distribution Hub"
+   }
+  ],
+  "feature_counts": {
+   "tube": 15,
+   "gusset": 4,
+   "plate": 19,
+   "standoff": 16,
+   "motor": 15,
+   "wheel": 21,
+   "bearing": 19,
+   "bolts": 23,
+   "gear": 10,
+   "bevel": 1,
+   "shaft": 7,
+   "pulley": 5,
+   "gearbox": 3,
+   "belt": 3,
+   "tensioner": 2,
+   "hardstop": 5,
+   "polycarb": 7,
+   "sensor": 1,
+   "sprocket": 2,
+   "hood": 1,
+   "hook": 1,
+   "drum": 1,
+   "pawl": 1,
+   "rope": 1,
+   "component": 9,
+   "cable": 3
+  },
+  "feature_total": 177,
+  "envelope_in": [
+   27.0,
+   34.4,
+   27.0
+  ],
+  "caveat": "Dimensioned concept geometry. Sections, bores and centre distances are consistent with each other and with the parts catalog, but nothing here has been checked against a vendor drawing, a stress case or the current game manual. Do not machine from it."
+ },
+ "cut_list": [
+  {
+   "section_in": [
+    2.0,
+    2.0
+   ],
+   "wall_in": 0.125,
+   "length_in": 29.0,
+   "qty": 1,
+   "used_in": [
+    "Climber"
+   ]
+  },
+  {
+   "section_in": [
+    2.0,
+    1.0
+   ],
+   "wall_in": 0.1,
+   "length_in": 27.0,
+   "qty": 2,
+   "used_in": [
+    "Chassis 27 \u00d7 27 in"
+   ]
+  },
+  {
+   "section_in": [
+    1.0,
+    1.0
+   ],
+   "wall_in": 0.1,
+   "length_in": 25.0,
+   "qty": 2,
+   "used_in": [
+    "Chassis 27 \u00d7 27 in"
+   ]
+  },
+  {
+   "section_in": [
+    2.0,
+    1.0
+   ],
+   "wall_in": 0.1,
+   "length_in": 25.0,
+   "qty": 2,
+   "used_in": [
+    "Chassis 27 \u00d7 27 in"
+   ]
+  },
+  {
+   "section_in": [
+    1.0,
+    1.0
+   ],
+   "wall_in": 0.0625,
+   "length_in": 23.2,
+   "qty": 1,
+   "used_in": [
+    "Climber"
+   ]
+  },
+  {
+   "section_in": [
+    1.5,
+    1.5
+   ],
+   "wall_in": 0.0625,
+   "length_in": 23.2,
+   "qty": 1,
+   "used_in": [
+    "Climber"
+   ]
+  },
+  {
+   "section_in": [
+    1.0,
+    1.0
+   ],
+   "wall_in": 0.1,
+   "length_in": 15.9,
+   "qty": 2,
+   "used_in": [
+    "Hopper / indexer"
+   ]
+  },
+  {
+   "section_in": [
+    1.0,
+    1.0
+   ],
+   "wall_in": 0.1,
+   "length_in": 4.9,
+   "qty": 2,
+   "used_in": [
+    "Intake"
+   ]
+  },
+  {
+   "section_in": [
+    2.0,
+    1.0
+   ],
+   "wall_in": 0.1,
+   "length_in": 4.4,
+   "qty": 2,
+   "used_in": [
+    "Shooter"
+   ]
+  }
+ ]
+}
