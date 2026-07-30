@@ -34,6 +34,16 @@ num_layers: 6
 max_seq_length: 3072
 mask_prompt: true
 grad_checkpoint: true
+# Flat 1e-4 from step 1 NaN'd this dataset at iteration 40 (healthy 3.03 at 20). v14/v15
+# survived that gamble on their data orders; this order front-loads the longest cad rows.
+# The fix is a warmed, decaying schedule instead of a cliff. NOTE: MLX applies warmup in
+# optimizer steps, and grad_accumulation=4 makes 50 warmup steps span ~200 iterations —
+# measured on the v16 run, not assumed.
+lr_schedule:
+  name: cosine_decay
+  arguments: [0.0001, 800, 0.00003]
+  warmup: 50
+  warmup_init: 0.000002
 steps_per_report: 20
 steps_per_eval: 100
 save_every: 100
