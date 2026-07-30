@@ -132,6 +132,21 @@ _GOALS = [
 _EXPERIENCE = ["a rookie", "a second-year", "an experienced", "a resource-limited",
                "a well-resourced", "a small five-student"]
 
+# What the strongest 2026 REBUILT robots actually do, written as goals a team would state —
+# archetypes derived from how the game rewards play, never copied robots. Sampling these at a
+# higher rate for 2026 teaches the model what "competitive this season" means in mechanisms:
+# shoot-on-the-move turrets, trench-height packaging, five-second climbs, midline feeding.
+_ELITE_GOALS_2026 = [
+    "cycles fuel nonstop and scores while moving, the way the top REBUILT robots do",
+    "holds the trench lane: full speed under the trench, intake to shot in under two seconds",
+    "runs a turret so the drivetrain never has to stop or rotate to aim",
+    "wins the endgame with a five-second L3 climb after playing full-field offense",
+    "feeds a partner from the midline all match and never gets caught in traffic",
+    "empties a full hopper in under eight seconds without a single jam",
+    "plays high-pressure defence and still steals a climb at the buzzer",
+    "shoots from behind the trench so defenders can never reach it",
+]
+
 
 def _intent_example(rng: random.Random, index: int) -> dict[str, Any]:
     # Seasons are sampled with the two selectable ones weighted up: those are what teams
@@ -152,6 +167,8 @@ def _intent_example(rng: random.Random, index: int) -> dict[str, Any]:
     profile = {"default_subsystems": season_data["default_subsystems"]}
     season = rng.choice(_SEASON_WORDS[profile_key])
     goal = rng.choice(_GOALS)
+    if profile_key == "2026-rebuilt" and rng.random() < 0.45:
+        goal = rng.choice(_ELITE_GOALS_2026)
     experience = rng.choice(_EXPERIENCE)
     prompt = rng.choice(_ROLE_TEMPLATES).format(
         experience=experience, season=season, w=f"{width:g}", l=f"{length:g}", goal=goal)
@@ -170,7 +187,14 @@ def _intent_example(rng: random.Random, index: int) -> dict[str, Any]:
     # coincidence in the data.
     if "shooter" in subsystems and "hopper" not in subsystems and rng.random() < 0.6:
         subsystems.append("hopper")
-    if "shooter" not in subsystems:
+    if "turret" in goal and "shooter" not in subsystems:
+        subsystems.append("shooter")
+    if "feeds a partner" in goal:
+        # A feeder carries fuel without shooting it: hopper stays, shooter goes.
+        subsystems = [name for name in subsystems if name != "shooter"]
+        if "hopper" not in subsystems:
+            subsystems.append("hopper")
+    elif "shooter" not in subsystems:
         subsystems = [name for name in subsystems if name != "hopper"]
     order = ("intake", "hopper", "shooter", "elevator", "arm", "climber")
     subsystems = [name for name in order if name in subsystems]

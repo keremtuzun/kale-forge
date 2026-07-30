@@ -1,0 +1,40 @@
+# Kale Forge Design Model — adapter v17 (MLX LoRA)
+#
+# v17 is a FRESH 800-iteration run on design-v15. Three things changed since v15's corpus,
+# all in the data (the recipe is untouched — it is the one that has never diverged):
+#
+#   1. The CAD targets are kale-cad-2.2: the geometry the model learns to emit now has the
+#      real turret stack, pan-mounted electronics, the radio mast, hopper corner posts,
+#      nested climber stages and deconflicted polycarb — i.e. nothing floats and panels do
+#      not interpenetrate, because the training targets are regenerated from the fixed tree.
+#   2. design_intent restored to 36.4% share (1,800 rows) — the rebalance design-v14 was
+#      built for, now finally trained on from scratch rather than as a continuation. v16
+#      proved a hot un-annealed continuation destroys a converged adapter; this run buys the
+#      rebalance the honest way.
+#   3. An elite-2026 goal pool: 45% of 2026 intent rows sample goals describing what the
+#      strongest REBUILT robots do (shoot-on-the-move turrets, trench-lane play, five-second
+#      climbs, midline feeding) — archetypes derived from the game's rewards, no robots
+#      copied. Turret and feeder goals steer the subsystem sets accordingly.
+#
+# Window check (Qwen3 tokenizer): longest row 2,949 of 3,072, zero truncation in any split.
+# THE HOST IS AN 8 GB M2; this recipe peaks ~6.4 GB. Session-restart risk is priced in:
+# checkpoints land in the repo every 100 iterations and the best-val checkpoint is promoted,
+# never a raw resume (see MODEL_CARD_DESIGN_V16.md for why).
+model: mlx-community/Qwen3-4B-Instruct-2507-4bit
+train: true
+data: datasets/processed/design-v15
+fine_tune_type: lora
+adapter_path: models/adapters/kale-design-qwen3-4b-v17
+seed: 42
+iters: 800
+batch_size: 1
+grad_accumulation_steps: 4
+learning_rate: 0.0001
+num_layers: 6
+max_seq_length: 3072
+mask_prompt: true
+grad_checkpoint: true
+steps_per_report: 20
+steps_per_eval: 100
+save_every: 100
+val_batches: 25
