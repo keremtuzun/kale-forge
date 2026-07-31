@@ -1,0 +1,32 @@
+# Kale Forge Design Model v18 — CUDA QLoRA target for a free Lightning T4.
+base_model: Qwen/Qwen3-4B-Instruct-2507
+dataset_dir: datasets/processed/design-v18
+dataset_version: design-v18
+seed: 42
+lr: 0.00008
+epochs: 1
+max_steps: 600
+per_device_batch: 1
+grad_accum: 4
+max_seq_len: 3072
+packing: false
+gradient_checkpointing: true
+optim: paged_adamw_8bit
+logging_steps: 10
+save_steps: 100
+save_total_limit: 3
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+quantization:
+  enabled: true
+  bits: 4
+  type: nf4
+  compute_dtype: float16
+  double_quant: true
+tracking:
+  backend: none
+output_dir: models/adapters/kale-design-qwen3-4b-v18
+eval_per_epoch: false

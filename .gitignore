@@ -58,6 +58,7 @@ models/adapters/*-work/
 # throwaway geometry. Tooling and outputs, not source — and the venv in particular should be
 # reinstalled onto local disk rather than read from here (see docs/training-guide.md).
 work/
+kale-v18-lightning.zip
 
 # Training and eval run logs: run output, not source. The durable artifacts of a run are
 # its checkpoints (models/adapters/) and its scorecard (models/evaluations/).

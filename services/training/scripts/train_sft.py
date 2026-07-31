@@ -34,7 +34,7 @@ SYSTEM_PROMPT = (
 
 
 def load_config(path: str) -> dict:
-    with open(path) as fh:
+    with open(path, encoding="utf-8") as fh:
         return yaml.safe_load(fh)
 
 
@@ -52,7 +52,9 @@ def _resolve_dataset_dir(cfg: dict) -> Path:
 def _find_split_files(dataset_dir: Path) -> dict[str, Path]:
     out = {}
     for split in ("train", "val", "test"):
-        for candidate in (dataset_dir / f"{split}.jsonl", dataset_dir / split / "data.jsonl"):
+        names = ("val.jsonl", "valid.jsonl") if split == "val" else (f"{split}.jsonl",)
+        candidates = tuple(dataset_dir / name for name in names) + (dataset_dir / split / "data.jsonl",)
+        for candidate in candidates:
             if candidate.exists():
                 out[split] = candidate
                 break
@@ -63,6 +65,31 @@ def _find_split_files(dataset_dir: Path) -> dict[str, Path]:
                 out["train"] = dataset_dir / name
                 break
     return out
+
+
+def _read_conversations(path: Path) -> list[dict]:
+    """Read the Design Studio's native chat JSONL format."""
+    rows = []
+    with path.open(encoding="utf-8") as fh:
+        for line_no, line in enumerate(fh, 1):
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            messages = row.get("messages")
+            if not isinstance(messages, list) or len(messages) < 2:
+                raise ValueError(f"{path}:{line_no}: expected a non-empty messages list")
+            if messages[-1].get("role") != "assistant":
+                raise ValueError(f"{path}:{line_no}: final message must be assistant")
+            rows.append(row)
+    return rows
+
+
+def _is_conversational(path: Path) -> bool:
+    with path.open(encoding="utf-8") as fh:
+        for line in fh:
+            if line.strip():
+                return isinstance(json.loads(line).get("messages"), list)
+    return False
 
 
 def dry_run(cfg: dict) -> int:
@@ -82,14 +109,24 @@ def dry_run(cfg: dict) -> int:
         print("  ! no train split found (expected train.jsonl / dataset.jsonl / synthetic.jsonl)")
         return 1
     for split, path in splits.items():
-        errors = validate_file(path)
-        rows = sum(1 for _ in read_jsonl(path))
-        # whitespace token-length approximation
-        lengths = []
-        for ex in read_jsonl(path):
-            text = SYSTEM_PROMPT + ex.instruction + json.dumps(ex.input.model_dump(), default=str) \
-                + json.dumps(ex.output.model_dump(), default=str)
-            lengths.append(len(text.split()))
+        if _is_conversational(path):
+            errors = []
+            examples = _read_conversations(path)
+            rows = len(examples)
+            lengths = [
+                len(" ".join(str(message.get("content", "")) for message in ex["messages"]).split())
+                for ex in examples
+            ]
+        else:
+            errors = validate_file(path)
+            examples = list(read_jsonl(path))
+            rows = len(examples)
+            lengths = [
+                len((SYSTEM_PROMPT + ex.instruction
+                     + json.dumps(ex.input.model_dump(), default=str)
+                     + json.dumps(ex.output.model_dump(), default=str)).split())
+                for ex in examples
+            ]
         avg = sum(lengths) / len(lengths) if lengths else 0
         max_len = max(lengths) if lengths else 0
         status = "OK" if not errors else f"{len(errors)} INVALID ROWS"
@@ -113,7 +150,7 @@ def train(cfg: dict, resume_from: str | None) -> int:  # pragma: no cover - GPU 
     """Real training path. Lazily imports heavy libraries so --dry-run stays lightweight."""
     import torch  # noqa: PLC0415
     from datasets import Dataset  # noqa: PLC0415
-    from peft import LoraConfig  # noqa: PLC0415
+    from peft import LoraConfig, prepare_model_for_kbit_training  # noqa: PLC0415
     from transformers import (  # noqa: PLC0415
         AutoModelForCausalLM,
         AutoTokenizer,
@@ -134,24 +171,45 @@ def train(cfg: dict, resume_from: str | None) -> int:  # pragma: no cover - GPU 
             ]
         }
 
-    train_rows = [to_chat(ex) for ex in read_jsonl(splits["train"])]
-    eval_rows = [to_chat(ex) for ex in read_jsonl(splits["val"])] if "val" in splits else None
+    def load_rows(path: Path) -> list[dict]:
+        if _is_conversational(path):
+            # Prompt-completion format makes the loss apply only to the target assistant
+            # response instead of teaching the model to reproduce user requests.
+            return [
+                {"prompt": row["messages"][:-1], "completion": [row["messages"][-1]]}
+                for row in _read_conversations(path)
+            ]
+        return [to_chat(ex) for ex in read_jsonl(path)]
+
+    train_rows = load_rows(splits["train"])
+    eval_rows = load_rows(splits["val"]) if "val" in splits else None
     train_ds = Dataset.from_list(train_rows)
     eval_ds = Dataset.from_list(eval_rows) if eval_rows else None
 
     tokenizer = AutoTokenizer.from_pretrained(cfg["base_model"])
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
     quant = cfg.get("quantization", {})
-    model_kwargs = {"torch_dtype": torch.bfloat16}
+    compute_dtype = getattr(torch, quant.get("compute_dtype", "float16"))
+    model_kwargs = {
+        "dtype": compute_dtype,
+        "device_map": "auto",
+    }
     if quant.get("enabled"):
         from transformers import BitsAndBytesConfig  # noqa: PLC0415
 
         model_kwargs["quantization_config"] = BitsAndBytesConfig(
             load_in_4bit=quant.get("bits") == 4,
             bnb_4bit_quant_type=quant.get("type", "nf4"),
-            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_compute_dtype=compute_dtype,
             bnb_4bit_use_double_quant=quant.get("double_quant", True),
         )
     model = AutoModelForCausalLM.from_pretrained(cfg["base_model"], **model_kwargs)
+    if quant.get("enabled"):
+        model = prepare_model_for_kbit_training(
+            model, use_gradient_checkpointing=cfg.get("gradient_checkpointing", True)
+        )
+    model.config.use_cache = False
 
     peft_config = LoraConfig(
         r=cfg["lora"]["r"], lora_alpha=cfg["lora"]["alpha"], lora_dropout=cfg["lora"]["dropout"],
@@ -164,15 +222,33 @@ def train(cfg: dict, resume_from: str | None) -> int:  # pragma: no cover - GPU 
         per_device_train_batch_size=cfg["per_device_batch"],
         gradient_accumulation_steps=cfg["grad_accum"], learning_rate=cfg["lr"],
         lr_scheduler_type=cfg.get("lr_scheduler", "linear"),
-        warmup_ratio=cfg.get("warmup_ratio", 0.0), max_seq_length=cfg["max_seq_len"],
+        warmup_ratio=cfg.get("warmup_ratio", 0.0), max_length=cfg["max_seq_len"],
         packing=cfg.get("packing", False), seed=cfg["seed"],
+        max_steps=cfg.get("max_steps", -1),
+        fp16=compute_dtype == torch.float16,
+        bf16=compute_dtype == torch.bfloat16,
+        gradient_checkpointing=cfg.get("gradient_checkpointing", True),
+        optim=cfg.get("optim", "paged_adamw_8bit"),
+        logging_steps=cfg.get("logging_steps", 10),
         eval_strategy="epoch" if (eval_ds and cfg.get("eval_per_epoch")) else "no",
-        save_strategy="epoch", save_total_limit=cfg.get("save_total_limit", 3),
+        save_strategy="steps" if cfg.get("save_steps") else "epoch",
+        save_steps=cfg.get("save_steps", 100),
+        save_total_limit=cfg.get("save_total_limit", 3),
         report_to=[] if cfg.get("tracking", {}).get("backend") in (None, "none") else ["mlflow"],
     )
     _setup_tracking(cfg)
     trainer = SFTTrainer(model=model, args=sft_config, train_dataset=train_ds,
                          eval_dataset=eval_ds, peft_config=peft_config, processing_class=tokenizer)
+    # Qwen3's model card declares bf16 as its native dtype. PEFT can inherit that dtype for
+    # newly-created LoRA matrices even when the quantized compute path is fp16. T4 GPUs do not
+    # implement AMP gradient unscaling for bf16, so keep only the small trainable adapter
+    # tensors in fp32; the frozen 4-bit base and fp16 compute path remain unchanged.
+    trainable_dtypes = set()
+    for parameter in trainer.model.parameters():
+        if parameter.requires_grad:
+            parameter.data = parameter.data.float()
+            trainable_dtypes.add(str(parameter.dtype))
+    print(f"trainable adapter dtypes: {sorted(trainable_dtypes)}")
     trainer.train(resume_from_checkpoint=resume_from)
     trainer.save_model(output_dir)
     print(f"saved adapter to {output_dir}")

@@ -57,7 +57,8 @@ class OnshapeConnection:
                 "translation":result.get("requestState","submitted"), "mode":"updated" if document_id else "created"}
 
     def publish_parametric(self, user_id: str, name: str, source: str,
-                           document_id: str = "", workspace_id: str = "") -> dict[str, Any]:
+                           document_id: str = "", workspace_id: str = "",
+                           element_id: str = "") -> dict[str, Any]:
         """Publish the design as an editable Feature Studio rather than an imported mesh.
 
         The OBJ path (`publish`) round-trips the robot through triangles, and a triangle has no
@@ -82,11 +83,17 @@ class OnshapeConnection:
                 did = created["id"]
                 wid = created["defaultWorkspace"]["id"]
 
-            studio = client.post(f"{base}/api/v10/featurestudios/d/{did}/w/{wid}",
-                                 json={"name": f"{name} — Kale source"})
-            studio.raise_for_status()
-            eid = studio.json()["id"]
+            if element_id:
+                eid = element_id
+            else:
+                studio = client.post(
+                    f"{base}/api/v10/featurestudios/d/{did}/w/{wid}",
+                    json={"name": f"{name} — editable source"})
+                studio.raise_for_status()
+                eid = studio.json()["id"]
 
+            # Preserve a single source of truth across Kale revisions instead of leaving
+            # several plausible Feature Studio tabs in the same document.
             contents = client.post(
                 f"{base}/api/v10/featurestudios/d/{did}/w/{wid}/e/{eid}/content",
                 json={"contents": source})
@@ -94,11 +101,20 @@ class OnshapeConnection:
 
         return {"document_id": did, "workspace_id": wid, "element_id": eid,
                 "url": f"{base}/documents/{did}/w/{wid}/e/{eid}",
-                "translation": "DONE", "mode": "featurescript",
+                "translation": "DONE",
+                "mode": "featurescript-updated" if element_id else "featurescript-created",
                 "editable": True,
-                "note": ("Published as a Feature Studio. Add the 'Kale FRC Robot' feature in a "
-                         "Part Studio to build it; every dimension stays editable in the "
-                         "source and in the feature dialog.")}
+                "flattened": False,
+                "editability": {
+                    "geometry": "parametric FeatureScript source",
+                    "parts": "separately named bodies generated from individual feature calls",
+                    "measures": "named variables beside each generating call",
+                    "derived_dimensions": "formulas retained in source",
+                    "revision_behavior": "updates this Feature Studio in place",
+                },
+                "note": ("Published as editable FeatureScript, never an OBJ or mesh. Frame "
+                         "dimensions are in the feature dialog; every part measure and "
+                         "derivation is named in the source.")}
 
     def copy_public_workspace(self, user_id: str, name: str) -> dict[str, Any]:
         creds = self._credentials.get(user_id)

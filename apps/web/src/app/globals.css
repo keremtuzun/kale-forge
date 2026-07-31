@@ -3,16 +3,16 @@
 @tailwind utilities;
 
 :root {
-  --background: 210 20% 98%;
-  --foreground: 220 20% 12%;
-  --card: 0 0% 100%;
-  --card-foreground: 220 20% 12%;
-  --muted: 210 16% 93%;
-  --muted-foreground: 220 10% 40%;
-  --primary: 152 45% 34%;
+  --background: 42 22% 96%;
+  --foreground: 150 9% 9%;
+  --card: 42 25% 98%;
+  --card-foreground: 150 9% 9%;
+  --muted: 40 13% 90%;
+  --muted-foreground: 150 5% 39%;
+  --primary: 143 70% 34%;
   --primary-foreground: 0 0% 100%;
-  --accent: 152 40% 92%;
-  --border: 220 13% 88%;
+  --accent: 143 35% 88%;
+  --border: 150 8% 78%;
 }
 
 .dark {
@@ -39,6 +39,43 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
+
+.font-display {
+  font-family: "Arial Narrow", "Aptos Display", "Helvetica Neue", Arial, sans-serif;
+  font-stretch: condensed;
+}
+
+.blueprint-grid {
+  background-image:
+    linear-gradient(hsl(var(--border) / 0.28) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--border) / 0.28) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.cad-orbit {
+  position: relative;
+  width: min(80vw, 340px);
+  aspect-ratio: 1;
+  transform: rotateX(58deg) rotateZ(-34deg);
+  transform-style: preserve-3d;
+}
+
+.cad-orbit::before,
+.cad-orbit::after {
+  content: "";
+  position: absolute;
+  inset: 12%;
+  border: 1px solid hsl(var(--border));
+}
+
+.cad-orbit::after { inset: 27%; border-color: hsl(var(--primary) / 0.6); }
+.cad-block { position: absolute; display: block; border: 1px solid hsl(var(--foreground)); background: hsl(var(--background) / 0.85); box-shadow: 9px 9px 0 hsl(var(--foreground) / 0.08); }
+.cad-block-a { inset: 18% 15% 58% 15%; }
+.cad-block-b { inset: 45% 18% 31% 18%; }
+.cad-block-c { inset: 68% 29% 12% 29%; border-color: hsl(var(--primary)); }
+.cad-axis { position: absolute; background: hsl(var(--primary)); transform-origin: left center; }
+.cad-axis-x { left: 0; top: 50%; width: 100%; height: 1px; }
+.cad-axis-y { left: 50%; top: 0; width: 1px; height: 100%; }
 
 ::selection {
   background: hsl(var(--primary) / 0.18);
