@@ -28,7 +28,13 @@ from eval_cad_adapter import (
 MODEL = "Qwen/Qwen3-4B-Instruct-2507"
 
 
-def run(adapter: Path, repo: Path, max_tokens: int = 2600) -> dict:
+def run(
+    adapter: Path,
+    repo: Path,
+    max_tokens: int = 2600,
+    intent_max_tokens: int = 2000,
+    progress_path: Path | None = None,
+) -> dict:
     sys.path.insert(0, str(repo / "apps" / "kale-demo"))
     from app.services.frc_cad import STRUCTURE, SYSTEM_CAD
     from app.services.frc_season import SEASONS, frame_budget
@@ -86,16 +92,37 @@ def run(adapter: Path, repo: Path, max_tokens: int = 2600) -> dict:
             output = model.generate(
                 **inputs,
                 max_new_tokens=limit,
-                do_sample=True,
-                temperature=0.3,
-                top_p=0.9,
+                do_sample=False,
                 pad_token_id=tokenizer.eos_token_id,
             )
         return tokenizer.decode(output[0][inputs["input_ids"].shape[-1]:], skip_special_tokens=True)
 
     started = time.time()
-    intent_results, signatures = [], set()
-    for season_key, prompt in INTENT_PROMPTS:
+    progress = {}
+    if progress_path and progress_path.exists():
+        progress = json.loads(progress_path.read_text(encoding="utf-8-sig"))
+    intent_results = list(progress.get("intent_results", []))
+    signatures = set(progress.get("signatures", []))
+
+    def save_progress() -> None:
+        if not progress_path:
+            return
+        progress_path.parent.mkdir(parents=True, exist_ok=True)
+        progress_path.write_text(
+            json.dumps(
+                {
+                    "intent_results": intent_results,
+                    "signatures": sorted(signatures),
+                    "cad_results": progress.get("cad_results", []),
+                    "held_results": progress.get("held_results", []),
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    for season_key, prompt in INTENT_PROMPTS[len(intent_results):]:
         season = SEASONS[season_key]
         budget = frame_budget(season, *season["frame"])
         stated = {
@@ -104,16 +131,23 @@ def run(adapter: Path, repo: Path, max_tokens: int = 2600) -> dict:
             "drive_type": None,
             "subsystems_stated": {},
         }
-        output = ask(SYSTEM_DESIGN, intent_user_message(prompt, stated, season_key), 2000)
+        output = ask(
+            SYSTEM_DESIGN,
+            intent_user_message(prompt, stated, season_key),
+            intent_max_tokens,
+        )
         result = score_intent(_first_json(output), vocab)
         result.update(prompt=prompt[:70], season=season_key)
         if result.get("signature"):
             signatures.add(result.pop("signature"))
         intent_results.append(result)
+        save_progress()
+        print(f"intent {len(intent_results)}/{len(INTENT_PROMPTS)}", flush=True)
 
-    def evaluate_cad(prompts):
-        results = []
-        for subsystem, season_key, prompt in prompts:
+    def evaluate_cad(prompts, progress_key):
+        results = list(progress.get(progress_key, []))
+        progress[progress_key] = results
+        for subsystem, season_key, prompt in prompts[len(results):]:
             output = ask(
                 SYSTEM_CAD,
                 f"Give me the {subsystem} assembly for this robot at part level.\n\n"
@@ -121,12 +155,20 @@ def run(adapter: Path, repo: Path, max_tokens: int = 2600) -> dict:
                 max_tokens,
             )
             result = score_cad(_first_json(output))
+            result["generated_tokens"] = len(
+                tokenizer.encode(output, add_special_tokens=False)
+            )
+            if not result.get("parsed"):
+                result["output_head"] = output[:1200]
+                result["output_tail"] = output[-1200:]
             result.update(subsystem=subsystem, season=season_key, prompt=prompt[:70])
             results.append(result)
+            save_progress()
+            print(f"cad {len(results)}/{len(prompts)}", flush=True)
         return results
 
-    cad_results = evaluate_cad(CAD_PROMPTS)
-    held_results = evaluate_cad(HELD_OUT_PROMPTS)
+    cad_results = evaluate_cad(CAD_PROMPTS, "cad_results")
+    held_results = evaluate_cad(HELD_OUT_PROMPTS, "held_results")
     return {
         "model": MODEL,
         "adapter": str(adapter),
@@ -166,8 +208,16 @@ def main() -> None:
     parser.add_argument("--repo", default=str(Path(__file__).resolve().parents[3]))
     parser.add_argument("--out", required=True)
     parser.add_argument("--max-tokens", type=int, default=2600)
+    parser.add_argument("--intent-max-tokens", type=int, default=2000)
+    parser.add_argument("--progress")
     args = parser.parse_args()
-    report = run(Path(args.adapter), Path(args.repo), args.max_tokens)
+    report = run(
+        Path(args.adapter),
+        Path(args.repo),
+        args.max_tokens,
+        args.intent_max_tokens,
+        Path(args.progress) if args.progress else None,
+    )
     output = Path(args.out)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

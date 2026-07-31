@@ -59,6 +59,7 @@ models/adapters/*-work/
 # reinstalled onto local disk rather than read from here (see docs/training-guide.md).
 work/
 kale-v18-lightning.zip
+models/evaluations/*.progress.json
 
 # Training and eval run logs: run output, not source. The durable artifacts of a run are
 # its checkpoints (models/adapters/) and its scorecard (models/evaluations/).

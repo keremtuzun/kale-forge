@@ -150,7 +150,7 @@ def train(cfg: dict, resume_from: str | None) -> int:  # pragma: no cover - GPU 
     """Real training path. Lazily imports heavy libraries so --dry-run stays lightweight."""
     import torch  # noqa: PLC0415
     from datasets import Dataset  # noqa: PLC0415
-    from peft import LoraConfig, prepare_model_for_kbit_training  # noqa: PLC0415
+    from peft import LoraConfig, PeftModel, prepare_model_for_kbit_training  # noqa: PLC0415
     from transformers import (  # noqa: PLC0415
         AutoModelForCausalLM,
         AutoTokenizer,
@@ -211,10 +211,21 @@ def train(cfg: dict, resume_from: str | None) -> int:  # pragma: no cover - GPU 
         )
     model.config.use_cache = False
 
-    peft_config = LoraConfig(
-        r=cfg["lora"]["r"], lora_alpha=cfg["lora"]["alpha"], lora_dropout=cfg["lora"]["dropout"],
-        target_modules=cfg["lora"]["target_modules"], task_type="CAUSAL_LM",
-    )
+    initial_adapter = cfg.get("initial_adapter")
+    if initial_adapter:
+        model = PeftModel.from_pretrained(
+            model,
+            str(REPO_ROOT / initial_adapter),
+            is_trainable=True,
+        )
+        peft_config = None
+        print(f"continuing from adapter weights: {initial_adapter}")
+    else:
+        peft_config = LoraConfig(
+            r=cfg["lora"]["r"], lora_alpha=cfg["lora"]["alpha"],
+            lora_dropout=cfg["lora"]["dropout"],
+            target_modules=cfg["lora"]["target_modules"], task_type="CAUSAL_LM",
+        )
 
     output_dir = str(REPO_ROOT / cfg["output_dir"])
     sft_config = SFTConfig(
