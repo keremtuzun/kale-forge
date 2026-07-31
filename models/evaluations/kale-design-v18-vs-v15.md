@@ -22,5 +22,13 @@ passes every acceptance gate except primary CAD validity, where three long or re
 assemblies fail to terminate inside the fixed 2,600-token budget. A second targeted repair
 regressed at the same five-case checkpoint, so it was stopped and not promoted.
 
-The v18 adapter and complete scorecard are preserved for future constrained-decoding and
-validator work. Training loss alone was not used as promotion evidence.
+An overnight Repair3 continuation used 390 CAD-heavy examples with unique part names and
+bounded 18–24-part targets. Intent remained 9/9 valid and clean, and the first three CAD
+cases were valid and clean, but validity then regressed to 4/8. Because even a perfect ninth
+case could only reach 5/9—below both the 7/9 gate and repair-50's 6/9—the evaluation was
+stopped early. Repair2 and Repair3 are two consecutive regressing continuations, so further
+fine-tuning was stopped to avoid overfitting and wasting free GPU quota.
+
+The strongest v18 adapter, complete repair-50 scorecard, Repair3 adapter/checkpoint, partial
+Repair3 scorecard, and logs are preserved for future constrained-decoding and validator work.
+Training loss alone was not used as promotion evidence.
