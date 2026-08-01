@@ -30,7 +30,7 @@ from typing import Any
 
 from app.services.frc_parts import ELECTRONICS, MOTORS, STRUCTURE, SWERVE_MODULES
 
-CAD_VERSION = "kale-cad-2.1"
+CAD_VERSION = "kale-cad-2.2"
 
 # Materials the renderer and the BOM both understand.  Keeping this closed means a feature
 # can never arrive with a finish nobody knows how to draw or price.
@@ -98,7 +98,15 @@ SYSTEM_CAD = (
     "an intermediate size invented to make the arithmetic work.\n"
     "- Bearings, pulleys, gears and shafts carry real bores, tooth counts and pitches; a "
     "pitch diameter must follow from the tooth count, not from the space available.\n"
+    "- Feature type t is closed vocabulary: tube, plate, gusset, shaft, bearing, pulley, "
+    "sprocket, gear, bevel, belt, wheel, motor, gearbox, standoff, polycarb, hardstop, "
+    "hook, drum, pawl, tensioner, hood, bolts, component, cable, rope, slide, actuator, "
+    "brake, sensor, chain_track. Never invent a type such as chain, safety or structure.\n"
+    "- Emit each physical part exactly once. Never repeat an identical feature or continue "
+    "a pattern after its required instances are present. Use mates for relationships, not "
+    "duplicate parts.\n"
     "- Emit one JSON object with id, name, kind, origin, features and mates. Nothing else.\n"
+    "- Close every array and object, then stop immediately after the final }.\n"
     "This is dimensioned concept geometry. Never claim it is ready to machine."
 )
 
@@ -593,6 +601,18 @@ def _hopper(spec: dict[str, Any], lane_x: float, c: Choices) -> dict[str, Any] |
     ln = frame["length_in"]
     width = hp.get("floor_width_in", 20.0)
     depth = hp.get("floor_depth_in", 14.0)
+    # Two mechanisms may not occupy the same air: when a tower (elevator or arm post) shares
+    # the robot with the hopper, the hopper's box pulls forward until its back wall clears
+    # the tower plane — polycarb through a tube is a render, not a robot.
+    bias = hp.get("position_bias", 0.42)
+    for other in ("elevator", "manipulator"):
+        blk = spec.get(other) or {}
+        if blk.get("included"):
+            other_bias = blk.get("position_bias", 0.58 if other == "elevator" else 0.54)
+            hopper_back = bias * ln + depth / 2
+            tower_front = other_bias * ln - 1.6
+            if hopper_back > tower_front:
+                bias = max(0.12, (tower_front - depth / 2) / ln)
     wall_h = hp.get("wall_height_in", 10.0)
     wheel_d = hp.get("wheel_diameter_in", 4.0)
     proud = hp.get("wheel_proud_in", 0.5)
@@ -628,7 +648,7 @@ def _hopper(spec: dict[str, Any], lane_x: float, c: Choices) -> dict[str, Any] |
                              (0.093, wall_h, depth), _at(sx * width / 2, floor_y + wall_h / 2, 0)))
     # Funnel: two angled panels that turn the whole floor width into one exit lane. This is the
     # part that decides whether the hopper serialises or bridges.
-    funnel_span = max((width - exit_w * lanes) / 2, 1.0)
+    funnel_span = max((width - exit_w * lanes) / 2 - 0.5, 1.0)
     for sx in (-1, 1):
         features.append(wall(f"hopper {'left' if sx < 0 else 'right'} funnel",
                              (funnel_span, wall_h * 0.75, 0.093),
@@ -720,7 +740,6 @@ def _hopper(spec: dict[str, Any], lane_x: float, c: Choices) -> dict[str, Any] |
                           _at(0, floor_y + wall_h + 0.1, depth * 0.2), pockets=3,
                           note="thumbscrewed — a jam clears without removing the shooter"))
 
-    bias = hp.get("position_bias", 0.42)
     return _asm("hopper", "Hopper / indexer", "mechanism", features,
                 origin=_at(lane_x, 2.4, -ln / 2 + bias * ln),
                 note=kind,
@@ -1134,16 +1153,34 @@ def _electrical(spec: dict[str, Any]) -> dict[str, Any] | None:
     w, ln = frame["width_in"], frame["length_in"]
     features: list[dict[str, Any]] = []
     by_key: dict[str, list[float]] = {}
+    # The radio and RSL are the two components that genuinely belong up high — the radio out
+    # of the crush zone, the RSL where an inspector can see it — so they get a real mast: a
+    # 1x1 at the back corner with a mount plate, not a box drawn at altitude with nothing
+    # under it. Everything else bolts flat to the bellypan; the layout's z is advisory and
+    # was floating the battery half a foot in the air.
+    mast_h = 14.0
+    mast_x, mast_z = -w / 2 + 2.2, ln / 2 - 2.2
+    mast_needed = any(pl["key"] in ("radio", "rsl") for pl in placements)
+    if mast_needed:
+        features.append(tube("radio mast", TUBE_1X1, mast_h,
+                             _at(mast_x, mast_h / 2, mast_z), _rot(90, 0, 0), bolts=3.0,
+                             note="1x1 at the back corner, gusseted to the frame rail"))
+        features.append(gusset("mast foot gusset", (2.2, 2.2),
+                               _at(mast_x, 0.10, mast_z - 0.55), _rot(90, 0, 0)))
+        features.append(plate("radio mount plate", (4.6, 0.090, 3.0),
+                              _at(mast_x + 2.3, mast_h - 2.6, mast_z), _rot(0, 0, 0)))
     for pl in placements:
         size = pl.get("size_mm") or [0, 0, 0]
         centre = pl.get("center_mm") or [0, 0, 0]
         sx, sy, sz = size[0] / 25.4, size[1] / 25.4, size[2] / 25.4
         cx, cz = centre[0] / 25.4 - w / 2, centre[1] / 25.4 - ln / 2
-        # Everything electrical bolts flat to the bellypan — the layout's z is advisory and
-        # was floating the battery half a foot in the air. The radio and RSL belong up on a
-        # mast in real life, but a component drawn at mast height with no mast under it reads
-        # as a floating box, so at concept level they mount to the pan like everything else.
         cy = sz / 2 + 0.06
+        if pl["key"] == "radio":
+            cx, cz = mast_x + 2.3, mast_z
+            cy = mast_h - 2.6 + 0.045 + sz / 2
+        elif pl["key"] == "rsl":
+            cx, cz = mast_x, mast_z
+            cy = mast_h + sz / 2
         by_key[pl["key"]] = _at(cx, cy, cz)
         features.append(_feat("component", pl.get("name", pl["key"]), _at(cx, cy, cz),
                               key=pl["key"], size=[round(sx, 3), round(sz, 3), round(sy, 3)],

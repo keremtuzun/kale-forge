@@ -1,0 +1,82 @@
+{
+  "version": "design-v18",
+  "created_at": "2026-07-31T07:03:05.863107+00:00",
+  "generator": "kale_training.generate_frc_corpus",
+  "seed": 18001,
+  "row_count": 4543,
+  "family_counts": {
+    "design_intent": 1800,
+    "season_rules": 626,
+    "strategy": 12,
+    "binder": 520,
+    "cad_binder_audit": 320,
+    "parts_qa": 74,
+    "electrical": 180,
+    "technique": 67,
+    "diagnosis": 15,
+    "cad_geometry": 140,
+    "cad_qa": 789
+  },
+  "merged_from": [],
+  "split_counts": {
+    "train": 3634,
+    "valid": 455,
+    "test": 454
+  },
+  "sha256": {
+    "train": "3e05ff20ca9a0cbf1bed53d30108d9a46223a72e64a51aa6360e7a9d3790153e",
+    "valid": "770d62015808d673bfb64e5ae0da198e7f9d4f5855a8815e5c4beb3b7ab2edc5",
+    "test": "a7ccf787a38f77a07380da24d48106bc86c4b5a1d5198d3613ee20262471073c"
+  },
+  "catalog": {
+    "parts_version": "frc-parts-2026.07.25",
+    "counts": {
+      "electronics": 17,
+      "motors": 8,
+      "swerve_modules": 8,
+      "structure": 16,
+      "transmission": 7
+    },
+    "swerve_modules": [
+      "maxswerve",
+      "mk4",
+      "mk4i",
+      "mk4n",
+      "mk5i",
+      "mk5n",
+      "thrifty",
+      "wcp_x"
+    ],
+    "motors": [
+      "cim",
+      "falcon_500",
+      "kraken_x44",
+      "kraken_x60",
+      "minion",
+      "neo",
+      "neo_550",
+      "neo_vortex"
+    ],
+    "disclaimer": "Envelopes and ratios are nominal published figures for packaging and first-order sizing. Confirm every one against the vendor drawing."
+  },
+  "cad_schema": "kale-cad-2.2",
+  "season_model": "kale-seasons-2026.07.28",
+  "seasons": {
+    "2026-rebuilt": "2026 REBUILT",
+    "2025-reefscape": "2025 REEFSCAPE",
+    "2024-crescendo": "2024 CRESCENDO",
+    "offseason": "Off-season / reference"
+  },
+  "cad_held_out": [
+    "four-bar linkage arm",
+    "ground-to-feeder tunnel intake",
+    "paddle-wheel agitator hopper",
+    "serpentine tunnel indexer",
+    "telescoping box",
+    "variable-hood flywheel shooter",
+    "winch-driven carriage climb"
+  ],
+  "license": "internal",
+  "provenance": "Derived from Kale's own FRC parts catalog and technique library. No vendor prose, CAD, meshes or user data copied. Published specifications are restated as engineering facts with verification caveats attached.",
+  "reference_policy": "Public manuals and design libraries inform topic coverage only; exact rules and vendor dimensions must be checked at use time."
+}

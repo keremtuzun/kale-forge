@@ -1,6 +1,15 @@
 {
   "versions": [
     {
+      "version": "kale-design-qwen3-4b-v17",
+      "base_model": "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+      "adapter_path": "models/adapters/kale-design-qwen3-4b-v17",
+      "provider": "local_mlx",
+      "status": "rejected",
+      "created_at": "2026-07-31T00:00:00Z",
+      "notes": "REJECTED \u2014 best-ever val loss (0.396) but generation collapsed (CAD 1/7, 4x eval time) after three restart-fragmented training segments. See MODEL_CARD_DESIGN_V17.md. v15 remains active."
+    },
+    {
       "version": "kale-design-qwen3-4b-v15",
       "base_model": "mlx-community/Qwen3-4B-Instruct-2507-4bit",
       "adapter_path": "models/adapters/kale-design-qwen3-4b-v15",
@@ -16,7 +25,7 @@
       "provider": "local_mlx",
       "status": "rejected",
       "created_at": "2026-07-30T02:00:00Z",
-      "notes": "REJECTED — un-annealed 200-iter continuation damaged generation (intent 5/9, CAD 0/7). Kept for reference. See MODEL_CARD_DESIGN_V16.md."
+      "notes": "REJECTED \u2014 un-annealed 200-iter continuation damaged generation (intent 5/9, CAD 0/7). Kept for reference. See MODEL_CARD_DESIGN_V16.md."
     },
     {
       "version": "qwen2.5-1.5b-instruct-q4-k-m",

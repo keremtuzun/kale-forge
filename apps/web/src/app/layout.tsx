@@ -6,10 +6,22 @@ import { AccountNav, AuthProvider } from "@/components/auth";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Kale Forge — AI Robot Design Studio",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
+  title: "Kale Forge — Robots, resolved.",
   description:
     "Describe a robot; get an engineered, fully editable design. Parametric CAD, real part numbers, and Onshape publishing from a self-hosted model.",
   icons: { icon: "/brand/kale-forge-mark.svg", apple: "/brand/kale-forge-mark.svg" },
+  openGraph: {
+    title: "Kale Forge — Robots, resolved.",
+    description: "Engineering-grounded robot synthesis with editable parametric Onshape source.",
+    images: [{ url: "/og.png", width: 1734, height: 907, alt: "Kale Forge parametric robot design" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Kale Forge — Robots, resolved.",
+    description: "Engineering-grounded robot synthesis with editable parametric Onshape source.",
+    images: ["/og.png"],
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -26,8 +38,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     <span className="tracking-tight">Kale Forge</span>
                   </Link>
                   <nav className="flex items-center gap-1 text-sm">
-                    <Link href="/" className="rounded-md px-3 py-2 text-muted-foreground transition hover:text-foreground">Home</Link>
-                    <Link href="/design" className="rounded-md px-3 py-2 text-muted-foreground transition hover:text-foreground">Design Studio</Link>
+                    <Link href="/" className="px-3 py-2 text-muted-foreground transition hover:text-foreground">Welcome</Link>
+                    <Link href="/design" className="px-3 py-2 text-muted-foreground transition hover:text-foreground">Design Studio</Link>
                     <span className="mx-2 h-5 w-px bg-border" aria-hidden />
                     <ThemeToggle />
                     <AccountNav />

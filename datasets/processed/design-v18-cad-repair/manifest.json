@@ -1,0 +1,19 @@
+{
+  "version": "design-v18-cad-repair",
+  "seed": 18002,
+  "source": "design-v18 train split only",
+  "held_out_geometry_added": false,
+  "family_counts": {
+    "cad_geometry_repair": 412,
+    "design_intent": 112
+  },
+  "split_counts": {
+    "train": 482,
+    "valid": 42
+  },
+  "sha256": {
+    "train": "185fe184a399f89ef79f94fbfe558a6ca6e8a56b5ab9bd89eb722cbf1282aec7",
+    "valid": "77605cb9c1c62df2eb61b7f9ebc69821a0e5736513502bfd5a770c02b61fba28"
+  },
+  "purpose": "Closed CAD vocabulary, complete JSON termination, and no duplicate parts."
+}

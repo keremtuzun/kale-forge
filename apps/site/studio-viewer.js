@@ -841,7 +841,7 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
     // unreliable — the drawing buffer can be empty even while the page looks right — so this
     // draws first and reads immediately, in the same call. `scale` renders above display
     // resolution for a print- or poster-quality export, then restores the view size.
-    capture(scale = 1, background = '#111612', margin = 1.12) {
+    capture(scale = 1, background = '#f6f3ea', margin = 1.12) {
       const r = canvas.parentElement.getBoundingClientRect();
       const prevBg = scene.background;
       // The canvas is alpha:true so the page background shows through on screen. An exported

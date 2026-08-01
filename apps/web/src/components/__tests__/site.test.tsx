@@ -11,9 +11,9 @@ import { AuthProvider, StudioGate } from "@/components/auth";
 describe("welcome page", () => {
   it("leads with the studio and makes the parametric claim", () => {
     render(<Home />);
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toMatch(/Describe the robot/);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toMatch(/Robots.*resolved/);
     // The only destination the site offers is the Design Studio.
-    const links = screen.getAllByRole("link", { name: /open the design studio/i });
+    const links = screen.getAllByRole("link").filter((link) => link.getAttribute("href") === "/design");
     expect(links.length).toBeGreaterThan(0);
     for (const link of links) expect(link.getAttribute("href")).toBe("/design");
     // The Onshape promise the product rests on.

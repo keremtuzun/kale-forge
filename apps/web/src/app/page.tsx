@@ -1,210 +1,180 @@
 import Link from "next/link";
-import { ArrowRight, ArrowUpRight } from "lucide-react";
+import { ArrowRight, Box, Braces, Check, MoveRight } from "lucide-react";
+
+const specRows = [
+  ["FRAME", "27 × 27 in", "108 / 110 in perimeter"],
+  ["DRIVE", "MK4i L2 · Kraken X60", "15.6 ft/s free"],
+  ["SHOOTER", "4 in dual flywheel", "32.4 ft/s exit"],
+  ["POWER", "REV PDH · 14 channels", "120 A main"],
+  ["MASS", "94.6 lb counted", "+10.4 lb margin"],
+  ["SOURCE", "189 named parts", "0 flattened bodies"],
+] as const;
 
 export default function Home() {
-  return <>
-    {/* ── Hero ─────────────────────────────────────────────────────────── */}
-    <section className="border-b border-border">
-      <div className="mx-auto grid w-full max-w-6xl items-center gap-14 px-6 py-24 lg:grid-cols-[1.05fr_.95fr]">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">AI robot design, engineered</p>
-          <h1 className="mt-5 text-5xl font-semibold leading-[1.05] tracking-[-0.03em] md:text-6xl">
-            Describe the robot.<br />Get an engineered design.
-          </h1>
-          <p className="mt-6 max-w-xl text-lg leading-8 text-muted-foreground">
-            Kale Forge turns a written requirement into an original, fully editable robot —
-            chassis, drivetrain, mechanisms, electronics — with the math worked out on real
-            parts and every dimension left open to change.
-          </p>
-          <div className="mt-9 flex flex-wrap items-center gap-4">
-            <Link href="/design" className="inline-flex items-center gap-2 rounded-md bg-primary px-5 py-3 font-semibold text-primary-foreground transition hover:opacity-90">
-              Open the Design Studio <ArrowRight className="h-4 w-4" />
-            </Link>
-            <a href="#method" className="inline-flex items-center gap-1.5 px-1 py-3 font-medium text-muted-foreground transition hover:text-foreground">
-              How it works
-            </a>
+  return (
+    <>
+      <section className="blueprint-grid border-b border-border">
+        <div className="mx-auto grid min-h-[760px] w-full max-w-[1440px] lg:grid-cols-[minmax(0,1fr)_520px]">
+          <div className="flex flex-col justify-between px-6 py-14 sm:px-10 lg:border-r lg:border-border lg:px-16 lg:py-20">
+            <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              <span className="h-px w-10 bg-primary" />
+              FRC design intelligence · 2026
+            </div>
+            <div className="my-20 max-w-4xl">
+              <h1 className="font-display max-w-4xl text-[clamp(4rem,8vw,8.5rem)] font-medium leading-[0.86] tracking-[-0.065em]">
+                Robots,<br />
+                resolved.
+              </h1>
+              <p className="mt-10 max-w-2xl text-lg leading-8 text-muted-foreground sm:text-xl">
+                Describe the machine. Kale Forge resolves the architecture, calculations,
+                parts, interfaces, and a parametric Onshape model you can keep engineering.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-5">
+              <Link href="/design" className="group inline-flex h-12 items-center gap-4 bg-foreground px-6 text-sm font-semibold text-background transition hover:bg-primary hover:text-primary-foreground">
+                Enter Design Studio
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+              </Link>
+              <span className="text-xs leading-5 text-muted-foreground">
+                Self-hosted model<br />No flattened CAD
+              </span>
+            </div>
           </div>
-          <p className="mt-6 text-xs text-muted-foreground">
-            Runs on Kale&apos;s own fine-tuned model. No external AI APIs, ever.
-          </p>
-        </div>
-        <DesignRecord />
-      </div>
-    </section>
 
-    {/* ── Three quiet facts ────────────────────────────────────────────── */}
-    <section className="border-b border-border">
-      <div className="mx-auto grid w-full max-w-6xl divide-y divide-border px-6 md:grid-cols-3 md:divide-x md:divide-y-0">
-        <Fact title="Original synthesis" text="Each design is derived from your constraints and the season's rules — not retrieved from a library of robots." />
-        <Fact title="Fully parametric" text="Roughly 200 dimensioned parts per robot, every measure a named variable. Change one number and the model rebuilds." />
-        <Fact title="Self-hosted model" text="An open-weight base fine-tuned on Kale's engineering corpus, served on infrastructure Kale controls." />
-      </div>
-    </section>
-
-    {/* ── Method ───────────────────────────────────────────────────────── */}
-    <section id="method" className="border-b border-border">
-      <div className="mx-auto w-full max-w-6xl px-6 py-24">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Method</p>
-        <h2 className="mt-4 max-w-2xl text-4xl font-semibold tracking-tight">From one sentence to a design you can defend.</h2>
-        <div className="mt-14 grid gap-px overflow-hidden rounded-lg border border-border bg-border md:grid-cols-2 lg:grid-cols-4">
-          <Step n="01" title="Describe" text="State what you know — frame size, season, named hardware, the job the robot has to do. Explicit facts are treated as specification, never as suggestion." />
-          <Step n="02" title="Synthesize" text="The model resolves everything you left open, constrained to a real parts catalog and the season's rule budget, so no answer can exceed what would pass inspection." />
-          <Step n="03" title="Inspect" text="Every design ships with its evidence: a part-level CAD tree, a channel-by-channel power budget, a mass roll-up, a cut list, and a dossier explaining each choice." />
-          <Step n="04" title="Publish" text="Send the design to your Onshape account as parametric source — real features with named dimensions, ready to edit, not a frozen mesh." />
-        </div>
-      </div>
-    </section>
-
-    {/* ── Onshape: nothing arrives flattened ───────────────────────────── */}
-    <section className="border-b border-border">
-      <div className="mx-auto grid w-full max-w-6xl gap-14 px-6 py-24 lg:grid-cols-2 lg:items-center">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Onshape publishing</p>
-          <h2 className="mt-4 text-4xl font-semibold tracking-tight">Nothing arrives flattened.</h2>
-          <p className="mt-5 leading-7 text-muted-foreground">
-            A mesh export has vertices, not dimensions — once a robot is triangles, there is
-            nothing left to edit. Kale Forge publishes generated parametric source instead:
-            every part is a real feature, every measure is a named variable beside the call
-            that uses it, and a gear&apos;s pitch diameter is written as its derivation from the
-            tooth count, so editing the count moves the geometry.
-          </p>
-          <ul className="mt-8 space-y-4 text-sm leading-6 text-muted-foreground">
-            <ListItem strong="Every part is its own feature" text="— tubes with real wall thickness, shafts with real hex sections, bearings with real bores." />
-            <ListItem strong="Every measure is editable" text="— over a thousand named variables on a full robot, one per dimension, in one obvious place." />
-            <ListItem strong="The frame drives the layout" text="— change the frame parameters in the feature dialog and positions and frame members rebuild with it." />
-          </ul>
-        </div>
-        <SourceExcerpt />
-      </div>
-    </section>
-
-    {/* ── Honesty ──────────────────────────────────────────────────────── */}
-    <section className="border-b border-border">
-      <div className="mx-auto grid w-full max-w-6xl gap-12 px-6 py-24 lg:grid-cols-[.9fr_1.1fr]">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">What this is not</p>
-          <h2 className="mt-4 text-4xl font-semibold tracking-tight">Concept geometry, stated plainly.</h2>
-        </div>
-        <div className="text-muted-foreground">
-          <p className="leading-7">
-            Kale Forge produces dimensioned concept geometry: the numbers are consistent with
-            each other and with the parts catalog, and none of them has been checked against a
-            vendor drawing, a stress case, or the current game manual. The rule check on every
-            design is reported, not enforced — passing means nothing was caught, not that the
-            robot is legal.
-          </p>
-          <div className="mt-8 grid gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-3">
-            {[
-              ["Verify parts", "against vendor drawings before machining"],
-              ["Verify rules", "against the current manual and team updates"],
-              ["Verify loads", "with real masses, prototypes, and proof tests"],
-            ].map(([strong, rest]) => (
-              <div key={strong} className="bg-background p-5 text-sm">
-                <span className="font-semibold text-foreground">{strong}</span>
-                <span className="mt-1 block leading-6">{rest}</span>
+          <div className="flex flex-col bg-card/70">
+            <div className="flex items-center justify-between border-b border-border px-6 py-4 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              <span>Design record / KF-26-0142</span>
+              <span className="text-primary">Resolved</span>
+            </div>
+            <div className="relative grid min-h-[300px] flex-1 place-items-center overflow-hidden border-b border-border p-8">
+              <div className="cad-orbit" aria-hidden>
+                <span className="cad-block cad-block-a" />
+                <span className="cad-block cad-block-b" />
+                <span className="cad-block cad-block-c" />
+                <span className="cad-axis cad-axis-x" />
+                <span className="cad-axis cad-axis-y" />
               </div>
-            ))}
+              <div className="absolute bottom-5 left-6 right-6 flex justify-between font-mono text-[10px] text-muted-foreground">
+                <span>ISO / PART TREE 189</span>
+                <span>UNITS / IN</span>
+              </div>
+            </div>
+            <dl>
+              {specRows.map(([label, value, note]) => (
+                <div key={label} className="grid grid-cols-[82px_1fr] border-b border-border px-6 py-4 last:border-b-0">
+                  <dt className="font-mono text-[10px] text-muted-foreground">{label}</dt>
+                  <dd className="flex items-baseline justify-between gap-4 text-sm">
+                    <span className="font-medium">{value}</span>
+                    <span className="font-mono text-[10px] text-muted-foreground">{note}</span>
+                  </dd>
+                </div>
+              ))}
+            </dl>
           </div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    {/* ── Closing CTA ──────────────────────────────────────────────────── */}
-    <section>
-      <div className="mx-auto flex w-full max-w-6xl flex-col items-start justify-between gap-8 px-6 py-20 md:flex-row md:items-center">
-        <div>
-          <h2 className="text-3xl font-semibold tracking-tight">Start from a requirement.</h2>
-          <p className="mt-2 text-muted-foreground">Pick a season, describe the robot, and read the evidence it comes back with.</p>
+      <section className="border-b border-border">
+        <div className="mx-auto grid w-full max-w-[1440px] lg:grid-cols-[360px_1fr]">
+          <div className="border-b border-border px-6 py-14 sm:px-10 lg:border-b-0 lg:border-r lg:px-16 lg:py-24">
+            <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-primary">01 / Method</p>
+            <h2 className="font-display mt-5 text-4xl font-medium leading-none tracking-[-0.04em]">
+              Evidence before confidence.
+            </h2>
+          </div>
+          <div className="grid md:grid-cols-3">
+            <Method n="01" title="Constrain" text="Season rules, your stated dimensions, named hardware, build resources, and acceptance criteria become hard inputs." />
+            <Method n="02" title="Resolve" text="The model proposes architecture while deterministic math closes ratios, power, geometry, travel, and mass." />
+            <Method n="03" title="Prove" text="Every result carries the part tree, derivations, binder rationale, risks, and tests needed before fabrication." />
+          </div>
         </div>
-        <Link href="/design" className="inline-flex shrink-0 items-center gap-2 rounded-md bg-primary px-5 py-3 font-semibold text-primary-foreground transition hover:opacity-90">
-          Open the Design Studio <ArrowRight className="h-4 w-4" />
-        </Link>
+      </section>
+
+      <section className="bg-foreground text-background">
+        <div className="mx-auto w-full max-w-[1440px] px-6 py-20 sm:px-10 lg:px-16 lg:py-28">
+          <div className="grid gap-16 lg:grid-cols-[1fr_1.1fr]">
+            <div>
+              <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-primary">02 / Editable by construction</p>
+              <h2 className="font-display mt-6 max-w-2xl text-5xl font-medium leading-[0.98] tracking-[-0.05em] sm:text-6xl">
+                Nothing arrives flattened.
+              </h2>
+              <p className="mt-7 max-w-xl text-base leading-7 text-background/65">
+                Kale Forge publishes FeatureScript source, not triangles. Each body is generated
+                from a named call. Dimensions remain named variables. Derived measures remain
+                formulas. Revisions update the same source tab instead of creating CAD ambiguity.
+              </p>
+            </div>
+            <div className="border border-background/20 bg-black/20">
+              <div className="flex items-center justify-between border-b border-background/20 px-5 py-3 font-mono text-[10px] text-background/50">
+                <span>KaleRobot.fs</span><span>PARAMETRIC SOURCE</span>
+              </div>
+              <pre className="overflow-x-auto p-6 font-mono text-[12px] leading-7 text-background/85">
+                <span className="block text-primary">{"// drive spur · 40T @ 20DP"}</span>
+                <span className="block">{"var drive_spur_teeth = 40;"}</span>
+                <span className="block">{"var drive_spur_dp = 20;"}</span>
+                <span className="block">{"var drive_spur_pd ="}</span>
+                <span className="block pl-6">{"drive_spur_teeth / drive_spur_dp;"}</span>
+                <span className="mt-3 block text-primary">{"// frame rail · editable stock section"}</span>
+                <span className="block">{"var rail_wall = 0.1;"}</span>
+                <span className="block">{"var rail_len = frameLength - 1.5;"}</span>
+                <span className="block">{"kaleTube(context, id + \"rail\", ...);"}</span>
+              </pre>
+              <div className="grid grid-cols-3 border-t border-background/20 text-center font-mono text-[10px]">
+                <Metric value="228" label="named parts" />
+                <Metric value="1,413" label="editable measures" />
+                <Metric value="0" label="mesh bodies" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="border-b border-border">
+        <div className="mx-auto grid w-full max-w-[1440px] lg:grid-cols-2">
+          <Capability icon={<Box />} index="03" title="CAD models teach geometry" text="Training targets come from the same deterministic part tree used by the viewer, cut list, and Onshape exporter. The model learns part-level structure, not screenshots." />
+          <Capability icon={<Braces />} index="04" title="Binders teach judgment" text="Requirements, alternatives, calculations, interfaces, validation evidence, and open risks are trained as one traceable engineering argument." />
+        </div>
+      </section>
+
+      <section>
+        <div className="mx-auto flex w-full max-w-[1440px] flex-col justify-between gap-10 px-6 py-16 sm:px-10 lg:flex-row lg:items-center lg:px-16 lg:py-20">
+          <div>
+            <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-primary">Build from a requirement</p>
+            <h2 className="font-display mt-3 text-4xl font-medium tracking-[-0.04em]">Open the studio. Keep the source.</h2>
+          </div>
+          <Link href="/design" className="group inline-flex items-center gap-8 border-b border-foreground pb-2 text-sm font-semibold">
+            Start a design <MoveRight className="h-5 w-5 transition-transform group-hover:translate-x-2" />
+          </Link>
+        </div>
+      </section>
+    </>
+  );
+}
+
+function Method({ n, title, text }: { n: string; title: string; text: string }) {
+  return (
+    <article className="border-b border-border px-7 py-12 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0 lg:px-10 lg:py-24">
+      <span className="font-mono text-[10px] text-muted-foreground">{n}</span>
+      <h3 className="mt-10 text-xl font-semibold">{title}</h3>
+      <p className="mt-4 text-sm leading-7 text-muted-foreground">{text}</p>
+    </article>
+  );
+}
+
+function Metric({ value, label }: { value: string; label: string }) {
+  return <div className="border-r border-background/20 px-3 py-4 last:border-r-0"><strong className="block text-lg text-background">{value}</strong><span className="mt-1 block text-background/45">{label}</span></div>;
+}
+
+function Capability({ icon, index, title, text }: { icon: React.ReactNode; index: string; title: string; text: string }) {
+  return (
+    <article className="group border-b border-border px-6 py-14 last:border-b-0 sm:px-10 lg:border-b-0 lg:border-r lg:px-16 lg:py-24 lg:last:border-r-0">
+      <div className="flex items-center justify-between text-muted-foreground">
+        <span className="grid h-11 w-11 place-items-center border border-border [&_svg]:h-5 [&_svg]:w-5">{icon}</span>
+        <span className="font-mono text-[10px]">{index}</span>
       </div>
-    </section>
-  </>;
-}
-
-/* A design dossier excerpt, set like the spec sheet the studio actually produces. */
-function DesignRecord() {
-  return <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
-    <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
-      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Design record</span>
-      <span className="mono text-xs text-muted-foreground">r3 · 2026 REBUILT</span>
-    </div>
-    <div className="px-5 py-4">
-      <h2 className="font-semibold">Turreted fuel cycler</h2>
-      <p className="mono mt-0.5 text-xs text-muted-foreground">&ldquo;27 in swerve, over-bumper intake, spindexer, turreted hooded shooter, L3 climb&rdquo;</p>
-    </div>
-    <dl className="divide-y divide-border border-t border-border text-sm">
-      <RecordRow k="Frame" v="27 × 27 in · 108 in perimeter of a 110 in budget" />
-      <RecordRow k="Drivetrain" v="4× MK4i L2 on Kraken X60 · 15.6 ft/s free" />
-      <RecordRow k="Shooter" v="4 in dual flywheel · exit 32.4 ft/s · hood 52–78°" />
-      <RecordRow k="Power" v="PDH · 14 channels assigned · 120 A main" />
-      <RecordRow k="Mass" v="94.6 lb counted vs 105 lb target" />
-      <RecordRow k="CAD" v="189 parts · 12 assemblies · every measure editable" />
-    </dl>
-    <div className="flex items-center justify-between border-t border-border bg-muted/40 px-5 py-3 text-xs text-muted-foreground">
-      <span>Rule check: nothing caught — verify against the current manual</span>
-      <ArrowUpRight className="h-3.5 w-3.5 shrink-0" />
-    </div>
-  </div>;
-}
-
-function RecordRow({ k, v }: { k: string; v: string }) {
-  return <div className="grid grid-cols-[92px_1fr] gap-4 px-5 py-3">
-    <dt className="text-muted-foreground">{k}</dt>
-    <dd className="mono text-[13px] leading-6">{v}</dd>
-  </div>;
-}
-
-/* Real shape of the published FeatureScript — the artifact the Onshape claim rests on. */
-function SourceExcerpt() {
-  const lines = [
-    ["cmt", "// drive spur — 40T @ 20 DP → PD 2.000 in"],
-    ["src", "var gear_spur_teeth = 40; var gear_spur_dp = 20;"],
-    ["src", "var gear_spur_x = -11.25; var gear_spur_y = 2.05;"],
-    ["src", "kaleDisc(context, id + \"gear_spur\","],
-    ["src", "    gear_spur_teeth / gear_spur_dp, …);"],
-    ["cmt", "// frame rail — 2x1x0.1 in stock, 25.5 in long"],
-    ["src", "var rail_len = 25.5; var rail_wall = 0.1;"],
-    ["src", "kaleTube(context, id + \"rail\", 2, 1,"],
-    ["src", "    rail_len * scaleZ, rail_wall, …);"],
-  ] as const;
-  return <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
-    <div className="flex items-center justify-between border-b border-border px-5 py-3.5 text-xs">
-      <span className="font-semibold uppercase tracking-wider text-muted-foreground">Published source</span>
-      <span className="mono text-muted-foreground">KaleRobot.fs · Feature Studio</span>
-    </div>
-    <pre className="mono overflow-x-auto p-5 text-[13px] leading-7">
-      {lines.map(([kind, text], index) => (
-        <span key={index} className={kind === "cmt" ? "block text-muted-foreground" : "block"}>{text}</span>
-      ))}
-    </pre>
-    <p className="border-t border-border bg-muted/40 px-5 py-3 text-xs leading-5 text-muted-foreground">
-      Edit the tooth count and the pitch diameter follows; edit the frame and the rail follows.
-      That is the difference between publishing source and publishing a picture.
-    </p>
-  </div>;
-}
-
-function Fact({ title, text }: { title: string; text: string }) {
-  return <div className="py-8 md:px-8 first:md:pl-0 last:md:pr-0">
-    <h3 className="font-semibold">{title}</h3>
-    <p className="mt-2 text-sm leading-6 text-muted-foreground">{text}</p>
-  </div>;
-}
-
-function Step({ n, title, text }: { n: string; title: string; text: string }) {
-  return <div className="bg-background p-7">
-    <span className="mono text-xs text-primary">{n}</span>
-    <h3 className="mt-3 text-lg font-semibold">{title}</h3>
-    <p className="mt-2 text-sm leading-6 text-muted-foreground">{text}</p>
-  </div>;
-}
-
-function ListItem({ strong, text }: { strong: string; text: string }) {
-  return <li className="flex gap-3">
-    <span className="mt-2.5 h-1 w-1 shrink-0 rounded-full bg-primary" />
-    <span><span className="font-semibold text-foreground">{strong}</span> {text}</span>
-  </li>;
+      <h3 className="font-display mt-12 text-4xl font-medium tracking-[-0.04em]">{title}</h3>
+      <p className="mt-5 max-w-xl leading-7 text-muted-foreground">{text}</p>
+      <div className="mt-10 flex items-center gap-2 text-xs font-semibold text-primary"><Check className="h-4 w-4" /> Grounded and inspectable</div>
+    </article>
+  );
 }

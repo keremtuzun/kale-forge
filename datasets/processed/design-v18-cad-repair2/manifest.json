@@ -1,0 +1,20 @@
+{
+  "version": "design-v18-cad-repair2",
+  "seed": 18002,
+  "source": "design-v18 train split only",
+  "held_out_geometry_added": false,
+  "family_counts": {
+    "cad_geometry_repair": 322,
+    "design_intent": 60,
+    "other_cad_preservation": 57
+  },
+  "split_counts": {
+    "train": 403,
+    "valid": 36
+  },
+  "sha256": {
+    "train": "ca730ae7a7345ecc7e741adf1d43e007989d961397c4cbfd54fc9ef842cfb2a4",
+    "valid": "7b637217cc8113beee070c511879c305d81a9c4324fe8158df4448998bb3af89"
+  },
+  "purpose": "Observed-failure repair for elevator, hopper, swerve, and shooter termination."
+}
