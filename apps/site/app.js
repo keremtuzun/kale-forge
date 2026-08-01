@@ -1,4 +1,4 @@
-/* Kale Forge product site — small progressive-enhancement interactions.
+/* Kale Forge product site. Small progressive-enhancement interactions.
    No dependencies, no build step. */
 (function () {
   "use strict";
