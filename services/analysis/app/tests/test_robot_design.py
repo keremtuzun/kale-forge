@@ -329,3 +329,18 @@ def test_featurescript_tracks_the_season_envelope():
     assert "KALE_PERIMETER_LIMIT_IN = 110.0" in rebuilt
     assert "KALE_PERIMETER_LIMIT_IN = 120.0" in reefscape
     assert "2026 REBUILT" in rebuilt and "2025 REEFSCAPE" in reefscape
+
+
+def test_prompt_revision_overrides_dimensions_and_removals_without_flattening():
+    base = "27 inch wide swerve robot with a turreted shooter, intake, and elevator"
+    original = build_robot_spec(base, use_model=False, season="2026-rebuilt")
+    revised = build_robot_spec(
+        base + "\n\nRevision request: make it 25 inch wide, remove the turret and remove the elevator",
+        use_model=False, season="2026-rebuilt",
+    )
+    assert original["shooter"]["turreted"] is True
+    assert revised["frame"]["width_in"] == 25
+    assert revised["shooter"]["included"] is True
+    assert revised["shooter"]["turreted"] is False
+    assert revised["elevator"]["included"] is False
+    assert revised["editable_manifest"]["flattened"] is False

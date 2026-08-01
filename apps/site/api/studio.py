@@ -237,7 +237,11 @@ PAGE = r"""<!doctype html>
   .spin{width:32px;height:32px;border:3px solid var(--line-strong);border-top-color:var(--brand);border-radius:50%;animation:sp 1s linear infinite;margin:0 auto 12px}
   @keyframes sp{to{transform:rotate(360deg)}}
   .hint{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:4;color:var(--muted);font-size:12px;background:color-mix(in srgb,var(--surface) 80%,transparent);border:1px solid var(--line);padding:5px 11px;border-radius:999px}
-  @media (max-width:820px){.stage{grid-template-columns:1fr;grid-template-rows:44% 1fr}.dossier{border-right:0;border-bottom:1px solid var(--line)}.ctrls{width:150px}}
+  .revision{position:absolute;z-index:7;left:50%;bottom:18px;transform:translateX(-50%);width:min(760px,calc(100% - 32px));border:1px solid var(--line-strong);border-radius:13px;background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(14px);box-shadow:0 18px 50px rgba(0,0,0,.4);padding:10px;display:none}
+  .revision.show{display:block}.revision-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 2px 8px}.revision-head b{font-size:12px}.revision-head span{font:500 11px var(--mono);color:var(--brand)}
+  .revision-row{display:flex;gap:8px}.revision input{min-width:0;flex:1;background:var(--bg);border:1px solid var(--line-strong);border-radius:9px;color:var(--ink);padding:10px 12px;font:500 13px var(--sans)}.revision input:focus{outline:none;border-color:var(--brand)}
+  .revision-note{color:var(--muted);font-size:11px;margin:7px 2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  @media (max-width:820px){.stage{grid-template-columns:1fr;grid-template-rows:44% 1fr}.dossier{border-right:0;border-bottom:1px solid var(--line)}.ctrls{width:150px}.revision{bottom:8px}.revision-head{display:none}.revision-row{flex-wrap:wrap}.revision input{flex-basis:100%}}
   #gate{position:fixed;inset:0;z-index:40;display:grid;place-items:center;background:color-mix(in srgb,var(--bg) 86%,transparent);backdrop-filter:blur(10px)}
   #gate[hidden]{display:none}
   .gate-card{width:min(92vw,380px);border:1px solid var(--line-strong);border-radius:14px;background:var(--surface);box-shadow:0 30px 70px rgba(0,0,0,.45);padding:22px}
@@ -287,6 +291,14 @@ PAGE = r"""<!doctype html>
       </div>
       <div class="empty" id="view-empty"><div><div class="spin" style="display:none" id="spin"></div>The 3D drivetrain for your design appears here.</div></div>
       <div class="hint" id="hint" style="display:none">drag to orbit · scroll to zoom · click a part</div>
+      <form class="revision" id="revision-form">
+        <div class="revision-head"><b>Edit this design with a prompt</b><span id="revision-state">validated / revision 1</span></div>
+        <div class="revision-row">
+          <input id="revision-q" autocomplete="off" placeholder="Make the frame 26 in wide, remove the turret, use a 3-stage elevator...">
+          <button class="btn primary" id="revision-apply" type="submit">Apply edit</button>
+        </div>
+        <p class="revision-note" id="revision-note">Each edit rebuilds the validated specification and every editable part.</p>
+      </form>
     </div>
   </div>
 </div>
@@ -361,6 +373,7 @@ import { buildScene } from '/studio-viewer.js';
 
 const $ = s => document.querySelector(s);
 const form = $('#form'), q = $('#q'), seasonSel = $('#season');
+const revisionForm = $('#revision-form'), revisionQ = $('#revision-q');
 
 // One starting prompt per season. The same words describe a different robot in a different
 // game, so handing over last year's example with this year's season selected is worse than
@@ -393,10 +406,14 @@ fetch('/studio?seasons=1').then(r => r.json()).then(data => {
   applySeasonExample();
 }).catch(() => { seasonSel.style.display = 'none'; });
 
-let scene3d = null;
+let scene3d = null, currentPrompt = '', currentSpec = null, revisionNumber = 0;
+let queuedRevisionPrompt = '';
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const prompt = q.value.trim(); if (prompt.length < 4) return;
+  const isRevision = Boolean(queuedRevisionPrompt);
+  const prompt = (queuedRevisionPrompt || q.value).trim();
+  queuedRevisionPrompt = '';
+  if (prompt.length < 4) return;
   $('#dossier-empty') && ($('#dossier-empty').style.display='none');
   $('#view-empty').style.display='grid'; $('#spin').style.display='block';
   try {
@@ -406,6 +423,8 @@ form.addEventListener('submit', async (e) => {
       $('#spin').style.display='none'; return; }
     const spec = await res.json();
     if (spec.error) throw new Error(spec.error);
+    currentPrompt = prompt; currentSpec = spec;
+    revisionNumber = isRevision ? revisionNumber + 1 : 1;
     renderDossier(spec);
     if (!scene3d) {
       scene3d = buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, RoomEnvironment, canvas: $('#scene') });
@@ -416,6 +435,13 @@ form.addEventListener('submit', async (e) => {
     scene3d.load(spec);
     $('#ctrls').style.display='flex'; $('#hint').style.display='block';
     $('#view-empty').style.display='none';
+    revisionForm.classList.add('show');
+    const editableParts = (((spec || {}).editable_manifest || {}).parts || []).length;
+    $('#revision-state').textContent = `validated / ${editableParts} editable parts / revision ${revisionNumber}`;
+    $('#revision-note').textContent = isRevision
+      ? `Revision ${revisionNumber} rebuilt from the prior parametric design. Nothing was flattened.`
+      : 'Each edit rebuilds the validated specification and every editable part.';
+    const editButton = $('#revision-apply'); editButton.disabled = false; editButton.textContent = 'Apply edit';
     wireControls();
     // The assembly list in the dossier and the 3D view are two views of the same tree,
     // so picking in one selects in the other.
@@ -424,9 +450,27 @@ form.addEventListener('submit', async (e) => {
       li.classList.add('sel'); scene3d.select(li.dataset.asm);
     }));
   } catch (err) {
-    $('#view-empty').style.display='grid'; $('#spin').style.display='none';
-    $('#view-empty').querySelector('div').innerHTML = 'Could not generate: ' + err.message;
+    const editButton = $('#revision-apply'); editButton.disabled = false; editButton.textContent = 'Apply edit';
+    if (isRevision && currentSpec) {
+      $('#view-empty').style.display='none';
+      $('#revision-note').textContent = 'Edit rejected: ' + err.message;
+    } else {
+      $('#view-empty').style.display='grid'; $('#spin').style.display='none';
+      $('#view-empty').querySelector('div').innerHTML = 'Could not generate: ' + err.message;
+    }
   }
+});
+
+revisionForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const edit = revisionQ.value.trim();
+  if (!currentSpec || edit.length < 3) return;
+  // The explicit revision marker lets the compiler preserve the prior design while giving
+  // removals and changed dimensions/types priority over the original request.
+  queuedRevisionPrompt = `${currentPrompt}\n\nRevision request: ${edit}`;
+  const editButton = $('#revision-apply'); editButton.disabled = true; editButton.textContent = 'Rebuilding...';
+  revisionQ.value = '';
+  form.requestSubmit();
 });
 
 function row(dt, dd){ return `<dt>${dt}</dt><dd>${dd}</dd>`; }

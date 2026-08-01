@@ -124,9 +124,14 @@ def _count(text: str, noun: str, default: int) -> int:
 
 
 def _pick_type(text: str, options: tuple[str, ...], keywords: dict[str, str], fallback: str) -> str:
-    for keyword, option in keywords.items():
-        if re.search(keyword, text, re.I):
-            return option
+    segments = [text]
+    if "revision request:" in text.lower():
+        base, latest = re.split(r"revision request:", text, maxsplit=1, flags=re.I)
+        segments = [latest, base]
+    for segment in segments:
+        for keyword, option in keywords.items():
+            if re.search(keyword, segment, re.I):
+                return option
     return fallback
 
 
@@ -287,8 +292,10 @@ def _parse(prompt: str, requested_season: str = "") -> dict[str, Any]:
         # numbers only, so part callouts like "4x M4" or "2x1 tube" never match.
         pair = re.findall(r"\b(\d{2})\s*(?:x|×|by)\s*(\d{2})\b(?!\s*(?:layer|lb|mm))", p)
     pair_width, pair_length = pair[-1] if pair else (default_width, default_length)
-    width_in = _clamp(_number(p, rf"(\d+(?:\.\d+)?)\s*{_INCH}\s*(?:wide|width)", float(pair_width)), 20, 34)
-    length_in = _clamp(_number(p, rf"(\d+(?:\.\d+)?)\s*{_INCH}\s*(?:long|length|deep)", float(pair_length)), 20, 34)
+    width_in = _clamp(_number(latest, rf"(\d+(?:\.\d+)?)\s*{_INCH}\s*(?:wide|width)", 0)
+                      or _number(p, rf"(\d+(?:\.\d+)?)\s*{_INCH}\s*(?:wide|width)", float(pair_width)), 20, 34)
+    length_in = _clamp(_number(latest, rf"(\d+(?:\.\d+)?)\s*{_INCH}\s*(?:long|length|deep)", 0)
+                       or _number(p, rf"(\d+(?:\.\d+)?)\s*{_INCH}\s*(?:long|length|deep)", float(pair_length)), 20, 34)
 
     # The season's perimeter budget is a rule, not a preference, so it outranks even an
     # explicitly stated frame: a 28 × 28 robot is a legal 2025 robot and an illegal 2026 one,
@@ -588,6 +595,9 @@ def build_robot_spec(prompt: str, *, use_model: bool = True, season: str = "") -
         ("dual independent flywheel hooded shooter", "dual independent flywheel hooded shooter",
          "single flywheel backspin shooter", "variable-hood flywheel shooter",
          "fixed-angle flywheel shooter")))
+
+    if re.search(r"\b(?:no|without|remove|delete|omit|drop)\s+(?:the\s+)?turret\b", latest):
+        shooter_type = "dual independent flywheel hooded shooter"
 
     arm_type = _pick_type(p, ARM_TYPES, {
         r"double[- ]?jointed": "double-jointed arm",
