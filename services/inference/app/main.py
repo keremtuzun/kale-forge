@@ -13,7 +13,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.responses import StreamingResponse
 
 from app.config import get_settings
-from app.jsonschema_lite import synthesize, validate
+from app.jsonschema_lite import validate
 from app.providers.base import GenerateRequest, GenerateResult, Provider, ProviderUnavailable
 from app.providers.stub import StubProvider
 from app.registry import ModelRegistry
@@ -93,10 +93,16 @@ def generate(req: GenerateRequest):
         errors = validate(obj, req.json_schema) if obj is not None else ["no JSON produced"]
         if errors:
             schema_valid = False
-            # fall back to a schema-valid synthesized instance, flagged
-            result.json = synthesize(req.json_schema)
-            result.warnings.append("schema_fallback: model output failed validation; "
-                                   "returned synthesized valid instance")
+            _tracker.record(
+                provider=result.provider, model_version=result.model_version,
+                latency_ms=result.latency_ms, prompt_tokens=result.prompt_tokens,
+                completion_tokens=result.completion_tokens, ok=False, schema_valid=False,
+            )
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                {"message": "model output violated the constrained JSON contract",
+                 "errors": errors[:20], "provider": result.provider},
+            )
     _tracker.record(
         provider=result.provider, model_version=result.model_version, latency_ms=result.latency_ms,
         prompt_tokens=result.prompt_tokens, completion_tokens=result.completion_tokens,

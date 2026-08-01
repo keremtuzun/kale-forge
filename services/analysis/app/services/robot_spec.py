@@ -135,8 +135,10 @@ def _pick_type(text: str, options: tuple[str, ...], keywords: dict[str, str], fa
 # ─────────────────────────────────────────────────────────────────────────────
 INTENT_SCHEMA: dict[str, Any] = {
     "type": "object",
+    "additionalProperties": False,
     "properties": {
-        "subsystems": {"type": "array", "items": {"type": "string", "enum": list(SUBSYSTEM_NAMES)}},
+        "subsystems": {"type": "array", "items": {"type": "string", "enum": list(SUBSYSTEM_NAMES)},
+                       "uniqueItems": True, "maxItems": len(SUBSYSTEM_NAMES)},
         "drive_type": {"type": "string", "enum": ["swerve", "swerve-ready", "west-coast", "tank"]},
         "intake_type": {"type": "string", "enum": list(INTAKE_TYPES)},
         "hopper_type": {"type": "string", "enum": list(HOPPER_TYPES)},
@@ -144,10 +146,12 @@ INTENT_SCHEMA: dict[str, Any] = {
         "arm_type": {"type": "string", "enum": list(ARM_TYPES)},
         "climber_type": {"type": "string", "enum": list(CLIMBER_TYPES)},
         "elevator_architecture": {"type": "string", "enum": list(ELEVATOR_TYPES)},
-        "elevator_stages": {"type": "integer"},
+        "elevator_stages": {"type": "integer", "minimum": 1, "maximum": 4},
         "pneumatics": {"type": "boolean"},
-        "design_notes": {"type": "array", "items": {"type": "string"}},
-        "risks": {"type": "array", "items": {"type": "string"}},
+        "design_notes": {"type": "array", "items": {"type": "string", "maxLength": 220},
+                         "maxItems": 6},
+        "risks": {"type": "array", "items": {"type": "string", "maxLength": 220},
+                  "maxItems": 6},
     },
     "required": ["subsystems"],
 }
@@ -1009,7 +1013,11 @@ def build_robot_spec(prompt: str, *, use_model: bool = True, season: str = "") -
     # ── CAD: the same robot expressed as individual dimensioned parts ──────
     # Everything above says what the robot *is*; this says what it is made of, in one
     # coordinate system, so a viewer, a BOM and a cut list all read the same geometry.
-    spec["cad"] = build_cad(spec)
+    from app.services.cad_contract import (compact_design_spec, editable_manifest, normalize_cad,
+                                           require_valid_cad, require_valid_parametric_design)
+    spec["cad"] = require_valid_cad(normalize_cad(build_cad(spec)))
+    spec["parametric_design"] = require_valid_parametric_design(compact_design_spec(spec))
+    spec["editable_manifest"] = editable_manifest(spec["cad"])
     spec["cut_list"] = cut_list(spec["cad"])
     spec["profile"]["cad_version"] = CAD_VERSION
     return spec

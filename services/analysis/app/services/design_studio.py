@@ -711,6 +711,8 @@ class DesignStudio:
         manifest = {"schema_version": "3.0", "units": "millimeter",
                     "coordinate_system": "x width, y length, z height",
                     "profile": spec["profile"], "components": mesh.components, "mates": mates,
+                    "parametric_design": spec.get("parametric_design"),
+                    "editable": spec.get("editable_manifest"),
                     "parts_catalog": frc_parts.catalog_digest(), "spec": spec}
         (target / manifest_name).write_text(
             json.dumps(manifest, indent=2), encoding="utf-8")

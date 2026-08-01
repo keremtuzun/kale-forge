@@ -1,9 +1,13 @@
-"""Minimal JSON-schema validation (required + type checks) and a schema-default synthesizer.
+"""Dependency-free strict JSON-schema validation for constrained model output.
 
-The full `jsonschema` package is intentionally not a dependency; we only need enough to
-validate model output structure and to synthesize a valid instance for the stub provider."""
+This intentionally implements the closed subset used by Kale's generation contracts.  It is
+strict enough to reject invented keys, enum near-misses, non-finite dimensions, oversized
+arrays and duplicate identifiers before any value reaches a CAD compiler.
+"""
 from __future__ import annotations
 
+import math
+import re
 from typing import Any
 
 _PY_TYPES = {
@@ -37,6 +41,29 @@ def _validate(instance: Any, schema: dict, path: str) -> list[str]:
             if not ok:
                 errors.append(f"{path}: expected {expected}, got {type(instance).__name__}")
                 return errors
+    if isinstance(instance, float) and not math.isfinite(instance):
+        errors.append(f"{path}: number must be finite")
+        return errors
+    if "const" in schema and instance != schema["const"]:
+        errors.append(f"{path}: must equal {schema['const']!r}")
+    if "enum" in schema and instance not in schema["enum"]:
+        errors.append(f"{path}: value {instance!r} is not allowed")
+    if isinstance(instance, (int, float)) and not isinstance(instance, bool):
+        if "minimum" in schema and instance < schema["minimum"]:
+            errors.append(f"{path}: must be >= {schema['minimum']}")
+        if "maximum" in schema and instance > schema["maximum"]:
+            errors.append(f"{path}: must be <= {schema['maximum']}")
+        if "exclusiveMinimum" in schema and instance <= schema["exclusiveMinimum"]:
+            errors.append(f"{path}: must be > {schema['exclusiveMinimum']}")
+        if "exclusiveMaximum" in schema and instance >= schema["exclusiveMaximum"]:
+            errors.append(f"{path}: must be < {schema['exclusiveMaximum']}")
+    if isinstance(instance, str):
+        if len(instance) < schema.get("minLength", 0):
+            errors.append(f"{path}: string is too short")
+        if "maxLength" in schema and len(instance) > schema["maxLength"]:
+            errors.append(f"{path}: string is too long")
+        if "pattern" in schema and re.fullmatch(schema["pattern"], instance) is None:
+            errors.append(f"{path}: does not match required pattern")
     if isinstance(instance, dict) and "properties" in schema:
         for key in schema.get("required", []):
             if key not in instance:
@@ -44,7 +71,23 @@ def _validate(instance: Any, schema: dict, path: str) -> list[str]:
         for key, subschema in schema["properties"].items():
             if key in instance and isinstance(subschema, dict):
                 errors.extend(_validate(instance[key], subschema, f"{path}.{key}"))
+        if schema.get("additionalProperties") is False:
+            for key in instance.keys() - schema["properties"].keys():
+                errors.append(f"{path}.{key}: additional property is not allowed")
     if isinstance(instance, list) and isinstance(schema.get("items"), dict):
+        if len(instance) < schema.get("minItems", 0):
+            errors.append(f"{path}: too few items")
+        if "maxItems" in schema and len(instance) > schema["maxItems"]:
+            errors.append(f"{path}: too many items")
+        if schema.get("uniqueItems"):
+            seen: set[str] = set()
+            import json
+            for item in instance:
+                marker = json.dumps(item, sort_keys=True, separators=(",", ":"))
+                if marker in seen:
+                    errors.append(f"{path}: duplicate array item")
+                    break
+                seen.add(marker)
         for i, item in enumerate(instance):
             errors.extend(_validate(item, schema["items"], f"{path}[{i}]"))
     return errors
