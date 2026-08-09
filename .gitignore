@@ -67,3 +67,6 @@ logs/
 
 # Vercel project links and absorbed nested-repo histories
 .vercel/
+
+# Local video frame indexes used while reconstructing CAD tutorial steps.
+.analysis/

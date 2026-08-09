@@ -77,6 +77,10 @@ _AUTH_ME_URL = os.environ.get("KALE_AUTH_ME_URL",
 
 
 def _cookie_is_signed_in(cookie_header: str) -> bool:
+    # Local-only development server. `serve_local.py` sets this explicitly so geometry can
+    # be rendered and inspected without forwarding a production session cookie.
+    if os.environ.get("KALE_DEV") == "1":
+        return True
     if not cookie_header:
         return False
     import urllib.request  # noqa: PLC0415
@@ -104,6 +108,10 @@ class handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         qs = parse_qs(parsed.query)
+        if os.environ.get("KALE_DEV") == "1" and parsed.path == "/api/auth/me":
+            self._send(200, b'{"id":"local-cad-review","email":"local@kale.invalid"}',
+                       "application/json")
+            return
         if parsed.path in ("/favicon.ico", "/robots.txt"):
             self._send(200, b"", "text/plain")
             return
@@ -189,11 +197,12 @@ PAGE = r"""<!doctype html>
   html,body{height:100%;margin:0}
   body{background-color:var(--bg);background-image:linear-gradient(rgba(80,90,82,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(80,90,82,.07) 1px,transparent 1px);background-size:40px 40px;color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;overflow:hidden}
   a{color:inherit;text-decoration:none}
-  .app{position:fixed;inset:0;display:grid;grid-template-rows:auto 1fr}
+  .app{position:fixed;inset:0;display:grid;grid-template-rows:auto minmax(0,1fr) auto}
   .bar{display:flex;align-items:center;gap:14px;padding:0 18px;min-height:56px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(10px);z-index:8}
   .brand{font-size:17px;font-weight:720;letter-spacing:-.03em}
   .brand b{color:var(--brand);font-weight:720}
-  .prompt{flex:1;display:flex;gap:8px;max-width:900px}
+  .prompt-dock{position:relative;z-index:12;border-top:1px solid var(--line-strong);background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(12px);padding:11px 16px;box-shadow:0 -10px 28px rgba(45,48,43,.08)}
+  .prompt{display:flex;gap:8px;width:min(100%,980px);margin:0 auto}
   .prompt input{flex:1;background:var(--surface);border:1px solid var(--line-strong);border-radius:9px;color:var(--ink);padding:9px 12px;font:500 14px var(--sans)}
   .prompt input:focus{outline:none;border-color:var(--brand)}
   .prompt select{background:var(--surface);border:1px solid var(--line-strong);border-radius:9px;color:var(--ink);padding:9px 10px;font:600 13px var(--sans);cursor:pointer}
@@ -203,8 +212,11 @@ PAGE = r"""<!doctype html>
   .btn.primary{background:var(--brand);color:#fff;border-color:var(--brand)}
   .btn.primary:hover{background:var(--brand-hover)}
   .btn.on{background:var(--brand);color:#fff;border-color:var(--brand)}
-  .stage{position:relative;min-height:0;display:grid;grid-template-columns:340px 1fr}
-  .dossier{border-right:1px solid var(--line);overflow:auto;padding:16px;background:var(--surface)}
+  .stage{position:relative;min-height:0;overflow:hidden}
+  .dossier{position:absolute;inset:0 auto 0 0;z-index:11;width:min(380px,calc(100vw - 34px));border-right:1px solid var(--line-strong);overflow:auto;padding:16px;background:var(--surface);box-shadow:18px 0 42px rgba(45,48,43,.18);transform:translateX(calc(-100% - 24px));visibility:hidden;transition:transform .2s ease,visibility 0s linear .2s}
+  .dossier.open{transform:translateX(0);visibility:visible;transition:transform .2s ease}
+  .dossier-scrim{position:absolute;inset:0;z-index:10;border:0;background:rgba(23,26,24,.24);opacity:0;visibility:hidden;transition:opacity .2s ease,visibility 0s linear .2s;cursor:pointer}
+  .dossier-scrim.open{opacity:1;visibility:visible;transition:opacity .2s ease}
   .dossier h2{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin:18px 0 8px}
   .dossier h2:first-child{margin-top:0}
   .name{font-size:19px;font-weight:740;letter-spacing:-.02em;margin:0}
@@ -221,9 +233,9 @@ PAGE = r"""<!doctype html>
   .sslist b{font-size:13px} .sslist span{display:block;color:var(--muted);font-size:12px;margin-top:2px}
   .note{color:var(--muted);font-size:12px;line-height:1.5;margin:6px 0 0}
   .verify{color:var(--warning);font-size:11px;border-top:1px solid var(--line);padding-top:8px;margin-top:12px;line-height:1.45}
-  .view{position:relative;min-height:0;display:grid;grid-template-rows:minmax(0,1fr) auto;background:rgba(246,243,234,.62)}
+  .view{position:relative;height:100%;min-height:0;display:grid;grid-template-rows:minmax(0,1fr) auto;background:rgba(246,243,234,.62)}
   .viewport{position:relative;min-height:0;overflow:hidden}
-  #scene{position:absolute;inset:0;display:block}
+  #scene{position:absolute;inset:0;display:block;width:100%;height:100%}
   .ctrls{position:absolute;left:14px;top:14px;z-index:5;display:flex;flex-direction:column;gap:8px;width:190px}
   .panel{border:1px solid var(--line-strong);border-radius:11px;background:color-mix(in srgb,var(--surface) 91%,transparent);backdrop-filter:blur(12px);box-shadow:0 14px 34px rgba(45,48,43,.13);padding:10px}
   .panel .row{display:flex;gap:7px}.panel .row .btn{flex:1;text-align:center;padding:7px 6px}
@@ -243,7 +255,7 @@ PAGE = r"""<!doctype html>
   .revision-row{display:flex;gap:8px}.revision input{min-width:0;flex:1;background:var(--bg);border:1px solid var(--line-strong);border-radius:9px;color:var(--ink);padding:10px 12px;font:500 13px var(--sans)}.revision input:focus{outline:none;border-color:var(--brand)}
   .revision-note{color:var(--muted);font-size:11px;margin:7px 2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .revision-examples{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.revision-examples button{appearance:none;border:1px solid var(--line);background:var(--bg);color:var(--muted);border-radius:999px;padding:5px 8px;font:600 10px var(--sans);cursor:pointer}.revision-examples button:hover{border-color:var(--brand);color:var(--brand)}
-  @media (max-width:820px){.stage{grid-template-columns:1fr;grid-template-rows:44% 1fr}.dossier{border-right:0;border-bottom:1px solid var(--line)}.ctrls{width:150px}.revision-head span{display:none}.revision-row{flex-wrap:wrap}.revision input{flex-basis:100%}.revision-examples{display:none}}
+  @media (max-width:820px){.bar{padding:0 10px}.prompt-dock{padding:8px}.prompt{flex-wrap:wrap}.prompt input{order:1;flex-basis:calc(100% - 94px)}.prompt .primary{order:1}.prompt select{flex:1}.dossier{width:min(92vw,380px)}.ctrls{width:150px}.revision-head span{display:none}.revision-row{flex-wrap:wrap}.revision input{flex-basis:100%}.revision-examples{display:none}}
   #gate{position:fixed;inset:0;z-index:40;display:grid;place-items:center;background:color-mix(in srgb,var(--bg) 86%,transparent);backdrop-filter:blur(10px)}
   #gate[hidden]{display:none}
   .gate-card{width:min(92vw,380px);border:1px solid var(--line-strong);border-radius:14px;background:var(--surface);box-shadow:0 30px 70px rgba(45,48,43,.2);padding:22px}
@@ -267,17 +279,14 @@ PAGE = r"""<!doctype html>
 <div class="app">
   <div class="bar">
     <a class="brand" href="https://kaleai.vercel.app">Kale <b>Forge</b></a>
-    <form class="prompt" id="form">
-      <select id="season" title="The game this robot is designed for. It sets the gamepiece, the goal height, the climb reach and the frame perimeter budget"></select>
-      <input id="q" autocomplete="off" placeholder="Describe a robot, for example: 'MK5i swerve on Krakens at R2 with a fast over-bumper intake and a climber'">
-      <button class="btn primary" type="submit">Generate</button>
-    </form>
+    <button class="btn" id="b-dossier" type="button" aria-controls="dossier" aria-expanded="false">Design details</button>
     <span id="who"><b id="who-name"></b><button id="signout" type="button" title="Sign out">sign out</button></span>
   </div>
   <div class="stage">
-    <div class="dossier" id="dossier">
+    <button class="dossier-scrim" id="dossier-scrim" type="button" aria-label="Close design details"></button>
+    <aside class="dossier" id="dossier" aria-hidden="true">
       <div class="empty" id="dossier-empty">Describe a robot and press Generate.<br>Each design comes with its own 3D drivetrain and power system.</div>
-    </div>
+    </aside>
     <div class="view">
       <div class="viewport">
         <canvas id="scene"></canvas>
@@ -310,6 +319,13 @@ PAGE = r"""<!doctype html>
         </div>
       </form>
     </div>
+  </div>
+  <div class="prompt-dock">
+    <form class="prompt" id="form">
+      <select id="season" title="The game this robot is designed for. It sets the gamepiece, the goal height, the climb reach and the frame perimeter budget"></select>
+      <input id="q" autocomplete="off" placeholder="Describe a robot, for example: 'MK5i swerve on Krakens at R2 with a fast over-bumper intake and a climber'">
+      <button class="btn primary" type="submit">Generate</button>
+    </form>
   </div>
 </div>
 
@@ -385,6 +401,20 @@ const $ = s => document.querySelector(s);
 const form = $('#form'), q = $('#q'), seasonSel = $('#season');
 const revisionForm = $('#revision-form'), revisionQ = $('#revision-q');
 
+// The engineering dossier is useful when requested, but the robot gets the whole canvas by
+// default. It behaves as a modal side drawer so opening it never resizes or clips the model.
+const dossier = $('#dossier'), dossierButton = $('#b-dossier'), dossierScrim = $('#dossier-scrim');
+function setDossier(open) {
+  dossier.classList.toggle('open', open);
+  dossierScrim.classList.toggle('open', open);
+  dossier.setAttribute('aria-hidden', String(!open));
+  dossierButton.setAttribute('aria-expanded', String(open));
+  dossierButton.classList.toggle('on', open);
+}
+dossierButton.addEventListener('click', () => setDossier(!dossier.classList.contains('open')));
+dossierScrim.addEventListener('click', () => setDossier(false));
+document.addEventListener('keydown', e => { if (e.key === 'Escape') setDossier(false); });
+
 // One starting prompt per season. The same words describe a different robot in a different
 // game, so handing over last year's example with this year's season selected is worse than
 // no example at all.
@@ -438,6 +468,10 @@ form.addEventListener('submit', async (e) => {
     currentPrompt = prompt; currentSpec = spec;
     revisionNumber = isRevision ? revisionNumber + 1 : 1;
     renderDossier(spec);
+    // Establish the final viewport height before Three.js measures the canvas and frames the
+    // robot. Showing this panel after load() made the canvas shorter without refitting the
+    // camera, which clipped mechanisms against the new bottom edge.
+    revisionForm.classList.add('show');
     if (!scene3d) {
       scene3d = buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, RoomEnvironment, canvas: $('#scene') });
       // Exposed so the viewer can be driven from the console or a screenshot script, and so
@@ -447,7 +481,6 @@ form.addEventListener('submit', async (e) => {
     scene3d.load(spec);
     $('#ctrls').style.display='flex'; $('#hint').style.display='block';
     $('#view-empty').style.display='none';
-    revisionForm.classList.add('show');
     const editableParts = (((spec || {}).editable_manifest || {}).parts || []).length;
     $('#revision-state').textContent = `validated / ${editableParts} editable parts / revision ${revisionNumber}`;
     $('#revision-note').textContent = isRevision

@@ -88,4 +88,91 @@
   // ---- footer year ----
   var yr = document.getElementById("year");
   if (yr) yr.textContent = String(new Date().getFullYear());
+
+  var calm = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // ---- entry sequence ----
+  // The counter is the only thing gating the button, so the visitor is never held longer than
+  // the animation itself, and SKIP / Escape / Enter get them past it at any point.
+  var intro = document.getElementById("intro");
+  if (intro) {
+    var num = document.getElementById("intro-num");
+    var bar = document.getElementById("intro-bar");
+    var enter = document.getElementById("enter");
+    var skip = document.getElementById("intro-skip");
+    var left = false;
+
+    function leave() {
+      if (left) return;
+      left = true;
+      intro.classList.add("leaving");
+      root.classList.remove("intro-armed");
+      reveal();
+      setTimeout(function () { intro.hidden = true; }, calm ? 0 : 900);
+    }
+
+    var isReady = false;
+    function ready() {
+      if (isReady) return;
+      isReady = true;
+      num.textContent = "100";
+      bar.style.width = "100%";
+      enter.classList.add("ready");
+      enter.focus({ preventScroll: true });
+    }
+
+    enter.addEventListener("click", leave);
+    skip.addEventListener("click", leave);
+    document.addEventListener("keydown", function (e) {
+      if (left) return;
+      if (e.key === "Escape") leave();
+      else if (e.key === "Enter" && enter.classList.contains("ready")) leave();
+    });
+
+    if (calm) {
+      bar.style.width = "100%";
+      ready();
+    } else {
+      var t0 = null, span = 1750;
+      // requestAnimationFrame does not tick in a background tab, so a homepage opened in one
+      // would count to 000 forever and never offer the button. The timer is the backstop.
+      setTimeout(ready, span + 400);
+      requestAnimationFrame(function step(now) {
+        if (t0 === null) t0 = now;
+        // Ease out, so the count decelerates into 100 instead of stopping dead.
+        var p = Math.min(1, (now - t0) / span);
+        var eased = 1 - Math.pow(1 - p, 3);
+        var v = Math.round(eased * 100);
+        num.textContent = v < 100 ? String(v).padStart(3, "0") : "100";
+        bar.style.width = (eased * 100).toFixed(2) + "%";
+        if (p < 1) requestAnimationFrame(step);
+        else ready();
+      });
+    }
+  }
+
+  // ---- scroll reveals ----
+  var items = Array.prototype.slice.call(document.querySelectorAll("[data-reveal]"));
+  function reveal() {
+    items.forEach(function (el) {
+      if (el.getBoundingClientRect().top < innerHeight * 0.92) el.classList.add("in");
+    });
+  }
+  if (!items.length) {
+    /* nothing to reveal */
+  } else if (calm || !("IntersectionObserver" in window)) {
+    items.forEach(function (el) { el.classList.add("in"); });
+  } else {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        e.target.classList.add("in");
+        io.unobserve(e.target);
+      });
+    }, { rootMargin: "0px 0px -8% 0px", threshold: 0.08 });
+    items.forEach(function (el) { io.observe(el); });
+    // Anything already on screen behind the intro is revealed the moment the curtain lifts,
+    // rather than waiting for a scroll that may never come on a short viewport.
+    if (!intro) reveal();
+  }
 })();
