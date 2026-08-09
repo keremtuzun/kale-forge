@@ -13,7 +13,7 @@ from kale_training.schema import TrainingExample
 def write_jsonl(examples: list[TrainingExample], path: str | Path) -> int:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w") as fh:
+    with path.open("w", encoding="utf-8") as fh:
         for ex in examples:
             fh.write(ex.model_dump_json() + "\n")
     return len(examples)

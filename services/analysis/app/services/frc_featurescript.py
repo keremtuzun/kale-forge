@@ -604,7 +604,9 @@ def _gamepiece_note(season: dict[str, Any]) -> str:
 
 def build_featurescript(spec: dict[str, Any], name: str = "Kale FRC Robot") -> str:
     """Emit the whole robot as one parametric Feature Studio source file."""
+    from app.services.cad_contract import require_valid_cad
     cad = spec.get("cad") or {}
+    require_valid_cad(cad)
     assemblies = cad.get("assemblies") or []
     frame = spec.get("frame") or {}
     season = spec.get("season") or {}

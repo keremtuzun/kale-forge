@@ -1,0 +1,33 @@
+# Kale Forge Design Model — adapter v18 (uninterrupted three-hour MLX LoRA target)
+#
+# v18 uses the validated design-v15 corpus recipe plus CAD-to-binder audit examples. Those
+# examples force one response to reconcile requirements, calculations, interfaces, named CAD
+# parts, editable measures, and verification evidence instead of learning prose and geometry
+# as unrelated tasks.
+#
+# This is intentionally a fresh run. v17 achieved a low teacher-forced loss but failed
+# generation after multiple optimizer-state resets. Do not resume this run. Keep v15 active
+# until v18 passes the held-out generation scorecard.
+model: mlx-community/Qwen3-4B-Instruct-2507-4bit
+train: true
+data: datasets/processed/design-v18
+fine_tune_type: lora
+adapter_path: models/adapters/kale-design-qwen3-4b-v18
+seed: 42
+iters: 600
+batch_size: 1
+grad_accumulation_steps: 4
+learning_rate: 0.00008
+num_layers: 6
+max_seq_length: 3072
+mask_prompt: true
+grad_checkpoint: true
+lr_schedule:
+  name: cosine_decay
+  arguments: [0.00008, 600, 0.00002]
+  warmup: 40
+  warmup_init: 0.000002
+steps_per_report: 20
+steps_per_eval: 100
+save_every: 100
+val_batches: 25

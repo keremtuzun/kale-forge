@@ -4,7 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+  "inline-flex items-center justify-center gap-2 text-sm font-semibold transition-colors disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
   {
     variants: {
       variant: {
@@ -28,7 +28,7 @@ export function Button({ className, variant, size, ...props }: ButtonProps) {
 }
 
 export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("rounded-lg border border-border bg-card text-card-foreground", className)} {...props} />;
+  return <div className={cn("border border-border bg-card text-card-foreground", className)} {...props} />;
 }
 
 export function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
@@ -46,7 +46,7 @@ export function CardContent({ className, ...props }: React.HTMLAttributes<HTMLDi
 export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
-      className={cn("h-9 w-full rounded-md border border-border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary", className)}
+      className={cn("h-10 w-full border border-border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary", className)}
       {...props}
     />
   );
@@ -55,14 +55,14 @@ export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInp
 export function Textarea({ className, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
-      className={cn("w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary", className)}
+      className={cn("w-full border border-border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary", className)}
       {...props}
     />
   );
 }
 
 export function Badge({ className, ...props }: React.HTMLAttributes<HTMLSpanElement>) {
-  return <span className={cn("inline-flex items-center rounded px-2 py-0.5 text-xs font-medium", className)} {...props} />;
+  return <span className={cn("inline-flex items-center px-2 py-0.5 font-mono text-[10px] font-medium uppercase tracking-wider", className)} {...props} />;
 }
 
 export function Chip({ className, ...props }: React.HTMLAttributes<HTMLSpanElement>) {

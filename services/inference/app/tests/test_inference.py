@@ -41,6 +41,17 @@ class TestJsonSchemaLite:
         errs = validate({"summary": "x", "confidence": True}, SCHEMA)
         assert any("confidence" in e for e in errs)
 
+    def test_strict_keywords(self):
+        schema = {"type": "object", "additionalProperties": False,
+                  "properties": {"kind": {"type": "string", "enum": ["tube"]},
+                                 "size": {"type": "number", "exclusiveMinimum": 0,
+                                          "maximum": 10}},
+                  "required": ["kind", "size"]}
+        errs = validate({"kind": "magic", "size": float("nan"), "extra": 1}, schema)
+        assert any("not allowed" in e for e in errs)
+        assert any("finite" in e for e in errs)
+        assert any("additional property" in e for e in errs)
+
 
 class TestStubProvider:
     def test_stub_synthesizes_schema(self):

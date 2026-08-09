@@ -1,4 +1,4 @@
-"""Kale Forge Design Studio — self-contained Vercel Python function.
+"""Kale Forge Design Studio, self-contained Vercel Python function.
 
 GET /                             → the Design Studio page (prompt in, engineered design out).
 GET /studio?json=1&prompt=...&season=…  → the design spec as JSON (deterministic synthesis).
@@ -59,7 +59,7 @@ def _name(spec: dict) -> str:
     season = (spec.get("season") or {}).get("label") or (spec.get("profile") or {}).get("season", "")
     subs = spec.get("subsystems") or []
     lead = subs[0].title() if subs else "Drivebase"
-    return f"{module} {lead} robot" + (f" — {season}" if season else "")
+    return f"{module} {lead} robot" + (f" | {season}" if season else "")
 
 
 def make_spec(prompt: str, season: str = "") -> dict:
@@ -77,6 +77,10 @@ _AUTH_ME_URL = os.environ.get("KALE_AUTH_ME_URL",
 
 
 def _cookie_is_signed_in(cookie_header: str) -> bool:
+    # Local-only development server. `serve_local.py` sets this explicitly so geometry can
+    # be rendered and inspected without forwarding a production session cookie.
+    if os.environ.get("KALE_DEV") == "1":
+        return True
     if not cookie_header:
         return False
     import urllib.request  # noqa: PLC0415
@@ -104,6 +108,10 @@ class handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         qs = parse_qs(parsed.query)
+        if os.environ.get("KALE_DEV") == "1" and parsed.path == "/api/auth/me":
+            self._send(200, b'{"id":"local-cad-review","email":"local@kale.invalid"}',
+                       "application/json")
+            return
         if parsed.path in ("/favicon.ico", "/robots.txt"):
             self._send(200, b"", "text/plain")
             return
@@ -172,39 +180,43 @@ class handler(BaseHTTPRequestHandler):
 # The page. Prompt in; the engineered design and its own 3D drivetrain/power viewer out.
 # ─────────────────────────────────────────────────────────────────────────────
 PAGE = r"""<!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Design Studio · Kale Forge</title>
+<title>Design Studio | Kale Forge</title>
 <meta name="description" content="Describe an FRC robot; get an engineered design with its own one-to-one 3D drivetrain and power-system viewer.">
 <style>
   :root{
-    --bg:#111612;--surface:#171d18;--surface-2:#202821;--ink:#eef3ef;--muted:#a6b1a8;
-    --line:#303a32;--line-strong:#465248;--brand:#6fc093;--brand-hover:#8bd0a9;--brand-soft:#203b2b;
-    --danger:#ef8b81;--warning:#e3bb62;--sans:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --bg:#f6f3ea;--surface:#fbf9f2;--surface-2:#eeeadf;--ink:#171a18;--muted:#606761;
+    --line:#c7cbc4;--line-strong:#aeb5ad;--brand:#18764a;--brand-hover:#12633d;--brand-soft:#dfeadf;
+    --danger:#a23931;--warning:#765c16;--sans:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
     --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
   }
   *{box-sizing:border-box}
   html,body{height:100%;margin:0}
-  body{background:var(--bg);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;overflow:hidden}
+  body{background-color:var(--bg);background-image:linear-gradient(rgba(80,90,82,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(80,90,82,.07) 1px,transparent 1px);background-size:40px 40px;color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;overflow:hidden}
   a{color:inherit;text-decoration:none}
-  .app{position:fixed;inset:0;display:grid;grid-template-rows:auto 1fr}
+  .app{position:fixed;inset:0;display:grid;grid-template-rows:auto minmax(0,1fr) auto}
   .bar{display:flex;align-items:center;gap:14px;padding:0 18px;min-height:56px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(10px);z-index:8}
   .brand{font-size:17px;font-weight:720;letter-spacing:-.03em}
   .brand b{color:var(--brand);font-weight:720}
-  .prompt{flex:1;display:flex;gap:8px;max-width:900px}
+  .prompt-dock{position:relative;z-index:12;border-top:1px solid var(--line-strong);background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(12px);padding:11px 16px;box-shadow:0 -10px 28px rgba(45,48,43,.08)}
+  .prompt{display:flex;gap:8px;width:min(100%,980px);margin:0 auto}
   .prompt input{flex:1;background:var(--surface);border:1px solid var(--line-strong);border-radius:9px;color:var(--ink);padding:9px 12px;font:500 14px var(--sans)}
   .prompt input:focus{outline:none;border-color:var(--brand)}
   .prompt select{background:var(--surface);border:1px solid var(--line-strong);border-radius:9px;color:var(--ink);padding:9px 10px;font:600 13px var(--sans);cursor:pointer}
   .prompt select:focus{outline:none;border-color:var(--brand)}
   .btn{appearance:none;border:1px solid var(--line-strong);background:transparent;color:var(--ink);font:680 13px var(--sans);padding:9px 14px;border-radius:9px;cursor:pointer;white-space:nowrap;transition:.14s}
   .btn:hover{border-color:var(--brand);color:var(--brand)}
-  .btn.primary{background:var(--brand);color:#06170e;border-color:var(--brand)}
+  .btn.primary{background:var(--brand);color:#fff;border-color:var(--brand)}
   .btn.primary:hover{background:var(--brand-hover)}
-  .btn.on{background:var(--brand);color:#06170e;border-color:var(--brand)}
-  .stage{position:relative;min-height:0;display:grid;grid-template-columns:340px 1fr}
-  .dossier{border-right:1px solid var(--line);overflow:auto;padding:16px;background:var(--surface)}
+  .btn.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .stage{position:relative;min-height:0;overflow:hidden}
+  .dossier{position:absolute;inset:0 auto 0 0;z-index:11;width:min(380px,calc(100vw - 34px));border-right:1px solid var(--line-strong);overflow:auto;padding:16px;background:var(--surface);box-shadow:18px 0 42px rgba(45,48,43,.18);transform:translateX(calc(-100% - 24px));visibility:hidden;transition:transform .2s ease,visibility 0s linear .2s}
+  .dossier.open{transform:translateX(0);visibility:visible;transition:transform .2s ease}
+  .dossier-scrim{position:absolute;inset:0;z-index:10;border:0;background:rgba(23,26,24,.24);opacity:0;visibility:hidden;transition:opacity .2s ease,visibility 0s linear .2s;cursor:pointer}
+  .dossier-scrim.open{opacity:1;visibility:visible;transition:opacity .2s ease}
   .dossier h2{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin:18px 0 8px}
   .dossier h2:first-child{margin-top:0}
   .name{font-size:19px;font-weight:740;letter-spacing:-.02em;margin:0}
@@ -221,26 +233,32 @@ PAGE = r"""<!doctype html>
   .sslist b{font-size:13px} .sslist span{display:block;color:var(--muted);font-size:12px;margin-top:2px}
   .note{color:var(--muted);font-size:12px;line-height:1.5;margin:6px 0 0}
   .verify{color:var(--warning);font-size:11px;border-top:1px solid var(--line);padding-top:8px;margin-top:12px;line-height:1.45}
-  .view{position:relative;min-height:0}
-  #scene{position:absolute;inset:0;display:block}
+  .view{position:relative;height:100%;min-height:0;display:grid;grid-template-rows:minmax(0,1fr) auto;background:rgba(246,243,234,.62)}
+  .viewport{position:relative;min-height:0;overflow:hidden}
+  #scene{position:absolute;inset:0;display:block;width:100%;height:100%}
   .ctrls{position:absolute;left:14px;top:14px;z-index:5;display:flex;flex-direction:column;gap:8px;width:190px}
-  .panel{border:1px solid var(--line-strong);border-radius:11px;background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(12px);box-shadow:0 18px 40px rgba(0,0,0,.34);padding:10px}
+  .panel{border:1px solid var(--line-strong);border-radius:11px;background:color-mix(in srgb,var(--surface) 91%,transparent);backdrop-filter:blur(12px);box-shadow:0 14px 34px rgba(45,48,43,.13);padding:10px}
   .panel .row{display:flex;gap:7px}.panel .row .btn{flex:1;text-align:center;padding:7px 6px}
   .panel .btn{width:100%;margin-top:7px;text-align:center}
   .panel .btn:first-of-type{margin-top:0}
   .slab{font-size:11px;color:var(--muted);display:flex;justify-content:space-between;margin:9px 0 3px}
   input[type=range]{width:100%;accent-color:var(--brand)}
-  .lbl{font:600 11px/1.2 var(--sans);color:var(--ink);white-space:nowrap;cursor:pointer;padding:3px 7px;border-radius:7px;border:1px solid var(--line-strong);background:color-mix(in srgb,var(--surface) 82%,transparent);backdrop-filter:blur(6px);transform:translate(-50%,-50%);pointer-events:auto;box-shadow:0 6px 16px rgba(0,0,0,.3)}
+  .lbl{font:600 11px/1.2 var(--sans);color:var(--ink);white-space:nowrap;cursor:pointer;padding:3px 7px;border-radius:7px;border:1px solid var(--line-strong);background:color-mix(in srgb,var(--surface) 90%,transparent);backdrop-filter:blur(6px);transform:translate(-50%,-50%);pointer-events:auto;box-shadow:0 6px 16px rgba(45,48,43,.14)}
   .lbl::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--dot,var(--brand));margin-right:6px;vertical-align:-1px}
   .lbl small{color:var(--muted);font-weight:500}
   .empty{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font-size:14px;text-align:center;padding:20px}
   .spin{width:32px;height:32px;border:3px solid var(--line-strong);border-top-color:var(--brand);border-radius:50%;animation:sp 1s linear infinite;margin:0 auto 12px}
   @keyframes sp{to{transform:rotate(360deg)}}
-  .hint{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:4;color:var(--muted);font-size:12px;background:color-mix(in srgb,var(--surface) 80%,transparent);border:1px solid var(--line);padding:5px 11px;border-radius:999px}
-  @media (max-width:820px){.stage{grid-template-columns:1fr;grid-template-rows:44% 1fr}.dossier{border-right:0;border-bottom:1px solid var(--line)}.ctrls{width:150px}}
+  .hint{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:4;color:var(--muted);font-size:12px;background:color-mix(in srgb,var(--surface) 88%,transparent);border:1px solid var(--line);padding:5px 11px;border-radius:999px}
+  .revision{position:relative;z-index:7;border-top:1px solid var(--line-strong);background:var(--surface);padding:14px 16px;display:none;box-shadow:0 -12px 30px rgba(45,48,43,.08)}
+  .revision.show{display:block}.revision-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 2px 8px}.revision-head b{font-size:14px}.revision-head span{font:600 11px var(--mono);color:var(--brand)}
+  .revision-row{display:flex;gap:8px}.revision input{min-width:0;flex:1;background:var(--bg);border:1px solid var(--line-strong);border-radius:9px;color:var(--ink);padding:10px 12px;font:500 13px var(--sans)}.revision input:focus{outline:none;border-color:var(--brand)}
+  .revision-note{color:var(--muted);font-size:11px;margin:7px 2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .revision-examples{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.revision-examples button{appearance:none;border:1px solid var(--line);background:var(--bg);color:var(--muted);border-radius:999px;padding:5px 8px;font:600 10px var(--sans);cursor:pointer}.revision-examples button:hover{border-color:var(--brand);color:var(--brand)}
+  @media (max-width:820px){.bar{padding:0 10px}.prompt-dock{padding:8px}.prompt{flex-wrap:wrap}.prompt input{order:1;flex-basis:calc(100% - 94px)}.prompt .primary{order:1}.prompt select{flex:1}.dossier{width:min(92vw,380px)}.ctrls{width:150px}.revision-head span{display:none}.revision-row{flex-wrap:wrap}.revision input{flex-basis:100%}.revision-examples{display:none}}
   #gate{position:fixed;inset:0;z-index:40;display:grid;place-items:center;background:color-mix(in srgb,var(--bg) 86%,transparent);backdrop-filter:blur(10px)}
   #gate[hidden]{display:none}
-  .gate-card{width:min(92vw,380px);border:1px solid var(--line-strong);border-radius:14px;background:var(--surface);box-shadow:0 30px 70px rgba(0,0,0,.45);padding:22px}
+  .gate-card{width:min(92vw,380px);border:1px solid var(--line-strong);border-radius:14px;background:var(--surface);box-shadow:0 30px 70px rgba(45,48,43,.2);padding:22px}
   .gate-card h1{font-size:19px;letter-spacing:-.02em;margin:0}
   .gate-card p{color:var(--muted);font-size:13px;line-height:1.55;margin:8px 0 0}
   .gate-tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--surface-2);border-radius:9px;padding:5px;margin-top:16px}
@@ -261,40 +279,60 @@ PAGE = r"""<!doctype html>
 <div class="app">
   <div class="bar">
     <a class="brand" href="https://kaleai.vercel.app">Kale <b>Forge</b></a>
-    <form class="prompt" id="form">
-      <select id="season" title="The game this robot is designed for — it sets the gamepiece, the goal height, the climb reach and the frame perimeter budget"></select>
-      <input id="q" autocomplete="off" placeholder="Describe a robot — e.g. 'MK5i swerve on Krakens at R2 with a fast over-bumper intake and a climber'">
-      <button class="btn primary" type="submit">Generate</button>
-    </form>
+    <button class="btn" id="b-dossier" type="button" aria-controls="dossier" aria-expanded="false">Design details</button>
     <span id="who"><b id="who-name"></b><button id="signout" type="button" title="Sign out">sign out</button></span>
   </div>
   <div class="stage">
-    <div class="dossier" id="dossier">
+    <button class="dossier-scrim" id="dossier-scrim" type="button" aria-label="Close design details"></button>
+    <aside class="dossier" id="dossier" aria-hidden="true">
       <div class="empty" id="dossier-empty">Describe a robot and press Generate.<br>Each design comes with its own 3D drivetrain and power system.</div>
-    </div>
+    </aside>
     <div class="view">
-      <canvas id="scene"></canvas>
-      <div class="ctrls" id="ctrls" style="display:none">
-        <div class="panel">
-          <div class="row"><button class="btn" data-view="iso">Iso</button><button class="btn" data-view="top">Top</button><button class="btn" data-view="front">Front</button><button class="btn" data-view="side">Side</button></div>
-          <button class="btn on" id="b-labels">Labels: on</button>
-          <button class="btn" id="b-explode">Exploded</button>
-          <button class="btn" id="b-run">Run mechanisms</button>
-          <div class="slab"><span>Section cut</span><span id="cutv">off</span></div>
-          <input type="range" id="cut" min="0" max="100" value="0">
-          <div class="slab" id="picked" style="display:none"></div>
+      <div class="viewport">
+        <canvas id="scene"></canvas>
+        <div class="ctrls" id="ctrls" style="display:none">
+          <div class="panel">
+            <div class="row"><button class="btn" data-view="iso">Iso</button><button class="btn" data-view="top">Top</button><button class="btn" data-view="front">Front</button><button class="btn" data-view="side">Side</button></div>
+            <button class="btn on" id="b-labels">Labels: on</button>
+            <button class="btn" id="b-explode">Exploded</button>
+            <button class="btn" id="b-run">Run mechanisms</button>
+            <div class="slab"><span>Section cut</span><span id="cutv">off</span></div>
+            <input type="range" id="cut" min="0" max="100" value="0">
+            <div class="slab" id="picked" style="display:none"></div>
+          </div>
         </div>
+        <div class="empty" id="view-empty"><div><div class="spin" style="display:none" id="spin"></div>The 3D drivetrain for your design appears here.</div></div>
+        <div class="hint" id="hint" style="display:none">drag to orbit · scroll to zoom · click a part</div>
       </div>
-      <div class="empty" id="view-empty"><div><div class="spin" style="display:none" id="spin"></div>The 3D drivetrain for your design appears here.</div></div>
-      <div class="hint" id="hint" style="display:none">drag to orbit · scroll to zoom · click a part</div>
+      <form class="revision" id="revision-form">
+        <div class="revision-head"><b>Edit this design with a prompt</b><span id="revision-state">validated / revision 1</span></div>
+        <div class="revision-row">
+          <input id="revision-q" autocomplete="off" placeholder="Make the frame 26 in wide, remove the turret, use a 3-stage elevator...">
+          <button class="btn primary" id="revision-apply" type="submit">Apply edit</button>
+        </div>
+        <p class="revision-note" id="revision-note">Each edit rebuilds the validated specification and every editable part.</p>
+        <div class="revision-examples" aria-label="Example design edits">
+          <button type="button" data-revision-example="Make the frame 26 inches wide">26 inch frame</button>
+          <button type="button" data-revision-example="Remove the turret">Remove turret</button>
+          <button type="button" data-revision-example="Use a 3-stage elevator">3-stage elevator</button>
+          <button type="button" data-revision-example="Change the drive ratio to L2">Use L2 ratio</button>
+        </div>
+      </form>
     </div>
+  </div>
+  <div class="prompt-dock">
+    <form class="prompt" id="form">
+      <select id="season" title="The game this robot is designed for. It sets the gamepiece, the goal height, the climb reach and the frame perimeter budget"></select>
+      <input id="q" autocomplete="off" placeholder="Describe a robot, for example: 'MK5i swerve on Krakens at R2 with a fast over-bumper intake and a climber'">
+      <button class="btn primary" type="submit">Generate</button>
+    </form>
   </div>
 </div>
 
 <div id="gate" hidden>
   <div class="gate-card">
     <h1>Sign in to the Design Studio</h1>
-    <p>Designs are generated for signed-in accounts. Creating one takes ten seconds — an email is just your key back in.</p>
+    <p>Designs are generated for signed-in accounts. Creating one takes ten seconds. An email is just your key back in.</p>
     <div class="gate-tabs"><button type="button" id="tab-in" class="on">Sign in</button><button type="button" id="tab-up">Create account</button></div>
     <form id="gate-form">
       <div id="f-name" style="display:none"><label for="g-name">Name</label><input id="g-name" autocomplete="name"></div>
@@ -337,7 +375,7 @@ PAGE = r"""<!doctype html>
       const r = await fetch(mode === 'in' ? '/api/auth/login' : '/api/auth/register', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       if (!r.ok) { const d = await r.json().catch(() => ({}));
-        err.textContent = d.detail || d.error || 'That did not work — check the details and try again.';
+        err.textContent = d.detail || d.error || 'That did not work. Check the details and try again.';
         err.style.display = 'block'; return; }
       close(await r.json());
     } catch (_e) { err.textContent = 'Could not reach the sign-in service.'; err.style.display = 'block'; }
@@ -361,12 +399,27 @@ import { buildScene } from '/studio-viewer.js';
 
 const $ = s => document.querySelector(s);
 const form = $('#form'), q = $('#q'), seasonSel = $('#season');
+const revisionForm = $('#revision-form'), revisionQ = $('#revision-q');
+
+// The engineering dossier is useful when requested, but the robot gets the whole canvas by
+// default. It behaves as a modal side drawer so opening it never resizes or clips the model.
+const dossier = $('#dossier'), dossierButton = $('#b-dossier'), dossierScrim = $('#dossier-scrim');
+function setDossier(open) {
+  dossier.classList.toggle('open', open);
+  dossierScrim.classList.toggle('open', open);
+  dossier.setAttribute('aria-hidden', String(!open));
+  dossierButton.setAttribute('aria-expanded', String(open));
+  dossierButton.classList.toggle('on', open);
+}
+dossierButton.addEventListener('click', () => setDossier(!dossier.classList.contains('open')));
+dossierScrim.addEventListener('click', () => setDossier(false));
+document.addEventListener('keydown', e => { if (e.key === 'Escape') setDossier(false); });
 
 // One starting prompt per season. The same words describe a different robot in a different
 // game, so handing over last year's example with this year's season selected is worse than
 // no example at all.
 const SEASON_EXAMPLES = {
-  '2026-rebuilt': "27 inch REBUILT robot on MK4i swerve — dual-roller over-bumper intake into a spindexer, turreted hooded shooter, telescoping climber to L3",
+  '2026-rebuilt': "27 inch REBUILT robot on MK4i swerve, dual-roller over-bumper intake into a spindexer, turreted hooded shooter, telescoping climber to L3",
   '2025-reefscape': "28 inch REEFSCAPE robot, three-stage cascade elevator to L4, coaxial slapdown intake, wristed carriage arm, deep-cage climb",
   'offseason': "MK5i swerve on Krakens at R2 with a fast dual-roller over-bumper intake and a deep-cage climber",
 };
@@ -379,7 +432,7 @@ function applySeasonExample(){
   // Only replace an untouched example, so a prompt the user typed always survives.
   if (next && Object.values(SEASON_EXAMPLES).concat([FALLBACK]).includes(q.value)) q.value = next;
   const s = seasonInfo[seasonSel.value];
-  if (s) q.placeholder = `Describe a ${s.label} robot — gamepiece ${s.gamepiece}, ${s.perimeter_in} in frame perimeter budget`;
+  if (s) q.placeholder = `Describe a ${s.label} robot. Gamepiece: ${s.gamepiece}. Frame perimeter budget: ${s.perimeter_in} in`;
 }
 seasonSel.addEventListener('change', applySeasonExample);
 
@@ -393,20 +446,32 @@ fetch('/studio?seasons=1').then(r => r.json()).then(data => {
   applySeasonExample();
 }).catch(() => { seasonSel.style.display = 'none'; });
 
-let scene3d = null;
+let scene3d = null, currentPrompt = '', currentSpec = null, revisionNumber = 0;
+let queuedRevisionPrompt = '';
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const prompt = q.value.trim(); if (prompt.length < 4) return;
+  const isRevision = Boolean(queuedRevisionPrompt);
+  const prompt = (queuedRevisionPrompt || q.value).trim();
+  queuedRevisionPrompt = '';
+  if (prompt.length < 4) return;
   $('#dossier-empty') && ($('#dossier-empty').style.display='none');
   $('#view-empty').style.display='grid'; $('#spin').style.display='block';
   try {
     const res = await fetch('/studio?json=1&prompt=' + encodeURIComponent(prompt)
                             + '&season=' + encodeURIComponent(seasonSel.value || ''));
     if (res.status === 401) { window.__requireSignIn && window.__requireSignIn();
-      $('#spin').style.display='none'; return; }
+      $('#spin').style.display='none';
+      const editButton = $('#revision-apply'); editButton.disabled = false; editButton.textContent = 'Apply edit';
+      return; }
     const spec = await res.json();
     if (spec.error) throw new Error(spec.error);
+    currentPrompt = prompt; currentSpec = spec;
+    revisionNumber = isRevision ? revisionNumber + 1 : 1;
     renderDossier(spec);
+    // Establish the final viewport height before Three.js measures the canvas and frames the
+    // robot. Showing this panel after load() made the canvas shorter without refitting the
+    // camera, which clipped mechanisms against the new bottom edge.
+    revisionForm.classList.add('show');
     if (!scene3d) {
       scene3d = buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, RoomEnvironment, canvas: $('#scene') });
       // Exposed so the viewer can be driven from the console or a screenshot script, and so
@@ -416,6 +481,12 @@ form.addEventListener('submit', async (e) => {
     scene3d.load(spec);
     $('#ctrls').style.display='flex'; $('#hint').style.display='block';
     $('#view-empty').style.display='none';
+    const editableParts = (((spec || {}).editable_manifest || {}).parts || []).length;
+    $('#revision-state').textContent = `validated / ${editableParts} editable parts / revision ${revisionNumber}`;
+    $('#revision-note').textContent = isRevision
+      ? `Revision ${revisionNumber} rebuilt from the prior parametric design. Nothing was flattened.`
+      : 'Each edit rebuilds the validated specification and every editable part.';
+    const editButton = $('#revision-apply'); editButton.disabled = false; editButton.textContent = 'Apply edit';
     wireControls();
     // The assembly list in the dossier and the 3D view are two views of the same tree,
     // so picking in one selects in the other.
@@ -424,9 +495,34 @@ form.addEventListener('submit', async (e) => {
       li.classList.add('sel'); scene3d.select(li.dataset.asm);
     }));
   } catch (err) {
-    $('#view-empty').style.display='grid'; $('#spin').style.display='none';
-    $('#view-empty').querySelector('div').innerHTML = 'Could not generate: ' + err.message;
+    const editButton = $('#revision-apply'); editButton.disabled = false; editButton.textContent = 'Apply edit';
+    if (isRevision && currentSpec) {
+      $('#view-empty').style.display='none';
+      $('#revision-note').textContent = 'Edit rejected: ' + err.message;
+    } else {
+      $('#view-empty').style.display='grid'; $('#spin').style.display='none';
+      $('#view-empty').querySelector('div').innerHTML = 'Could not generate: ' + err.message;
+    }
   }
+});
+
+revisionForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const edit = revisionQ.value.trim();
+  if (!currentSpec || edit.length < 3) return;
+  // The explicit revision marker lets the compiler preserve the prior design while giving
+  // removals and changed dimensions/types priority over the original request.
+  queuedRevisionPrompt = `${currentPrompt}\n\nRevision request: ${edit}`;
+  const editButton = $('#revision-apply'); editButton.disabled = true; editButton.textContent = 'Rebuilding...';
+  revisionQ.value = '';
+  form.requestSubmit();
+});
+
+document.querySelectorAll('[data-revision-example]').forEach(button => {
+  button.addEventListener('click', () => {
+    revisionQ.value = button.dataset.revisionExample;
+    revisionQ.focus();
+  });
 });
 
 function row(dt, dd){ return `<dt>${dt}</dt><dd>${dd}</dd>`; }
@@ -438,10 +534,10 @@ function renderDossier(spec){
   partHtml.push(`<p class="name">${spec.name||'Robot'}</p><p class="sub">${spec.team_number?'Team '+spec.team_number+' · ':''}${season.label||(spec.profile&&spec.profile.label)||''}${season.selected_by?' · '+season.selected_by:''}</p>`);
 
   // What the season asks for, before what this robot does about it. Every row states the
-  // number, where it came from and what it forces — the derivation is the useful part.
+  // number, where it came from and what it forces. The derivation is the useful part.
   if (season.design_targets && season.design_targets.length){
     partHtml.push(`<h2>What ${season.label} asks for</h2><p class="note">${season.summary||''}</p><dl class="kv">
-      ${season.design_targets.map(t=>row(t.target, t.value+' — '+t.from)).join('')}
+      ${season.design_targets.map(t=>row(t.target, t.value+' | '+t.from)).join('')}
     </dl>`);
     partHtml.push(`<p class="note">${season.design_targets.map(t=>t.means).slice(0,3).join(' ')}</p>`);
     if (season.verify) partHtml.push(`<p class="note">${season.verify}</p>`);
@@ -453,17 +549,17 @@ function renderDossier(spec){
   if (checks.length){
     const bad = checks.filter(c=>!c.ok);
     partHtml.push(`<h2>Construction rule check</h2><dl class="kv">
-      ${checks.map(c=>row(c.check+' ('+c.rule+')', (c.ok?'pass':'FAILS')+' — '+c.detail)).join('')}
+      ${checks.map(c=>row(c.check+' ('+c.rule+')', (c.ok?'pass':'FAILS')+': '+c.detail)).join('')}
     </dl>`);
     bad.forEach(c=>partHtml.push(`<p class="note"><b>${c.check} fails ${c.rule}.</b> ${c.fix}</p>`));
-    partHtml.push(`<p class="note">These are the four things a synthesised robot can actually get wrong. Passing them means nothing was caught here — it is not an inspection.</p>`);
+    partHtml.push(`<p class="note">These are the four things a synthesised robot can actually get wrong. Passing them means nothing was caught here. It is not an inspection.</p>`);
   }
 
   partHtml.push(`<h2>Drivetrain</h2><dl class="kv">
-     ${row('Type', d.type||'—')}
-     ${row('Module', d.module||'—')}
-     ${row('Drive motor', d.motor||'—')}
-     ${d.drive_ratio?row('Drive ratio', (d.drive_ratio_label?d.drive_ratio_label+' — ':'')+d.drive_ratio+':1'):''}
+     ${row('Type', d.type||'Not set')}
+     ${row('Module', d.module||'Not set')}
+     ${row('Drive motor', d.motor||'Not set')}
+     ${d.drive_ratio?row('Drive ratio', (d.drive_ratio_label?d.drive_ratio_label+' | ':'')+d.drive_ratio+':1'):''}
      ${d.steer_ratio?row('Azimuth', d.steer_ratio+':1'):''}
      ${d.free_speed_fps?row('Free speed', d.free_speed_fps+' ft/s'):''}
      ${row('Modules', (d.module_count||0)+(d.modules_included===false?' (reserved)':''))}
@@ -514,7 +610,7 @@ function renderDossier(spec){
       ${sh.spinup_time_s?row('Recovery', '~'+sh.spinup_time_s+' s'):''}
       ${row('Motors', (sh.motor_count||2)+' × '+sh.motor)}
     </dl>${sh.feed_path?`<p class="note">Feed path: ${sh.feed_path}.</p>`:''}
-    ${sh.exit_velocity_fps&&!sh.stacked?`<p class="note">A gamepiece squeezed between one wheel and a stationary hood leaves at about half the wheel's surface speed — size the range on the exit velocity, not the surface speed.</p>`:''}`);
+    ${sh.exit_velocity_fps&&!sh.stacked?`<p class="note">A gamepiece squeezed between one wheel and a stationary hood leaves at about half the wheel's surface speed. Size the range on the exit velocity, not the surface speed.</p>`:''}`);
     // The shot the season actually asks for: required velocity worked back from the goal
     // geometry, and what this design does against it.
     const st = sh.shot;
@@ -528,7 +624,7 @@ function renderDossier(spec){
         ${row('This design', st.achieved_exit_fps+' ft/s → '+st.achieved_range_ft+' ft, '+st.entry_angle_deg+'° entry')}
         ${row('Apex', st.apex_in+' in')}
       </dl>
-      <p class="note">${st.makes_design_range?'Clears the design range.':'<b>Short of the design range</b> — raise the surface speed or lower the reduction.'} The cheapest angle is 45° + ½·atan(Δh/d), which is the shot needing the least flywheel energy.</p>
+      <p class="note">${st.makes_design_range?'Clears the design range.':'<b>Short of the design range.</b> Raise the surface speed or lower the reduction.'} The cheapest angle is 45° + ½·atan(Δh/d), which is the shot needing the least flywheel energy.</p>
       <p class="note">${st.caveat}</p>`);
     }
   }
@@ -561,7 +657,7 @@ function renderDossier(spec){
       ${am.holding_torque_nm?row('Holding torque', am.holding_torque_nm+' N·m'):''}
       ${am.shoulder_height_in?row('Shoulder height', am.shoulder_height_in+' in'):''}
       ${row('Shaft', am.shaft)}
-    </dl>${am.gravity_compensation?`<p class="note">Reduction sized on the worst case — holding horizontal at full extension — with ${am.gravity_compensation}.</p>`:''}`);
+    </dl>${am.gravity_compensation?`<p class="note">Reduction sized for the worst case, holding horizontal at full extension, with ${am.gravity_compensation}.</p>`:''}`);
   }
   const cl = spec.climber;
   if (cl && cl.included){
@@ -582,7 +678,7 @@ function renderDossier(spec){
   }
   partHtml.push(`<h2>Power</h2><dl class="kv">
      ${row('Distributor', (e.distributor_key||'pdh').toUpperCase())}
-     ${row('Channels used', (e.budget&&e.budget.channels_used)||'—')}
+     ${row('Channels used', (e.budget&&e.budget.channels_used)||'Not set')}
      ${row('Main breaker', ((e.budget&&e.budget.main_breaker_a)||120)+' A')}
      ${row('Frame', (f.width_in||28)+' × '+(f.length_in||28)+' in')}
    </dl>`);
@@ -606,7 +702,7 @@ function renderDossier(spec){
     if (cuts.length){
       const sec = r => `${+r.section_in[0].toFixed(2)}×${+r.section_in[1].toFixed(2)}×${r.wall_in} in`;
       partHtml.push(`<h2>Tube cut list</h2><dl class="kv">`+
-        cuts.map(r=>row(sec(r), `${r.qty} × ${r.length_in} in — ${r.used_in.join(', ')}`)).join('')+`</dl>
+        cuts.map(r=>row(sec(r), `${r.qty} × ${r.length_in} in | ${r.used_in.join(', ')}`)).join('')+`</dl>
         <p class="note">Every member is a catalog stock section, including the telescoping stages, so the list is orderable as written. Add your own kerf and squaring allowance.</p>`);
     }
     partHtml.push(`<p class="verify">${cad.caveat}</p>`);
@@ -633,7 +729,7 @@ function renderDossier(spec){
         ${t.pitfall?`<span style="margin-top:4px;color:var(--warning)"><b style="font-weight:600">Avoid:</b> ${t.pitfall}</span>`:''}</li>`).join('')+
       `</ul>${tq.length>8?`<p class="note">+ ${tq.length-8} more in the full package.</p>`:''}`);
   }
-  partHtml.push(`<div class="verify">Nominal envelopes and published figures for packaging and first-order sizing — verify every part against the vendor drawing and the current game manual before fabrication. Deterministic synthesis; concept geometry, not native parametric CAD.</div>`);
+  partHtml.push(`<div class="verify">Nominal envelopes and published figures are for packaging and first-order sizing. Verify every part against the vendor drawing and the current game manual before fabrication. Deterministic synthesis; concept geometry, not native parametric CAD.</div>`);
   $('#dossier').innerHTML = partHtml.join('');
 }
 

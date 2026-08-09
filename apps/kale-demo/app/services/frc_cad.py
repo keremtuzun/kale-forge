@@ -98,7 +98,15 @@ SYSTEM_CAD = (
     "an intermediate size invented to make the arithmetic work.\n"
     "- Bearings, pulleys, gears and shafts carry real bores, tooth counts and pitches; a "
     "pitch diameter must follow from the tooth count, not from the space available.\n"
+    "- Feature type t is closed vocabulary: tube, plate, gusset, shaft, bearing, pulley, "
+    "sprocket, gear, bevel, belt, wheel, motor, gearbox, standoff, polycarb, hardstop, "
+    "hook, drum, pawl, tensioner, hood, bolts, component, cable, rope, slide, actuator, "
+    "brake, sensor, chain_track. Never invent a type such as chain, safety or structure.\n"
+    "- Emit each physical part exactly once. Never repeat an identical feature or continue "
+    "a pattern after its required instances are present. Use mates for relationships, not "
+    "duplicate parts.\n"
     "- Emit one JSON object with id, name, kind, origin, features and mates. Nothing else.\n"
+    "- Close every array and object, then stop immediately after the final }.\n"
     "This is dimensioned concept geometry. Never claim it is ready to machine."
 )
 
