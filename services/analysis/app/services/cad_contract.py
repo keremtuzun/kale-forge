@@ -526,6 +526,110 @@ def structural_report(cad: dict[str, Any]) -> dict[str, Any]:
                        "fastener-torque claim." % CONTACT_TOL_IN)}
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Interference: nothing occupies the same space.
+#
+# The structural audit asks whether every body touches something. It never asked whether two
+# bodies are INSIDE each other, so a turret and an elevator tower could be driven through one
+# another and the design would still report "nothing floats" — the overlap reads as contact,
+# which is the one thing the audit was looking for.
+#
+# Only bodies in DIFFERENT assemblies are compared. Inside one assembly a designer overlaps
+# parts on purpose all the time (a bolt through a plate, a bearing in a bore); between two
+# mechanisms it means the packaging is wrong.
+# ─────────────────────────────────────────────────────────────────────────────
+# Boxes are conservative — a rotated part's AABB only grows — so the threshold has to be
+# generous enough that a near-miss on a diagonal member is not reported as a collision.
+PENETRATION_TOL_IN = 0.60
+
+# Kinds that legitimately pass through, lie on or wrap around other assemblies' bodies:
+# fasteners tie two mechanisms together, cloth and foam deform, runs are not solids, and the
+# electrical harness is routed around everything by definition.
+_PASSES_THROUGH = frozenset({
+    "bolts", "standoff", "decal", "fabric", "noodle", "noodle_corner", "belt", "rope",
+    "cable", "envelope", "slide", "chain_track", "sensor", "component", "hardstop", "pawl",
+})
+
+# Two mechanisms that are SUPPOSED to share space. The intake's last roller sits in the
+# hopper's mouth because that is the handover, and a climber that rides the elevator is
+# bolted to it. Exempting them by name is honest; widening the tolerance until they stopped
+# being reported would have hidden the real collisions too.
+_INTENDED_PAIRS = frozenset({frozenset({"intake", "hopper"}),
+                             frozenset({"climber", "elevator"})})
+
+
+def _sweep_bodies(cad: dict[str, Any], bodies: list[dict[str, Any]]) -> None:
+    """Grow every body of a rotating assembly to the volume it sweeps.
+
+    A turret is the case that matters. Checked in its drawn pose, a turret that clips an
+    elevator tower by a quarter inch looks almost fine; in the pose it reaches a second later
+    it has driven the whole head through the tower. The static box is the wrong question for
+    anything on a slew bearing, so the box becomes the swept cylinder's own AABB.
+    """
+    for assembly in cad.get("assemblies") or []:
+        sweep = (assembly or {}).get("sweep") if isinstance(assembly, dict) else None
+        if not sweep:
+            continue
+        aid = str(assembly.get("id") or "")
+        origin = _floats(assembly.get("origin"), 3) or [0.0, 0.0, 0.0]
+        axis_x = origin[0] + _f(sweep.get("x"), 0.0)
+        axis_z = origin[2] + _f(sweep.get("z"), 0.0)
+        floor = origin[1] + _f(sweep.get("from_y"), 0.0)
+        for body in bodies:
+            if body["aid"] != aid:
+                continue
+            low, high = body["box"]
+            if high[1] < floor - CONTACT_TOL_IN:
+                continue                    # below the bearing: part of the base, not turning
+            radius = max(abs(low[0] - axis_x), abs(high[0] - axis_x),
+                         abs(low[2] - axis_z), abs(high[2] - axis_z))
+            body["box"] = ([axis_x - radius, low[1], axis_z - radius],
+                           [axis_x + radius, high[1], axis_z + radius])
+            body["swept"] = True
+
+
+def clearance_report(cad: dict[str, Any]) -> dict[str, Any]:
+    """Which bodies from different assemblies are driven through each other, and by how much.
+
+    `worst_in` is the smallest of the three axis overlaps for the deepest pair — the distance
+    the two would have to be pulled apart along their easiest axis to stop interfering.
+    """
+    bodies = [b for b in _structural_bodies(cad)
+              if b.get("t") not in _PASSES_THROUGH]
+    _sweep_bodies(cad, bodies)
+    clashes: list[dict[str, Any]] = []
+    for i, a in enumerate(bodies):
+        for b in bodies[i + 1:]:
+            if a["aid"] == b["aid"] or frozenset({a["aid"], b["aid"]}) in _INTENDED_PAIRS:
+                continue
+            overlap = [min(a["box"][1][k], b["box"][1][k]) - max(a["box"][0][k], b["box"][0][k])
+                       for k in range(3)]
+            depth = min(overlap)
+            if depth > PENETRATION_TOL_IN:
+                clashes.append({"a": f"{a['aid']}/{a['name']}", "b": f"{b['aid']}/{b['name']}",
+                                "depth_in": round(depth, 3),
+                                "swept": bool(a.get("swept") or b.get("swept"))})
+    clashes.sort(key=lambda c: -c["depth_in"])
+    pairs = sorted({tuple(sorted((c["a"].split("/")[0], c["b"].split("/")[0])))
+                    for c in clashes})
+    return {
+        "ok": not clashes,
+        "clashes": clashes[:40],
+        "clash_count": len(clashes),
+        "assembly_pairs": ["%s ∩ %s" % pair for pair in pairs],
+        "worst_in": clashes[0]["depth_in"] if clashes else 0.0,
+        "checked": (f"solid bodies in different assemblies, interfering by more than "
+                    f"{PENETRATION_TOL_IN} in on every axis; fasteners, cloth, foam, runs "
+                    f"and the harness are exempt because they are meant to pass through"),
+    }
+
+
+def clearance_errors(cad: dict[str, Any]) -> list[str]:
+    """The report as contract-style error strings, for gates and tests."""
+    return [f"$.clearance: {c['a']} is inside {c['b']} by {c['depth_in']} in"
+            for c in clearance_report(cad)["clashes"]]
+
+
 def geometry_envelope(cad: dict[str, Any]) -> dict[str, Any]:
     """The real bounding box of everything that was actually generated, in inches.
 

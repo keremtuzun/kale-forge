@@ -1627,14 +1627,20 @@ def _shooter(spec: dict[str, Any], lane_x: float, c: Choices,
                                   (3.0, 0.190, 3.2), _at(px, 0.095, 0), pockets=2,
                                   note="bolts through the crossmember at this station"))
             features.append(_foot_bolts(f"shooter foot bolts {side}", px, 0))
-    return _asm("shooter", "Shooter", "mechanism", features,
-                origin=_at(lane_x, 2.0, station_z),
-                note=sh.get("type", ""),
-                mates=(["turret base plate bolts to the crossmember pair at this station",
-                        "turret revolute about Y on the slew bearing"] if sh.get("turreted")
-                       else ["feet bolt to the crossmember at this station, two 10-32s each"])
-                      + ["barrel revolute on the trunnions",
-                         "flywheel shafts ride bearings in both side plates"])
+    asm = _asm("shooter", "Shooter", "mechanism", features,
+               origin=_at(lane_x, 2.0, station_z),
+               note=sh.get("type", ""),
+               mates=(["turret base plate bolts to the crossmember pair at this station",
+                       "turret revolute about Y on the slew bearing"] if sh.get("turreted")
+                      else ["feet bolt to the crossmember at this station, two 10-32s each"])
+                     + ["barrel revolute on the trunnions",
+                        "flywheel shafts ride bearings in both side plates"])
+    if sh.get("turreted"):
+        # Everything above the slew bearing turns, so everything above it needs clearance all
+        # the way round — not just where it happens to be pointing when the model is drawn.
+        # The clearance audit reads this and checks the swept cylinder instead of the pose.
+        asm["sweep"] = {"x": 0.0, "z": 0.0, "from_y": 1.45}
+    return asm
 
 
 def _elevator(spec: dict[str, Any], lane_x: float, c: Choices,
@@ -1844,12 +1850,18 @@ def _elevator(spec: dict[str, Any], lane_x: float, c: Choices,
                                    _rot(0, 0, 90)))
             features.append(belt("winch reduction belt", _at(shelf_x + 1.5, drive_y, mz),
                                  _at(shelf_x + 1.5, drive_y, 0.7), 0.45, kind="HTD 5 mm belt"))
-    return _asm("elevator", "Elevator", "mechanism", features,
-                origin=_at(lane_x, 2.0, station_z),
-                note=f"{el.get('architecture', '')} · {stages} stage",
-                mates=["tower feet bolt through the crossmember at this station",
-                       "each stage slides in the one outboard of it",
-                       "carriage slides on the final stage"])
+    asm = _asm("elevator", "Elevator", "mechanism", features,
+               origin=_at(lane_x, 2.0, station_z),
+               note=f"{el.get('architecture', '')} · {stages} stage",
+               mates=["tower feet bolt through the crossmember at this station",
+                      "each stage slides in the one outboard of it",
+                      "carriage slides on the final stage"])
+    # What another mechanism needs in order to mount ON this tower instead of erecting its
+    # own. `build_cad` strips it before the tree ships; it is a build-time fact, not geometry.
+    asm["host"] = {"lane_x": lane_x, "station_z": station_z, "height_in": h,
+                   "span_in": span, "upright_x": span / 2,
+                   "carriage_y": carriage_y, "carriage_z": -face_z}
+    return asm
 
 
 def _arm(spec: dict[str, Any], lane_x: float, c: Choices,
@@ -1974,9 +1986,17 @@ def _arm(spec: dict[str, Any], lane_x: float, c: Choices,
 
 
 def _climber(spec: dict[str, Any], lane_x: float, c: Choices,
-             station_z: float) -> dict[str, Any] | None:
-    """Telescoping winch climber: 2x2 tower, staged inner tubes on rolling blocks, a grooved
-    drum with a ratchet, and the hook."""
+             station_z: float, host: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """Winch climber. It builds its own telescoping tower only when there is nothing on the
+    robot to climb on; when an elevator is already standing, the climber rides that.
+
+    A robot with a cascade elevator does not erect a SECOND telescoping tower six inches
+    away from the first one. This used to: same 2x2 outer section, same height, same nesting
+    stages, same rolling blocks, its own foot plate and its own crossmember — a duplicate
+    elevator with a hook on it. Every team that climbs on an elevator hangs the hook off the
+    carriage and puts the winch on the tower they already paid for, and that is a packaging
+    decision, not a saving: the two towers were fighting for the same lane.
+    """
     cl = spec.get("climber") or {}
     if not cl.get("included"):
         return None
@@ -1986,62 +2006,101 @@ def _climber(spec: dict[str, Any], lane_x: float, c: Choices,
     stages = max(1, min(int(cl.get("stages", 1)), 3))
     drum_d = cl.get("winch_drum_diameter_in", 1.25)
     ladder = c.ladder(max(stages, 2))
-    features: list[dict[str, Any]] = [
-        tube("climber tower", ladder[0][0], h, _at(0, h / 2, 0), _rot(90, 0, 0),
-             wall=ladder[0][1], pockets=True),
+    features: list[dict[str, Any]] = []
+    riding = bool(host)
+    if riding:
+        # No tower, no stages, no rolling blocks, no foot plate: the elevator supplies all of
+        # them. What is left is the part that is genuinely the climber — the winch package and
+        # the hook — bolted to the tower's inboard upright and to the carriage.
+        h = float(host["height_in"])
+        upright_x = float(host["upright_x"])
+        top = float(host["carriage_y"])
+        features.append(plate("winch shelf", (3.2, 0.250, 3.6), _at(upright_x, 2.4, -1.6),
+                              pockets=2,
+                              note="bolts to the elevator upright's web; the winch hangs on this"))
+        features.append(_feat("hook", cl.get("hook", "hook"),
+                              _at(0, top + 2.6, float(host["carriage_z"])),
+                              size=[0.6, 1.8, 3.0], kind=cl.get("hook", ""),
+                              note="bolted to the elevator carriage plate; the elevator is the lift"))
+        features.append(gusset("winch shelf gusset", (2.4, 2.0), _at(upright_x, 2.55, 0.15),
+                               _rot(90, 0, 0), form="triangle",
+                               note="takes the winch load into the upright"))
+    else:
+        features.append(tube("climber tower", ladder[0][0], h, _at(0, h / 2, 0), _rot(90, 0, 0),
+                             wall=ladder[0][1], pockets=True))
         # The row is CENTRED on `at` and its step is LOCAL to the rotated group: under
         # rot(90,0,0) a [0,0,s] step marches along the tower. Anchored mid-height so the
         # column spans the tower instead of half of it spanning the floor.
-        fastener_row("tower bolt column", _at(0, h / 2, 1.05), max(2, int((h - 5) // 3.2)),
-                     [0, 0, 3.2], rot=_rot(90, 0, 0)),
-    ]
-    top = h * 0.55
-    for s in range(1, min(stages, len(ladder) - 1) + 1):
-        inner_len = h * 0.8
-        sec, wall = ladder[s]
-        cy = h * 0.5 + s * 1.5
-        features.append(tube(f"climb stage {s}", sec, inner_len, _at(0, cy, 0), _rot(90, 0, 0),
-                             wall=wall, mat="aluminium-dark",
-                             note=f"nests inside {ladder[s - 1][0][0]:g}x{ladder[s - 1][0][1]:g}"))
-        for sz in (-1, 1):
-            features.append(bearing(f"stage {s} rolling block", _at(0, cy - inner_len / 2 + 0.6, sz * 1.0),
-                                    _rot(90, 0, 0), bore=0.375, od=0.875, width=0.45))
-        top = cy + inner_len * 0.4
-    features.append(_feat("hook", cl.get("hook", "hook"), _at(0, top, 1.4), size=[0.6, 1.8, 3.0],
-                          kind=cl.get("hook", "")))
+        features.append(fastener_row("tower bolt column", _at(0, h / 2, 1.05),
+                                     max(2, int((h - 5) // 3.2)), [0, 0, 3.2], rot=_rot(90, 0, 0)))
+        top = h * 0.55
+        for s in range(1, min(stages, len(ladder) - 1) + 1):
+            inner_len = h * 0.8
+            sec, wall = ladder[s]
+            cy = h * 0.5 + s * 1.5
+            features.append(tube(f"climb stage {s}", sec, inner_len, _at(0, cy, 0), _rot(90, 0, 0),
+                                 wall=wall, mat="aluminium-dark",
+                                 note=f"nests inside {ladder[s - 1][0][0]:g}x{ladder[s - 1][0][1]:g}"))
+            for sz in (-1, 1):
+                features.append(bearing(f"stage {s} rolling block", _at(0, cy - inner_len / 2 + 0.6, sz * 1.0),
+                                        _rot(90, 0, 0), bore=0.375, od=0.875, width=0.45))
+            top = cy + inner_len * 0.4
+        features.append(_feat("hook", cl.get("hook", "hook"), _at(0, top, 1.4), size=[0.6, 1.8, 3.0],
+                              kind=cl.get("hook", "")))
     # The winch package hangs on one shaft: gearbox output, brake disc, drum and ratchet all
     # ride it, and the plate ties the package to the tower web. Each part used to be placed
     # at its own x with nothing continuous through them.
-    features.append(shaft("winch shaft", _HEX_BORE, 4.8, _at(-0.2, 3.0, -1.6), _rot(0, 0, 90)))
-    features.append(plate("winch mount plate", (0.190, 2.6, 2.6), _at(-1.05, 3.0, -1.6),
-                          note="bolts to the tower web; carries the winch bearing"))
-    features.append(_feat("drum", "grooved winch drum", _at(0, 3.0, -1.6), dia=drum_d, w=2.2,
+    # The winch package hangs on one shaft wherever it lives. Riding the elevator, it moves
+    # onto the shelf on the tower's outboard upright and marches AWAY from the tower, so it
+    # never lands on the elevator's own gearbox shelf on the opposite upright.
+    wx = float(host["upright_x"]) if riding else 0.0
+    ws = -1.0 if riding else 1.0
+
+    def _wat(x: float, y: float, z: float) -> list[float]:
+        return _at(wx + ws * x, y, z)
+
+    features.append(shaft("winch shaft", _HEX_BORE, 4.8, _wat(-0.2, 3.0, -1.6), _rot(0, 0, 90)))
+    features.append(plate("winch mount plate", (0.190, 2.6, 2.6), _wat(-1.05, 3.0, -1.6),
+                          note="bolts to the elevator upright" if riding
+                               else "bolts to the tower web; carries the winch bearing"))
+    features.append(_feat("drum", "grooved winch drum", _wat(0, 3.0, -1.6), dia=drum_d, w=2.2,
                           rot=_rot(0, 0, 90), rope=cl.get("rope", "1/8 in Dyneema")))
-    features.append(gear("winch ratchet", 24, _at(1.4, 3.0, -1.6), _rot(0, 0, 90), dp=20, face=0.32))
-    features.append(_feat("pawl", "ratchet pawl", _at(1.4, 3.75, -1.6), size=[0.25, 1.2, 0.6]))
+    features.append(gear("winch ratchet", 24, _wat(1.4, 3.0, -1.6), _rot(0, 0, 90), dp=20, face=0.32))
+    features.append(_feat("pawl", "ratchet pawl", _wat(1.4, 3.75, -1.6), size=[0.25, 1.2, 0.6]))
     if c.climber_hold == "brake+ratchet":
         # A disc brake on the drum shaft holds under power; the ratchet is what holds when the
         # match ends and the motors go dead. Belt and braces, on the one mechanism where
         # letting go drops the whole robot.
-        features.append(_feat("brake", "drum disc brake", _at(-0.6, 3.0, -1.6),
+        features.append(_feat("brake", "drum disc brake", _wat(-0.6, 3.0, -1.6),
                               dia=2.2, w=0.25, rot=_rot(0, 0, 90)))
-    features.append(gearbox("winch gearbox", (2.6, 3.0, 1.6), _at(-1.8, 3.0, -1.6),
+    features.append(gearbox("winch gearbox", (2.6, 3.0, 1.6), _wat(-1.8, 3.0, -1.6),
                             ratio="100:1", stages=3))
     for i in range(int(cl.get("motor_count", 2))):
         # 1.9 in apart keeps the second motor's can inside the frame perimeter even in the
         # climber's outboard lane.
         features.append(motor("climb motor", cl.get("motor_key", "kraken_x60"),
-                              _at(-3.4 - i * 1.9, 3.0, -1.6), _rot(0, 0, 90)))
-    features.append(rope("winch rope", _at(0, 3.0, -1.0), _at(0, top - 0.6, -0.2),
+                              _wat(-3.4 - i * 1.9, 3.0, -1.6), _rot(0, 0, 90)))
+    features.append(rope("winch rope", _wat(0, 3.0, -1.0),
+                         _at(0, top + (2.0 if riding else -0.6), -0.2),
                          dia=0.125, material=cl.get("rope", "Dyneema")))
-    features.append(plate("tower foot plate", (4.2, 0.250, 4.2), _at(0, 0.125, 0), pockets=4,
-                          note="bolts through the crossmember at this station; the tower's "
-                               "whole overturning moment goes through this joint"))
-    features.append(_foot_bolts("tower foot bolts a", 0, -1.3, spread_x=2.6, length=1.4))
-    features.append(_foot_bolts("tower foot bolts b", 0, 1.3, spread_x=2.6, length=1.4))
-    for sz in (-1, 1):
-        features.append(gusset(f"tower foot gusset {'front' if sz < 0 else 'back'}",
-                               (2.4, 2.4), _at(0, 0.25, sz * 1.2), _rot(90, 0, 0)))
+    if not riding:
+        features.append(plate("tower foot plate", (4.2, 0.250, 4.2), _at(0, 0.125, 0), pockets=4,
+                              note="bolts through the crossmember at this station; the tower's "
+                                   "whole overturning moment goes through this joint"))
+        features.append(_foot_bolts("tower foot bolts a", 0, -1.3, spread_x=2.6, length=1.4))
+        features.append(_foot_bolts("tower foot bolts b", 0, 1.3, spread_x=2.6, length=1.4))
+        for sz in (-1, 1):
+            features.append(gusset(f"tower foot gusset {'front' if sz < 0 else 'back'}",
+                                   (2.4, 2.4), _at(0, 0.25, sz * 1.2), _rot(90, 0, 0)))
+    if riding:
+        return _asm("climber", "Climber (on the elevator)", "mechanism", features,
+                    origin=_at(host["lane_x"], 2.0, host["station_z"]),
+                    note=(cl.get("type", "") + " · winch on the elevator upright, hook on the "
+                          "carriage — no second tower").strip(" ·"),
+                    mates=["winch shelf bolts to the elevator upright's web",
+                           "hook rides the elevator carriage; the elevator IS the lift",
+                           "winch package on one shaft, plate-mounted to the shelf",
+                           "ratchet holds the load with the motor unpowered"])
     return _asm("climber", "Climber", "mechanism", features,
                 origin=_at(lane_x, 2.0, station_z),
                 note=cl.get("type", ""),
@@ -2146,9 +2205,180 @@ def _lanes(spec: dict[str, Any]) -> dict[str, float]:
         # A hopper wants the middle of the robot — it is the biggest single volume and every
         # other mechanism connects to it. The shooter sits above and behind it, so they share
         # the centreline rather than competing for it.
-        lanes["hopper"], lanes["shooter"] = 0.0, 0.0
+        lanes["hopper"] = 0.0
+        # ...unless there is a tower to miss. Returning the shooter to the centreline
+        # unconditionally silently cancelled the separation the rule above had just made, and
+        # a turret on the centreline sweeps a circle the elevator is standing in. The hopper
+        # is low and forward, so it can share its lane with a tower that clears it in Z; a
+        # rotating turret cannot share with anything.
+        if not has("elevator"):
+            lanes["shooter"] = 0.0
         lanes["climber"] = -w * 0.24
+    if has("elevator") and has("climber"):
+        # The climber rides the elevator when one exists, so it inherits that lane rather
+        # than reserving a second one for a tower it no longer builds.
+        lanes["climber"] = lanes["elevator"]
     return lanes
+
+
+# Who yields when two mechanisms want the same space. Earliest stays put: the intake is
+# bolted to the front rail and cannot move at all; the hopper is the biggest single volume and
+# everything feeds it; a turret needs a clear circle, so it is easier to move a tower out of
+# its way than to move the circle. The climber is last because when an elevator exists it has
+# no placement of its own — it rides the tower.
+_PLACEMENT_ORDER = ("intake", "hopper", "shooter", "elevator", "manipulator", "climber")
+PLACEMENT_GAP_IN = 0.75          # air left between two mechanisms once they are pulled apart
+
+
+def _footprints(assemblies: list[dict[str, Any]]) -> dict[str, tuple[float, float, float, float]]:
+    """World (x0, x1, z0, z1) per mechanism, from the bodies it actually emitted.
+
+    Measured, not declared. A mechanism's footprint is whatever its motors, shelves and
+    carriage plates end up reaching, and no hand-written bias table knows that number.
+    """
+    from app.services.cad_contract import _floats, _world_box, expand_mirrors  # noqa: PLC0415
+    out: dict[str, tuple[float, float, float, float]] = {}
+    for asm in assemblies:
+        origin = _floats(asm.get("origin"), 3) or [0.0, 0.0, 0.0]
+        x0 = z0 = 1e9
+        x1 = z1 = -1e9
+        for feature in expand_mirrors(asm.get("features") or []):
+            if feature.get("t") in ("belt", "rope", "cable", "envelope"):
+                continue
+            box = _world_box(feature, origin)
+            if not box:
+                continue
+            x0, x1 = min(x0, box[0][0]), max(x1, box[1][0])
+            z0, z1 = min(z0, box[0][2]), max(z1, box[1][2])
+        if x1 > x0:
+            out[str(asm.get("id"))] = (x0, x1, z0, z1)
+    # A turret does not occupy its footprint, it occupies the circle it sweeps. Checking the
+    # drawn pose is how a rotating head ends up sharing a lane with a tower.
+    for asm in assemblies:
+        sweep = asm.get("sweep")
+        aid = str(asm.get("id"))
+        if not sweep or aid not in out:
+            continue
+        origin = _floats(asm.get("origin"), 3) or [0.0, 0.0, 0.0]
+        cx, cz = origin[0] + float(sweep.get("x", 0.0)), origin[2] + float(sweep.get("z", 0.0))
+        x0, x1, z0, z1 = out[aid]
+        r = max(abs(x0 - cx), abs(x1 - cx), abs(z0 - cz), abs(z1 - cz))
+        out[aid] = (cx - r, cx + r, cz - r, cz + r)
+    return out
+
+
+def _separate(spec: dict[str, Any], prints: dict[str, tuple[float, float, float, float]],
+              stations: dict[str, float], lanes: dict[str, float],
+              fixed: dict[str, tuple[float, float, float, float]] | None = None,
+              swept: frozenset[str] = frozenset()) -> tuple[dict, dict, list]:
+    """Pull interfering mechanisms apart along Z, then X, and say what could not be resolved.
+
+    The placement used to be a table of biases that knew nothing about how big anything was.
+    A crossmember can be put under a mechanism by arithmetic; keeping two mechanisms out of
+    each other cannot, because the answer depends on geometry that only exists after both
+    have been built. So this runs on the measured footprints and `build_cad` rebuilds.
+    """
+    frame = spec["frame"]
+    half_w, half_l = frame["width_in"] / 2, frame["length_in"] / 2
+    stations, lanes = dict(stations), dict(lanes)
+    order = [k for k in _PLACEMENT_ORDER if k in prints]
+    boxes = dict(prints)
+    has_elevator = bool((spec.get("elevator") or {}).get("included"))
+
+    def exempt(a: str, b: str) -> bool:
+        pair = {a, b}
+        # The intake hands the gamepiece over INTO the hopper, and the climber rides the
+        # elevator on purpose. Both are meant to occupy each other's space.
+        return pair == {"intake", "hopper"} or (pair == {"climber", "elevator"} and has_elevator)
+
+    # The drivetrain does not move for anything. A swerve module owns its corner, and a
+    # mechanism shoved into one has not been placed, it has been hidden. Counting them in the
+    # cost is what stopped the turret being pushed out of the elevator and into a module.
+    obstacles = dict(fixed or {})
+
+    def pair_overlap(a: tuple[float, float, float, float],
+                     b: tuple[float, float, float, float]) -> float:
+        return min(min(a[1], b[1]) - max(a[0], b[0]), min(a[3], b[3]) - max(a[2], b[2]))
+
+    def outside(key: str, box: tuple[float, float, float, float]) -> float:
+        """How far this mechanism hangs off the frame, weighted by how much that matters.
+
+        A hard "must stay on the frame" gate cannot work here: an over-bumper intake is
+        supposed to hang off, and a design that starts out of bounds would freeze with no
+        legal move. As a cost term it just makes leaving the frame expensive, so the turret
+        settles inside instead of being shoved onto the back rail to dodge the tower.
+        """
+        over = (max(0.0, -half_w - box[0]) + max(0.0, box[1] - half_w)
+                + max(0.0, -half_l - box[2]) + max(0.0, box[3] - half_l))
+        # A rotating head has to fit its whole circle; anything else may reach out a little.
+        return over * (1.4 if key in swept else 0.30)
+
+    def cost(state: dict[str, tuple[float, float, float, float]]) -> float:
+        total = 0.0
+        for i, a in enumerate(order):
+            total += outside(a, state[a])
+            for b in order[i + 1:]:
+                if exempt(a, b):
+                    continue
+                total += max(0.0, pair_overlap(state[a], state[b]))
+            for box in obstacles.values():
+                total += max(0.0, pair_overlap(state[a], box))
+        return total
+
+    def inside(box: tuple[float, float, float, float]) -> bool:
+        # A loose sanity bound only — how far off the frame is worth going is decided by the
+        # cost, not here. This just stops a mechanism being flung into the next postcode.
+        return (-half_w <= (box[0] + box[1]) / 2 <= half_w
+                and -half_l <= (box[2] + box[3]) / 2 <= half_l)
+
+    # Greedy, and it may never make a design worse: a shift is committed only if it strictly
+    # reduces the total interference. The first version pushed whichever mechanism was lower
+    # priority by exactly the overlap and hoped, which walked a turret out of an elevator and
+    # straight into the hopper.
+    best = cost(boxes)
+    for _ in range(6):
+        if best <= 0.0:
+            break
+        winner: tuple[float, str, float, float] | None = None
+        # Lowest priority moves first, and moves furthest: the intake is bolted to the front
+        # rail and never moves at all.
+        for key in reversed(order[1:]):
+            x0, x1, z0, z1 = boxes[key]
+            for dx, dz in [(0.0, s * d) for d in (1.0, 2.0, 3.5, 5.0, 7.5) for s in (1, -1)] \
+                        + [(s * d, 0.0) for d in (1.0, 2.0, 3.5, 5.0, 7.5) for s in (1, -1)]:
+                moved_box = (x0 + dx, x1 + dx, z0 + dz, z1 + dz)
+                if not inside(moved_box):
+                    continue
+                trial = dict(boxes)
+                trial[key] = moved_box
+                value = cost(trial)
+                if value < best - 1e-6 and (winner is None or value < winner[0]):
+                    winner = (value, key, dx, dz)
+        if winner is None:
+            break
+        best, key, dx, dz = winner
+        x0, x1, z0, z1 = boxes[key]
+        boxes[key] = (x0 + dx, x1 + dx, z0 + dz, z1 + dz)
+        if key in stations:
+            stations[key] = round(stations[key] + dz, 3)
+        if key in lanes:
+            lanes[key] = round(lanes[key] + dx, 3)
+
+    # Whatever is left is a real answer about this robot, not a licence to overlap quietly.
+    unresolved: list[str] = []
+    for i, a in enumerate(order):
+        for b in order[i + 1:]:
+            if exempt(a, b):
+                continue
+            over = pair_overlap(boxes[a], boxes[b])
+            if over > PLACEMENT_GAP_IN:
+                unresolved.append(f"{a} and {b} overlap by {over:.1f} in and this frame has "
+                                  f"nowhere left to put either")
+        for name, box in obstacles.items():
+            over = pair_overlap(boxes[a], box)
+            if over > PLACEMENT_GAP_IN:
+                unresolved.append(f"{a} reaches {over:.1f} in into {name}, which cannot move")
+    return stations, lanes, unresolved
 
 
 def build_cad(spec: dict[str, Any]) -> dict[str, Any]:
@@ -2156,24 +2386,50 @@ def build_cad(spec: dict[str, Any]) -> dict[str, Any]:
 
     Pure and deterministic: the same spec always produces the same geometry, so a design can
     be regenerated, diffed and re-rendered without drift.
+
+    Built in two passes. The first is a measurement: mechanisms are laid out at their bias
+    stations and their real footprints are read off the bodies they emitted. The second is
+    the build, at stations that have been pulled apart so the footprints do not intersect.
+    One pass could not do this — how much room a mechanism needs is not known until it has
+    been built, which is how a turret ended up sweeping through an elevator tower.
     """
     lanes = _lanes(spec)
     c = Choices(spec)
     stations = _stations(spec)
+    # The climber rides the elevator when one exists (see `_climber`), so its own station is
+    # not a station at all — leaving it in would put a crossmember under a foot plate that no
+    # longer gets built.
+    if (spec.get("elevator") or {}).get("included"):
+        stations.pop("climber", None)
+
+    def mechanisms(lanes: dict[str, float],
+                   stations: dict[str, float]) -> list[dict[str, Any]]:
+        elevator = _elevator(spec, lanes["elevator"], c, stations.get("elevator", 0.0))
+        built = [_intake(spec, c),
+                 _hopper(spec, lanes["hopper"], c, stations.get("hopper", 0.0)),
+                 _shooter(spec, lanes["shooter"], c, stations.get("shooter", 0.0)),
+                 elevator,
+                 _arm(spec, lanes["manipulator"], c, stations.get("manipulator", 0.0)),
+                 _climber(spec, lanes["climber"], c, stations.get("climber", 0.0),
+                          host=(elevator or {}).get("host"))]
+        return [asm for asm in built if asm]
+
+    drivetrain = _drivetrain(spec, c) if spec.get("include_drivetrain", True) else []
+    # Pass one is a measurement, thrown away; pass two is the build. See the docstring.
+    provisional = mechanisms(lanes, stations)
+    stations, lanes, unresolved = _separate(
+        spec, _footprints(provisional), stations, lanes, _footprints(drivetrain),
+        swept=frozenset(str(a["id"]) for a in provisional if a.get("sweep")))
+
     assemblies: list[dict[str, Any]] = [_chassis(spec, c, stations)]
     # A chassis-only request gets a chassis. The drivetrain and the control system are
     # additions the prompt has to ask for; adding them anyway is how "only a 27 inch chassis"
     # used to come back with four swerve modules and a PDH.
-    if spec.get("include_drivetrain", True):
-        assemblies += _drivetrain(spec, c)
-    for asm in (_intake(spec, c),
-                _hopper(spec, lanes["hopper"], c, stations.get("hopper", 0.0)),
-                _shooter(spec, lanes["shooter"], c, stations.get("shooter", 0.0)),
-                _elevator(spec, lanes["elevator"], c, stations.get("elevator", 0.0)),
-                _arm(spec, lanes["manipulator"], c, stations.get("manipulator", 0.0)),
-                _climber(spec, lanes["climber"], c, stations.get("climber", 0.0)),
-                _electrical(spec) if spec.get("include_electrical", True) else None):
+    assemblies += drivetrain
+    for asm in mechanisms(lanes, stations) + [
+            _electrical(spec) if spec.get("include_electrical", True) else None]:
         if asm:
+            asm.pop("host", None)          # a build-time mounting fact, not geometry
             assemblies.append(asm)
 
     # Belts and chains are loops, not bars: stamp each one with the pitch radii
@@ -2226,8 +2482,14 @@ def build_cad(spec: dict[str, Any]) -> dict[str, Any]:
     # The structural audit ships WITH the tree: every body's contacts are checked against
     # real primitive extents, so "nothing floats" is a verified property of this design,
     # not a caption. Lazy import for the same circular-import reason as cut_list's.
-    from app.services.cad_contract import structural_report  # noqa: PLC0415
+    from app.services.cad_contract import clearance_report, structural_report  # noqa: PLC0415
     cad["integrity"] = structural_report(cad)
+    # And the other half of "is this a real robot": nothing floats, AND nothing is inside
+    # anything else. A packaging the frame cannot close is reported here rather than shipped
+    # as geometry that renders but could not be built.
+    cad["clearance"] = clearance_report(cad)
+    if unresolved:
+        cad["clearance"]["unresolved"] = unresolved
     return cad
 
 

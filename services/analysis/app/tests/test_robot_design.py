@@ -404,6 +404,47 @@ def test_bumper_matches_the_measured_reference_chassis():
     assert len(corner_cloth) == 4, "R402-C: cloth over the corner noodles, not bare foam"
 
 
+_PACKED = ("28 inch swerve for team 8159 with an over-bumper intake, a hopper, a turreted "
+           "dual flywheel hooded shooter, a three stage rope-rigged cascade elevator and a "
+           "deep climb")
+
+
+def test_a_turret_does_not_sweep_through_the_elevator():
+    """The turret and the tower were driven through each other.
+
+    Statically the overlap was only a couple of tenths, which is why it survived: the
+    structural audit read it as contact, and contact is the thing that audit wants. But the
+    turret ROTATES, so a tenth of an inch in the drawn pose is the whole head through the
+    tower a second later. The clearance audit checks the swept cylinder, and the placement
+    pass measures real footprints instead of trusting a table of biases.
+    """
+    spec = _spec(_PACKED)
+    clearance = spec["cad"]["clearance"]
+    offending = [c for c in clearance["clashes"]
+                 if {c["a"].split("/")[0], c["b"].split("/")[0]} == {"shooter", "elevator"}]
+    assert not offending, offending
+    assert "shooter" in {a["id"] for a in spec["cad"]["assemblies"]}
+    assert "elevator" in {a["id"] for a in spec["cad"]["assemblies"]}
+
+
+def test_a_robot_with_an_elevator_does_not_build_a_second_tower_for_the_climber():
+    """The climber used to erect its own telescoping tower — same outer section, same height,
+    same nesting stages, same rolling blocks — six inches from the elevator's. A duplicate
+    elevator with a hook on it, fighting the real one for the same lane."""
+    spec = _spec(_PACKED)
+    by_id = {a["id"]: a for a in spec["cad"]["assemblies"]}
+    climber = by_id["climber"]
+    names = {f["n"] for f in climber["features"]}
+    assert "climber tower" not in names, "no second tower when an elevator is standing"
+    assert not [n for n in names if n.startswith("climb stage")], "and no second set of stages"
+    assert "tower foot plate" not in names, "and no foot plate, because it has no tower"
+    assert {"winch shelf", "grooved winch drum"} <= names, "the winch is still a real winch"
+    assert climber["origin"] == by_id["elevator"]["origin"], "it rides the elevator"
+    assert "climber" not in " ".join(
+        f["n"] for f in by_id["chassis"]["features"] if f["t"] == "tube"), \
+        "and no crossmember is placed under feet that are never built"
+
+
 def test_the_team_number_is_modelled_at_its_legal_size():
     """R412 wants white numerals at least 3.75 in tall on a 0.5 in stroke, in three or more
     places about 90 deg apart. They were drawn only in the renderer, at 1.95 in — a bit over
@@ -561,6 +602,10 @@ def test_a_valid_proposed_assembly_is_adopted_and_flows_downstream():
     from app.services.robot_spec import _adopt_model_assembly
 
     spec = _geometry_spec()
+    # The head stands on two posts that reach the rail-top plane the origin sits on. Without
+    # them the proposal is four bodies in mid-air, and whether the structural gate lets it
+    # through depends on where the compiler happens to have placed the shooter — which is a
+    # test of the placement, not of adoption. Posts make it a mechanism either way.
     proposal = {
         "id": "shooter", "name": "Shooter", "kind": "mechanism",
         "features": [
@@ -568,6 +613,13 @@ def test_a_valid_proposed_assembly_is_adopted_and_flows_downstream():
              "size": [9.0, 0.19, 7.0], "mat": "aluminium", "pockets": 4},
             {"t": "plate", "n": "right cheek", "at": [5.0, 8.0, -2.0],
              "size": [9.0, 0.19, 7.0], "mat": "aluminium", "pockets": 4},
+            # Local z = 0 is the station, which is where the chassis put this mechanism's
+            # crossmember: the posts land on structure wherever the placement pass moves the
+            # shooter to.
+            {"t": "tube", "n": "left post", "at": [-5.0, 4.0, 0.0], "sec": [2.0, 1.0],
+             "len": 8.0, "rot": [90, 0, 0], "wall": 0.1, "mat": "aluminium"},
+            {"t": "tube", "n": "right post", "at": [5.0, 4.0, 0.0], "sec": [2.0, 1.0],
+             "len": 8.0, "rot": [90, 0, 0], "wall": 0.1, "mat": "aluminium"},
             {"t": "shaft", "n": "flywheel shaft", "at": [0.0, 9.5, -2.0], "dia": 0.5,
              "len": 11.0, "rot": [0, 0, 90], "form": "hex", "mat": "steel"},
             {"t": "wheel", "n": "flywheel", "at": [0.0, 9.5, -2.0], "dia": 4.0, "w": 2.0,
