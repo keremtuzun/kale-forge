@@ -493,6 +493,45 @@ def test_mechanisms_are_not_packaged_inside_each_other():
             f"worst {report['worst_in']} in on {report['clashes'][:1]}")
 
 
+@pytest.mark.parametrize("prompt", [
+    _PACKED,
+    "26x26 robot with a horizontal series-roller intake and a four-bar linkage arm.",
+    "27x27 swerve robot with a dual-roller over-bumper intake and a shooter",
+    "26x29 robot with a staged accelerator-and-flywheel shooter, a twin-lane belt hopper "
+    "and dual telescoping winch hooks.",
+])
+def test_no_motor_hangs_outside_the_bumper(prompt):
+    """Not one motor or gearbox outside the frame below the bumper's top.
+
+    Every mechanism mounted its drive package at "the edge of the thing it drives, plus a
+    constant", and nothing checked the edge was still on the robot: the climb motor was 4.7 in
+    out, the intake's 2.4 in, the hopper's 1.8 in. Out there a motor is past the bumper, so it
+    is the first thing another robot hits.
+
+    Above the bumper is a different question — an arm or an intake roller is meant to reach
+    over it — so the check is on what sits low enough to be hit.
+    """
+    from app.services.cad_contract import _floats, _world_box, expand_mirrors
+
+    spec = _spec(prompt)
+    half_w = spec["frame"]["width_in"] / 2
+    half_l = spec["frame"]["length_in"] / 2
+    offenders = []
+    for assembly in spec["cad"]["assemblies"]:
+        origin = _floats(assembly["origin"], 3) or [0.0, 0.0, 0.0]
+        for feature in expand_mirrors(assembly["features"]):
+            if feature["t"] not in ("motor", "gearbox"):
+                continue
+            box = _world_box(feature, origin)
+            if not box or box[0][1] > 5.0:
+                continue
+            out = max(-half_w - box[0][0], box[1][0] - half_w,
+                      -half_l - box[0][2], box[1][2] - half_l)
+            if out > 0.05:
+                offenders.append(f"{assembly['id']}/{feature['n']} {out:.2f} in out")
+    assert not offenders, offenders
+
+
 def test_the_team_number_is_modelled_at_its_legal_size():
     """R412 wants white numerals at least 3.75 in tall on a 0.5 in stroke, in three or more
     places about 90 deg apart. They were drawn only in the renderer, at 1.95 in — a bit over

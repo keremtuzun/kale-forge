@@ -299,6 +299,35 @@ _STATION_DEFAULTS = (("hopper", 0.42), ("shooter", 0.65), ("elevator", 0.58),
                      ("manipulator", 0.54), ("climber", 0.85))
 
 
+def _package_pos(spec: dict[str, Any], axis: str, origin: float, want: float, reach: float,
+                 side: float = 0.0, limit: float | None = None) -> float:
+    """Local coordinate for a motor/gearbox package so its far end stays inside the frame.
+
+    Every mechanism here mounts its drive package at "the edge of the thing it drives, plus a
+    constant" — and nothing checked that the edge was still on the robot. A Kraken hanging
+    two inches past the frame perimeter at bumper height is not a packaging quirk: it is
+    outside the bumper, so it is the first thing another robot hits, and it fails inspection
+    besides.
+
+    ``reach`` is how far the package extends from its mount and ``side`` which way (by
+    default, whichever way ``want`` already leans). ``limit`` overrides the frame line when
+    something closer in is what the package really has to clear — a drivetrain corner, say.
+    The result only ever moves the package INBOARD, so a mechanism that already fitted is
+    left exactly where it was.
+    """
+    span = spec["frame"]["width_in" if axis == "x" else "length_in"]
+    limit = span / 2 - 0.35 if limit is None else limit
+    side = side or (1.0 if want >= 0 else -1.0)
+    if side > 0:
+        return min(want, limit - reach - origin)
+    return max(want, reach - limit - origin)
+
+
+def _package_x(spec: dict[str, Any], origin_x: float, want_x: float, reach: float,
+               side: float = 0.0, limit: float | None = None) -> float:
+    return _package_pos(spec, "x", origin_x, want_x, reach, side, limit)
+
+
 def _module_inset(spec: dict[str, Any]) -> float:
     """How far a swerve module's centre sits in from the frame corner.
 
@@ -402,7 +431,13 @@ class Choices:
 
         # Power transmission. Belt is quiet and needs tension; chain takes shock and needs a
         # tensioner; a gear pair is compact and loud. All three are built in FRC every year.
-        self.intake_drive = pick(["belt", "belt", "chain", "gear"])
+        # Belt or chain, not gears. A gear train only carries torque tooth to tooth, so
+        # gear-driving an over-bumper arm means the whole power package lives out at the
+        # roller bar — in front of the frame, at bumper height, which is the one place on a
+        # robot a motor is guaranteed to get hit. The branch that did it also walked the
+        # train the wrong way down the arm and put the gearbox 0.7 in off the carpet, seven
+        # inches in front of the bumper. Teams belt or chain these for the same reason.
+        self.intake_drive = pick(["belt", "belt", "belt", "chain"])
         self.intake_supports = pick(["plate", "plate", "tube"])
         self.intake_hardstops = pick([True, True, False])
         # Hopper construction. The floor takes the wear and the walls take the impact, so teams
@@ -1158,12 +1193,24 @@ def _intake(spec: dict[str, Any], c: Choices) -> dict[str, Any] | None:
                               pockets=3, note=f"{arm_len:.1f} in between pivot and roller"))
 
     # Rollers climb back up the arm toward the frame, so a gamepiece walks over the bumper.
-    drive_x = width / 2 + 0.55
+    #
+    # The gear train sits on the roller shafts, and the shafts run the full width, so the
+    # train does NOT have to be at the intake's outboard edge — which matters, because an
+    # over-bumper intake is allowed to be wider than the frame and the drive package then
+    # ends up hanging outside the bumper. It goes as far out as it can while keeping the
+    # motor on the robot, and inboard of that when it cannot.
+    # The drive package sits behind the pivot, which on a swerve robot is the front module's
+    # Z band — so what it has to clear is not the frame line but the module's own motors,
+    # which stand up off the module plate into exactly this height. It lives in the gap
+    # between the two front modules.
+    drive_reach = 2.05 + MOTORS.get(mkey, MOTORS["neo"])["length_in"] / 2 + 0.3
+    _inset = _module_inset(spec)
+    drive_limit = (w / 2 - _inset - 2.4) if _inset else (w / 2 - 0.35)
+    drive_x = _package_x(spec, 0.0, width / 2 + 0.55, drive_reach, limit=drive_limit)
+
+    motor_r = MOTORS.get(mkey, MOTORS["neo"])["diameter_in"] / 2
 
     def transmit(name: str, teeth: int, at: list[float]) -> dict[str, Any]:
-        # Belt/chain modes only. The gear drive builds its own train further down,
-        # with every centre computed from the pitch radii — a helper that doubled
-        # tooth counts here once produced a 3.6 in gear overlapping its neighbours.
         if drive == "chain":
             return sprocket(f"{name} sprocket", teeth, at, _rot(0, 0, 90))
         return pulley(f"{name} pulley", teeth, 0.45, at, _rot(0, 0, 90))
@@ -1194,69 +1241,42 @@ def _intake(spec: dict[str, Any], c: Choices) -> dict[str, Any] | None:
     # hang on a drive plate held off the arm plate by two standoffs — a gearbox drawn in
     # free air beside the arm is exactly the floating-part defect this file must not make.
     drive_plate_x = drive_x + 0.32
+    # The standoffs span from the arm plate to the drive plate, and on a wide over-bumper
+    # intake the drive plate is now INBOARD of the arm rather than outboard of it. The span
+    # is therefore a distance, not a signed offset — as a signed one it went negative and the
+    # contract rejected the whole design for a negative dimension.
     features.append(plate("intake drive plate", (0.190, 3.6, 3.4),
                           _at(drive_plate_x, pivot_y - 1.9, pivot_z - 1.0), pockets=1,
-                          note="outboard of the arm on standoffs; gearbox and motor bolt to this"))
+                          note="carries the gearbox and motor, held off the arm on standoffs"))
     for so, sy in ((1, 1.2), (2, -1.2)):
         features.append(_feat("standoff", f"drive plate standoff {so}",
                               _at((width / 2 + drive_plate_x) / 2, pivot_y - 1.9 + sy,
                                   pivot_z - 1.0),
-                              dia=0.375, len=round(drive_plate_x - width / 2, 3),
+                              dia=0.375, len=max(0.5, round(abs(drive_plate_x - width / 2), 3)),
                               rot=_rot(0, 0, 90)))
-    if drive == "gear":
-        # Gears only carry torque tooth to tooth, so the whole power package sits at
-        # the roller bar: output gear meshes an idler meshes roller 1's gear, every
-        # centre at exactly the sum of the pitch radii, laid out along the arm
-        # direction. Rollers 2+ each get a pair idler so all rollers turn the same
-        # way. (The old layout kept the gearbox at the pivot and asked one 24t idler
-        # to bridge five inches of air.)
-        gear_dp = 20
-        r_roller, r_idler, r_out = 24 / gear_dp / 2, 22 / gear_dp / 2, 36 / gear_dp / 2
-        p1y, p1z = roller_ats[0][1], roller_ats[0][2]
-        idl_y = p1y - unit_y * (r_roller + r_idler)
-        idl_z = p1z - unit_z * (r_roller + r_idler)
-        out_y = p1y - unit_y * (r_roller + 2 * r_idler + r_out)
-        out_z = p1z - unit_z * (r_roller + 2 * r_idler + r_out)
-        features.append(gearbox("intake gearbox", (2.0, 2.2, 1.2), _at(drive_x + 0.85, out_y, out_z),
-                                ratio=ik.get("gear_reduction", "4:1"), stages=2))
-        features.append(motor("intake motor", mkey, _at(drive_x + 2.05, out_y, out_z), _rot(0, 0, 90)))
-        features.append(gear("gearbox output gear", 36, _at(drive_x, out_y, out_z),
-                             _rot(0, 0, 90), dp=gear_dp, face=0.375))
-        features.append(gear("intake idler", 22, _at(drive_x, idl_y, idl_z),
-                             _rot(0, 0, 90), dp=gear_dp, face=0.375))
-        for r in range(count):
-            features.append(gear(f"roller {r + 1} gear", 24,
-                                 _at(drive_x, roller_ats[r][1], roller_ats[r][2]),
-                                 _rot(0, 0, 90), dp=gear_dp, face=0.375))
-        for r in range(count - 1):
-            # Pair idler between adjacent rollers, sized so the on-line midpoint is a
-            # true double mesh: 2·(r_roller + r_pair) = roller spacing.
-            pair_teeth = int(round((centre - 2 * r_roller) * gear_dp))
-            if pair_teeth >= 8:
-                features.append(gear(f"roller {r + 1}→{r + 2} idler", pair_teeth,
-                                     _at(drive_x,
-                                         (roller_ats[r][1] + roller_ats[r + 1][1]) / 2,
-                                         (roller_ats[r][2] + roller_ats[r + 1][2]) / 2),
-                                     _rot(0, 0, 90), dp=gear_dp, face=0.375))
-    else:
-        gb_at = _at(drive_x + 0.85, pivot_y - 1.9, pivot_z - 1.4)
-        features.append(gearbox("intake gearbox", (2.0, 2.2, 1.2), gb_at,
-                                ratio=ik.get("gear_reduction", "4:1"), stages=2))
-        features.append(motor("intake motor", mkey,
-                              _at(drive_x + 2.05, pivot_y - 1.9, pivot_z - 1.4), _rot(0, 0, 90)))
-        features.append(transmit("gearbox output", 36, _at(drive_x, pivot_y - 1.9, pivot_z - 1.4)))
-        kind = "#25 chain" if drive == "chain" else "HTD 5 mm 15 mm belt"
-        features.append(belt("reduction run", _at(drive_x, pivot_y - 1.9, pivot_z - 1.4),
-                             _at(drive_x, roller_ats[0][1], roller_ats[0][2]), 0.35, kind=kind))
-        for r in range(count - 1):
-            features.append(belt(f"roller {r + 1}→{r + 2} run",
-                                 _at(drive_x, roller_ats[r][1], roller_ats[r][2]),
-                                 _at(drive_x, roller_ats[r + 1][1], roller_ats[r + 1][2]),
-                                 0.35, kind=kind))
-        features.append(_feat("tensioner", f"{drive} tensioner",
-                              _at(drive_x + 0.7, (roller_ats[0][1] + pivot_y - 1.9) / 2,
-                                  (roller_ats[0][2] + pivot_z - 1.4) / 2), dia=0.9, w=0.4,
-                              rot=_rot(0, 0, 90)))
+    # The power package goes BEHIND the pivot, inside the frame. It used to sit 1.4 in in
+    # front of it, which on an over-bumper intake is inside the front bumper — the one place
+    # on a robot where a motor is guaranteed to be hit. Belt and chain are what make that
+    # possible: they carry torque down the arm, so the mass stays back at the pivot.
+    pack_z = _package_pos(spec, "z", -ln / 2, pivot_z + 1.4, motor_r + 0.4, side=-1.0)
+    gb_at = _at(drive_x + 0.85, pivot_y - 1.9, pack_z)
+    features.append(gearbox("intake gearbox", (2.0, 2.2, 1.2), gb_at,
+                            ratio=ik.get("gear_reduction", "4:1"), stages=2))
+    features.append(motor("intake motor", mkey,
+                          _at(drive_x + 2.05, pivot_y - 1.9, pack_z), _rot(0, 0, 90)))
+    features.append(transmit("gearbox output", 36, _at(drive_x, pivot_y - 1.9, pack_z)))
+    kind = "#25 chain" if drive == "chain" else "HTD 5 mm 15 mm belt"
+    features.append(belt("reduction run", _at(drive_x, pivot_y - 1.9, pack_z),
+                         _at(drive_x, roller_ats[0][1], roller_ats[0][2]), 0.35, kind=kind))
+    for r in range(count - 1):
+        features.append(belt(f"roller {r + 1}→{r + 2} run",
+                             _at(drive_x, roller_ats[r][1], roller_ats[r][2]),
+                             _at(drive_x, roller_ats[r + 1][1], roller_ats[r + 1][2]),
+                             0.35, kind=kind))
+    features.append(_feat("tensioner", f"{drive} tensioner",
+                          _at(drive_x + 0.7, (roller_ats[0][1] + pivot_y - 1.9) / 2,
+                              (roller_ats[0][2] + pack_z) / 2), dia=0.9, w=0.4,
+                          rot=_rot(0, 0, 90)))
     if ik.get("indexer"):
         # The guide runs BETWEEN the front modules, so it is as wide as the gap between them
         # and no wider. Sizing it off the intake width let it grow past the frame and through
@@ -1437,11 +1457,18 @@ def _hopper(spec: dict[str, Any], lane_x: float, c: Choices,
         features.append(_feat("standoff", f"hopper drive standoff {so}",
                               _at(width / 2 + 0.18, shaft_y + 1.0 + sy, -depth * 0.05),
                               dia=0.375, len=0.36, rot=_rot(0, 0, 90)))
-    features.append(gearbox("hopper gearbox", (2.0, 2.2, 1.2), _at(width / 2 + 1.35, shaft_y + 1.6, depth * 0.1),
+    # The drive package hangs off the hopper's side, so how far out it reaches has to be
+    # measured against the frame and not against the hopper. A second motor goes BESIDE the
+    # first along the robot, not further outboard: that is how a two-motor gearbox is built,
+    # and marching them outward is what put the second one through the bumper.
+    gb_x = _package_x(spec, lane_x, width / 2 + 1.35,
+                      1.65 + MOTORS.get(mkey, MOTORS["neo_550"])["length_in"] / 2 + 0.3)
+    features.append(gearbox("hopper gearbox", (2.0, 2.2, 1.2), _at(gb_x, shaft_y + 1.6, depth * 0.1),
                             ratio=hp.get("gear_reduction", "12:1"), stages=2))
     for i in range(int(hp.get("motor_count", 1))):
         features.append(motor("hopper motor", mkey,
-                              _at(width / 2 + 3.0 + i * 2.2, shaft_y + 1.6, depth * 0.1), _rot(0, 0, 90)))
+                              _at(gb_x + 1.65, shaft_y + 1.6, depth * 0.1 + i * 2.2),
+                              _rot(0, 0, 90)))
     if c.hopper_drive == "chain":
         features.append(sprocket("hopper driven sprocket", 24, _at(drive_x, shaft_y, -depth * 0.18), _rot(0, 0, 90)))
         features.append(sprocket("hopper drive sprocket", 12, _at(drive_x, shaft_y + 1.6, depth * 0.1), _rot(0, 0, 90)))
@@ -1912,7 +1939,10 @@ def _elevator(spec: dict[str, Any], lane_x: float, c: Choices,
     # The winch package hangs on a shelf off the upright, with the gearbox output on the
     # rigging drive shaft's own axis — drawn floating beside the tower it reads as wrong,
     # because it would be.
-    shelf_x = -span / 2 - 1.15
+    mkey_pre = el.get("motor_key", "neo_vortex")
+    shelf_x = _package_x(spec, lane_x, -span / 2 - 1.15,
+                         MOTORS.get(mkey_pre, MOTORS["neo_vortex"])["diameter_in"] / 2 + 1.5,
+                         side=-1.0)
     features.append(plate("gearbox mount shelf", (2.9, 0.190, 3.4), _at(shelf_x, 0.60, 0.7),
                           pockets=2, note="bolts to the upright web; gearbox and motors hang on this"))
     features.append(gearbox("elevator gearbox", (2.6, 3.0, 1.6), _at(shelf_x, drive_y, 0.7),
@@ -2138,8 +2168,20 @@ def _climber(spec: dict[str, Any], lane_x: float, c: Choices,
     # The winch package hangs on one shaft wherever it lives. Riding the elevator, it moves
     # onto the shelf on the tower's outboard upright and marches AWAY from the tower, so it
     # never lands on the elevator's own gearbox shelf on the opposite upright.
-    wx = float(host["upright_x"]) if riding else 0.0
-    ws = -1.0 if riding else 1.0
+    # The motors march away from the mount, so the reach is measured from `wx` to the far
+    # end of the last one — and measured against the FRAME, not against the tower it hangs
+    # on. The second motor also goes beside the first along the robot rather than further
+    # outboard, which is how a two-motor gearbox is built and is what kept the outer one on
+    # the robot at all.
+    motor_count = max(1, int(cl.get("motor_count", 2)))
+    m_len = MOTORS.get(cl.get("motor_key", "kraken_x60"), MOTORS["kraken_x60"])["length_in"]
+    reach = 3.4 + m_len / 2 + 0.3
+    if riding:
+        ws = -1.0                                  # the package marches +x off the upright
+        wx = _package_x(spec, float(host["lane_x"]), float(host["upright_x"]), reach, side=1.0)
+    else:
+        ws = 1.0                                   # ...and -x off a tower of its own
+        wx = _package_x(spec, lane_x, 0.0, reach, side=-1.0)
 
     def _wat(x: float, y: float, z: float) -> list[float]:
         return _at(wx + ws * x, y, z)
@@ -2160,11 +2202,9 @@ def _climber(spec: dict[str, Any], lane_x: float, c: Choices,
                               dia=2.2, w=0.25, rot=_rot(0, 0, 90)))
     features.append(gearbox("winch gearbox", (2.6, 3.0, 1.6), _wat(-1.8, 3.0, -1.6),
                             ratio="100:1", stages=3))
-    for i in range(int(cl.get("motor_count", 2))):
-        # 1.9 in apart keeps the second motor's can inside the frame perimeter even in the
-        # climber's outboard lane.
+    for i in range(motor_count):
         features.append(motor("climb motor", cl.get("motor_key", "kraken_x60"),
-                              _wat(-3.4 - i * 1.9, 3.0, -1.6), _rot(0, 0, 90)))
+                              _wat(-3.4, 3.0, -1.6 + i * 2.1), _rot(0, 0, 90)))
     features.append(rope("winch rope", _wat(0, 3.0, -1.0),
                          _at(0, top + (2.0 if riding else -0.6), -0.2),
                          dia=0.125, material=cl.get("rope", "Dyneema")))
