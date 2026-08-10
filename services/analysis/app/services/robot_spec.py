@@ -967,7 +967,14 @@ def build_robot_spec(prompt: str, *, use_model: bool = True, season: str = "") -
     # Longitudinal placement varies within a band that stays serviceable and inside the frame.
     intake_bias = rng.uniform(0.06, 0.14)
     shooter_bias = rng.uniform(0.58, 0.72)
-    elevator_bias = rng.uniform(0.50, 0.64)
+    # The tower goes at the BACK. It is the tallest and heaviest thing on the robot: against
+    # the back rail its feet bolt to structure at both ends, its mass sits behind the drive
+    # centre, and the whole front of the frame is left for the intake and the gamepiece path.
+    # A band centred on 0.57 put it in the middle with the hopper in front and the shooter
+    # behind — the one place a tower should never be, and the reason the two kept fighting
+    # for the same volume. This is the value that matters: `_STATION_DEFAULTS` is only the
+    # fallback for a block that does not carry its own bias, and every generated one does.
+    elevator_bias = rng.uniform(0.82, 0.92)
     arm_bias = rng.uniform(0.46, 0.60)
 
     # Detailed, seeded intake geometry. Surface speed comes from the mechanism motor's free

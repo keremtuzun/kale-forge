@@ -295,7 +295,14 @@ def _foot_bolts(name: str, x: float, z: float, *, count: int = 2, spread_x: floa
 # the feet that bolt to it must come from the same number, or the mate is a story: the old
 # code kept two sets of default biases and two clamps, and a 1x1 crossmember could sit a
 # station away from the feet it was supposed to carry.
-_STATION_DEFAULTS = (("hopper", 0.42), ("shooter", 0.65), ("elevator", 0.58),
+# The elevator's 0.88 is a real decision, not a nudge. A tower is the tallest and heaviest
+# thing on the robot, and it belongs against the BACK rail: its feet bolt to structure at
+# both ends, its mass sits behind the drive centre, and the whole front of the frame is left
+# for the intake and the gamepiece path. That is where the published swerve CADs put it.
+# At 0.58 it stood in the middle of the robot with the hopper in front of it and the shooter
+# behind, which is the one place a tower should never be. The bias clamps to 0.38 of the
+# frame length, which lands a 7 in deep tower's back face on the rail.
+_STATION_DEFAULTS = (("hopper", 0.42), ("shooter", 0.65), ("elevator", 0.88),
                      ("manipulator", 0.54), ("climber", 0.85))
 
 
@@ -2013,9 +2020,16 @@ def _elevator(spec: dict[str, Any], lane_x: float, c: Choices,
                             ratio=el.get("reduction", "12:1"), stages=2))
     mkey = el.get("motor_key", "neo_vortex")
     motor_count = int(el.get("motor_count", 2))
+    # The pair STRADDLES the gearbox rather than marching away from it. Marching, the second
+    # motor ended up two feet forward of the tower — which on a tower at the back rail is
+    # inside the turret's swept circle. Symmetric about the output is also how a two-motor
+    # gearbox is actually built.
+    def _motor_z(i: int) -> float:
+        return 0.7 - 1.9 - (i - (motor_count - 1) / 2) * 2.1
+
     for i in range(motor_count):
         features.append(motor("elevator motor", mkey,
-                              _at(shelf_x, drive_y, 0.7 - 1.9 - i * 2.1), _rot(0, 0, 90)))
+                              _at(shelf_x, drive_y, _motor_z(i)), _rot(0, 0, 90)))
     features.append(shaft("rigging drive shaft", _HEX_BORE, span + 3.2, _at(-1.0, drive_y, 0.7),
                           _rot(0, 0, 90)))
     if rig == "rope":
@@ -2024,7 +2038,7 @@ def _elevator(spec: dict[str, Any], lane_x: float, c: Choices,
         features.append(pulley("winch driven pulley", 36, 0.45, _at(shelf_x + 1.5, drive_y, 0.7),
                                _rot(0, 0, 90)))
         for i in range(motor_count):
-            mz = 0.7 - 1.9 - i * 2.1
+            mz = _motor_z(i)
             features.append(pulley("winch motor pulley", 12, 0.45, _at(shelf_x + 1.5, drive_y, mz),
                                    _rot(0, 0, 90)))
             features.append(belt("winch reduction belt", _at(shelf_x + 1.5, drive_y, mz),
@@ -2466,10 +2480,14 @@ def _lanes(spec: dict[str, Any]) -> dict[str, float]:
 
 # Who yields when two mechanisms want the same space. Earliest stays put: the intake is
 # bolted to the front rail and cannot move at all; the hopper is the biggest single volume and
-# everything feeds it; a turret needs a clear circle, so it is easier to move a tower out of
-# its way than to move the circle. The climber is last because when an elevator exists it has
-# no placement of its own — it rides the tower.
-_PLACEMENT_ORDER = ("intake", "hopper", "shooter", "elevator", "manipulator", "climber")
+# everything feeds it; the elevator comes next because where a tower stands is a STRUCTURAL
+# decision — it is the tallest and heaviest thing on the robot, its feet want the back rail,
+# and its climb load goes through that joint — whereas a turret can be aimed from wherever
+# there is room. Ranking the shooter above it meant the turret took the back and the tower
+# got pushed into the middle of the robot, between the hopper and the shooter, which is the
+# one place a tower should never be. The climber is last because when an elevator exists it
+# has no placement of its own — it rides the tower.
+_PLACEMENT_ORDER = ("intake", "hopper", "elevator", "shooter", "manipulator", "climber")
 PLACEMENT_GAP_IN = 0.75          # air left between two mechanisms once they are pulled apart
 
 
@@ -2728,6 +2746,20 @@ def _separate(spec: dict[str, Any], prints: dict[str, _Box],
         return (-half_w <= (box[0] + box[1]) / 2 <= half_w
                 and -half_l <= (box[4] + box[5]) / 2 <= half_l)
 
+    def move(key: str, dx: float, dz: float) -> None:
+        """Shift one mechanism, keeping every view of it in step."""
+        x0, x1, y0, y1, z0, z1 = boxes[key]
+        boxes[key] = (x0 + dx, x1 + dx, y0, y1, z0 + dz, z1 + dz)
+        if key in lows:                    # the low footprint rides along with its mechanism
+            a0, a1, b0, b1, c0, c1 = lows[key]
+            lows[key] = (a0 + dx, a1 + dx, b0, b1, c0 + dz, c1 + dz)
+        sx0, sz0 = shifts.get(key, (0.0, 0.0))
+        shifts[key] = (sx0 + dx, sz0 + dz)
+        if key in stations:
+            stations[key] = round(stations[key] + dz, 3)
+        if key in lanes:
+            lanes[key] = round(lanes[key] + dx, 3)
+
     # Greedy, and it may never make a design worse: a shift is committed only if it strictly
     # reduces the total interference. The first version pushed whichever mechanism was lower
     # priority by exactly the overlap and hoped, which walked a turret out of an elevator and
@@ -2764,17 +2796,7 @@ def _separate(spec: dict[str, Any], prints: dict[str, _Box],
         if winner is None:
             break
         best, key, dx, dz = winner
-        x0, x1, y0, y1, z0, z1 = boxes[key]
-        boxes[key] = (x0 + dx, x1 + dx, y0, y1, z0 + dz, z1 + dz)
-        if key in lows:                    # the low footprint rides along with its mechanism
-            a0, a1, b0, b1, c0, c1 = lows[key]
-            lows[key] = (a0 + dx, a1 + dx, b0, b1, c0 + dz, c1 + dz)
-        sx0, sz0 = shifts.get(key, (0.0, 0.0))
-        shifts[key] = (sx0 + dx, sz0 + dz)
-        if key in stations:
-            stations[key] = round(stations[key] + dz, 3)
-        if key in lanes:
-            lanes[key] = round(lanes[key] + dx, 3)
+        move(key, dx, dz)
 
     # Whatever is left is a real answer about this robot, not a licence to overlap quietly.
     unresolved: list[str] = []

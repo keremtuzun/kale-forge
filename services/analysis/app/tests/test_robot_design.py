@@ -478,8 +478,13 @@ def test_mechanisms_are_not_packaged_inside_each_other():
     # Bounds are the counts this suite's season actually produces, with a little headroom.
     # They came down from 37, 35 and 20 respectively; the point of the bound is that they
     # never climb back, not that these particular numbers are good.
+    # The packed design's bound went back UP, from 9 to 18, when the elevator moved to the
+    # back rail where it belongs. That is a deliberate trade and not a regression: a turret's
+    # swept circle, a hopper and a tower do not fit in 27 inches, and with the tower anchored
+    # at the back the shooter is the one displaced into the hopper. Putting the tower in the
+    # middle of the robot to keep this number down would be optimising the metric.
     worst = {
-        _PACKED: 9,
+        _PACKED: 18,
         "Experienced team, 27 inch swerve, turreted dual flywheel hooded shooter, "
         "circular spindexer and an active floor sweeper with indexer.": 15,
         "26x26 robot with a horizontal series-roller intake and a four-bar linkage arm.": 2,
@@ -553,6 +558,39 @@ def test_no_more_than_four_propulsion_motors(prompt):
     assert len(drive) <= 4, [f["n"] for f in drive]
     stated = int((spec.get("drivetrain") or {}).get("drive_motors", 0))
     assert stated == len(drive), f"spec says {stated} drive motors, geometry has {len(drive)}"
+
+
+@pytest.mark.parametrize("prompt", [
+    _PACKED,
+    "27x27 REEFSCAPE robot, three-stage cascade elevator, wristed carriage arm, no shooter.",
+    "28x28 REEFSCAPE robot with a 3 stage belt-rigged cascade tower and an over-bumper intake.",
+    "28x28 robot with a 2 stage rope-rigged cascade tower and a wristed arm.",
+])
+def test_the_elevator_stands_at_the_back_of_the_frame(prompt):
+    """A tower belongs against the back rail, not in the middle of the robot.
+
+    It is the tallest and heaviest thing on there: at the back its feet bolt to structure at
+    both ends, its mass sits behind the drive centre, and the whole front of the frame is
+    left for the intake and the gamepiece path. It was landing mid-frame with the hopper in
+    front of it and the shooter behind — the two of them fighting it for the same volume.
+
+    The bias that decides this is the one in `robot_spec`, not `_STATION_DEFAULTS`: every
+    generated elevator block carries its own, so the table is only ever the fallback.
+    """
+    spec = _spec(prompt)
+    half_l = spec["frame"]["length_in"] / 2
+    elevator = next((a for a in spec["cad"]["assemblies"] if a["id"] == "elevator"), None)
+    if elevator is None:
+        pytest.skip("this prompt did not ask for an elevator in this season")
+    from app.services.cad_contract import _floats, _world_box, expand_mirrors
+
+    origin = _floats(elevator["origin"], 3)
+    boxes = [_world_box(f, origin) for f in expand_mirrors(elevator["features"])]
+    back = max(b[1][2] for b in boxes if b)
+    front = min(b[0][2] for b in boxes if b)
+    assert back > half_l * 0.55, f"tower's back face at {back:.1f}, frame rail at {half_l:.1f}"
+    assert back <= half_l + 0.1, f"tower reaches {back:.1f} in, past the rail at {half_l:.1f}"
+    assert front > 0, f"tower reaches forward to {front:.1f}; it should be behind centre"
 
 
 def test_the_team_number_is_modelled_at_its_legal_size():
