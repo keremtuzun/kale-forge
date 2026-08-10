@@ -206,9 +206,9 @@ def belt(name: str, frm: list[float], to: list[float], width: float, *,
 
 def wheel(name: str, dia: float, width: float, at: list[float],
           rot: list[float] | None = None, *, kind: str = "tread",
-          durometer: str = "") -> dict[str, Any]:
+          durometer: str = "", note: str = "") -> dict[str, Any]:
     return _feat("wheel", name, at, dia=dia, w=width, kind=kind, rot=rot,
-                 duro=durometer or None)
+                 duro=durometer or None, note=note or None)
 
 
 def motor(name: str, key: str, at: list[float], rot: list[float] | None = None,
@@ -297,6 +297,32 @@ def _foot_bolts(name: str, x: float, z: float, *, count: int = 2, spread_x: floa
 # station away from the feet it was supposed to carry.
 _STATION_DEFAULTS = (("hopper", 0.42), ("shooter", 0.65), ("elevator", 0.58),
                      ("manipulator", 0.54), ("climber", 0.85))
+
+
+def _module_inset(spec: dict[str, Any]) -> float:
+    """How far a swerve module's centre sits in from the frame corner.
+
+    One definition, read by the drivetrain that places the modules, by the chassis that has
+    to keep crossmembers out of their wheels, and by the electrical mast that has to not
+    stand in one. Three copies of this number is how the mast ended up inside a wheel.
+    """
+    dt = spec.get("drivetrain") or {}
+    if dt.get("type") == "west-coast" or not int(dt.get("module_count") or 0):
+        return 0.0
+    plate_in = dt.get("plate_in") or (4.10, 4.10)
+    return plate_in[0] / 2 + 0.55
+
+
+def _module_bands(spec: dict[str, Any], pad: float = 0.0) -> list[tuple[float, float]]:
+    """The Z bands the swerve wheels occupy, front and back, with `pad` of margin."""
+    inset = _module_inset(spec)
+    if not inset:
+        return []
+    dt = spec.get("drivetrain") or {}
+    reach = dt.get("wheel_diameter_in", 4.0) / 2 + pad + 0.2
+    half_l = spec["frame"]["length_in"] / 2
+    centre = half_l - inset
+    return [(-centre - reach, -centre + reach), (centre - reach, centre + reach)]
 
 
 def _stations(spec: dict[str, Any]) -> dict[str, float]:
@@ -778,9 +804,34 @@ def _chassis(spec: dict[str, Any], c: Choices, stations: dict[str, float]) -> di
     # half-inch of air under every foot it was meant to carry.
     cm_sec = c.crossmember_section
     cm_y = rail_h - cm_sec[0] / 2
+    # A west-coast drivetrain hangs its wheels off rails INBOARD of the frame rails, so a
+    # crossmember cut to the full inside width runs straight through both drive rails and
+    # both columns of wheels. It ties the drive rails instead — which is what it is actually
+    # for, and what the front and back rails (still full width) are not.
+    cm_len = cross_len
+    if (spec.get("drivetrain") or {}).get("type") == "west-coast":
+        cm_len = max(4.0, w - 2 * (2.6 + TUBE_2X1[1] / 2))
+    # A crossmember spans rail to rail, and a swerve wheel lives inboard of the rails at each
+    # corner — so a member placed at a corner's Z runs straight through two wheels. Real
+    # chassis put their crossmembers BETWEEN the modules for exactly this reason. Nudge any
+    # member whose Z lands in a module band to the nearest clear side of it; the mechanism
+    # feet above it move with it, because both read the same station dict.
+    keepout = _module_bands(spec, cm_sec[0] / 2)
+    if keepout:
+        nudged: list[tuple[float, str]] = []
+        for z, station in placed:
+            for lo, hi in keepout:
+                if lo < z < hi:
+                    z = lo if (z - lo) < (hi - z) else hi
+            nudged.append((round(z, 3), station))
+        placed = nudged
+        for key, _ in _STATION_DEFAULTS:
+            for z, station in placed:
+                if station == key:
+                    stations[key] = z
     for z, station in sorted(placed):
         features.append(tube(f"crossmember{' at ' + station if station else ''}",
-                             cm_sec, cross_len,
+                             cm_sec, cm_len,
                              _at(0, cm_y, z), _rot(0, 90, 0), bolts=2.5,
                              note=f"under the {station} feet; top face flush with the rails"
                                   if station else "top face flush with the rails"))
@@ -884,8 +935,18 @@ def _swerve_module(dt: dict[str, Any], index: int, at: list[float],
     # frame, the published figure for this module class. Deriving the centre from `drop`
     # put the patch 4 in below the bellypan and the whole robot on stilts.
     ground_clearance = 1.125
-    features.append(wheel("drive wheel", wheel_d, 1.5, _at(0.2, wheel_d / 2 - ground_clearance, 0.2),
-                          _rot(0, 0, 90), kind="tread", durometer="billet with grip tread"))
+    # The wheel sits INBOARD of its own plate, and which way "inboard" is depends on the
+    # corner. A fixed +0.2 offset moved the front-left wheel away from the rails and the
+    # other three straight into them; combined with a plate inset chosen so the top plate
+    # laps the rail tops, that put a slice of tread inside the frame tube on three corners.
+    # The plate has to reach the rails and the wheel has to clear them, so the wheel's
+    # position under the plate is the parameter that gives.
+    rail_wall = TUBE_2X1[1]                       # the rail the wheel must clear, 1 in wide
+    clear = max(0.20, rail_wall + wheel_d / 2 + 0.15 - rail_off - 0.5)
+    features.append(wheel("drive wheel", wheel_d, 1.5,
+                          _at(-sx_c * 0.2, wheel_d / 2 - ground_clearance, -sz_c * clear),
+                          _rot(0, 0, 90), kind="tread", durometer="billet with grip tread",
+                          note="inboard of the rails; the contact patch is what sets ride height"))
     features.append(bearing("azimuth main bearing", _at(0, 0.9, 0), bore=2.5, od=3.5, width=0.4))
     # Attachment, in both mount styles: a vertical bolt row on each rail centreline, dropping
     # through the plate into the tube. The corner-plate style adds the spreader plate over
@@ -1004,7 +1065,9 @@ def _drivetrain(spec: dict[str, Any], c: Choices) -> list[dict[str, Any]]:
     plate_in = dt.get("plate_in") or (4.10, 4.10)
     # Close enough to the corner that the module top plate laps onto the rail top faces —
     # the old 1.2 in margin held every module 0.2 in shy of the rails it claimed to bolt to.
-    inset = plate_in[0] / 2 + 0.55
+    # Shared with the chassis and the electrical layout, both of which have to stay out of
+    # the wheels this places.
+    inset = _module_inset(spec) or (plate_in[0] / 2 + 0.55)
     count = int(dt.get("module_count") or 0)
     if count == 0:
         env = [_feat("envelope", "reserved module envelope",
@@ -1195,8 +1258,16 @@ def _intake(spec: dict[str, Any], c: Choices) -> dict[str, Any] | None:
                                   (roller_ats[0][2] + pivot_z - 1.4) / 2), dia=0.9, w=0.4,
                               rot=_rot(0, 0, 90)))
     if ik.get("indexer"):
-        features.append(polycarb("indexer guide", (width - 1.0, 0.093, centre + 2.0),
-                                 _at(0, pivot_y - 0.8, pivot_z + 1.6), _rot(-18, 0, 0)))
+        # The guide runs BETWEEN the front modules, so it is as wide as the gap between them
+        # and no wider. Sizing it off the intake width let it grow past the frame and through
+        # both front modules' steer motors — the intake is allowed over the bumper, but not
+        # through the drivetrain.
+        inset = _module_inset(spec)
+        span = (w - 2 * (inset + 2.3)) if inset else (w - 1.0)
+        features.append(polycarb("indexer guide",
+                                 (max(4.0, min(width - 1.0, span)), 0.093, centre + 2.0),
+                                 _at(0, pivot_y - 0.8, pivot_z + 1.6), _rot(-18, 0, 0),
+                                 note="spans the gap between the front modules"))
 
     # The limited deploy arc, for the viewer and any downstream consumer: rotation about the
     # dead axle from the deployed pose (as modelled, 0°) up and back to the stow.  The green
@@ -1237,9 +1308,18 @@ def _hopper(spec: dict[str, Any], lane_x: float, c: Choices,
     if not hp.get("included"):
         return None
     frame = spec["frame"]
-    ln = frame["length_in"]
-    width = hp.get("floor_width_in", 20.0)
-    depth = hp.get("floor_depth_in", 14.0)
+    w, ln = frame["width_in"], frame["length_in"]
+    # The hopper is the biggest single volume on the robot, and it has to fit INSIDE the
+    # frame: its floor, its walls, its support rails and its motors all live below bumper
+    # height, where the frame line is five inches of plywood and foam. Taking the spec's
+    # floor width at face value produced a 29 in hopper on a 27 in frame, whose funnels
+    # reached through both bumpers and into the front swerve modules — and, because it was
+    # the widest thing on the robot, left the placement pass nowhere to put anything else.
+    rail_w = TUBE_2X1[1]
+    max_width = w - 2 * (rail_w + 0.4)
+    max_depth = ln - 2 * (rail_w + 0.4)
+    width = min(hp.get("floor_width_in", 20.0), max_width)
+    depth = min(hp.get("floor_depth_in", 14.0), max_depth)
     # The station (including the clear-the-tower shift) comes from `_stations`, the same
     # resolver the chassis used to place this station's crossmember.
     wall_h = hp.get("wall_height_in", 10.0)
@@ -1320,10 +1400,15 @@ def _hopper(spec: dict[str, Any], lane_x: float, c: Choices,
         features.append(shaft("agitator shaft", 0.375, width * 0.8,
                               _at(0, floor_y + wall_h * 0.62, depth * 0.12), _rot(0, 0, 90),
                               form="round"))
+        # The paddles index around the SHAFT, and the shaft runs across the hopper along X.
+        # Rotating them about Z instead swung a 12 in paddle up into the Y plane, so each one
+        # boxed as a 12 x 10 in slab standing above the hopper walls and fouled every
+        # mechanism behind it. About X, the paddle stays across the hopper and its 2.2 in
+        # blade is what sweeps — which is also the only version that would clear the floor.
         for i in range(3):
             features.append(polycarb(f"agitator paddle {i + 1}", (width * 0.6, 0.093, 2.2),
                                      _at(0, floor_y + wall_h * 0.62, depth * 0.12),
-                                     _rot(0, 0, 60 * i)))
+                                     _rot(60 * i, 0, 0)))
 
     # Exit lane and gate. One piece wide, with a sensor that tells the code exactly one is
     # staged — a timer here is how you end up feeding two and jamming the shooter.
@@ -2127,7 +2212,19 @@ def _electrical(spec: dict[str, Any]) -> dict[str, Any] | None:
     # under it. Everything else bolts flat to the bellypan; the layout's z is advisory and
     # was floating the battery half a foot in the air.
     mast_h = 14.0
-    mast_x, mast_z = -w / 2 + 2.2, ln / 2 - 2.2
+    # Inboard of the drivetrain, not on top of it. 2.2 in from each edge is exactly where a
+    # wheel is — a swerve module's on a swerve robot, a drive wheel's on a west-coast — so
+    # the mast used to stand inside one either way.
+    dt = spec.get("drivetrain") or {}
+    inset = _module_inset(spec)
+    if inset:
+        corner_clear = inset + dt.get("wheel_diameter_in", 4.0) / 2 + 0.6
+    elif dt.get("type") == "west-coast":
+        corner_clear = 2.6 + TUBE_2X1[1] / 2 + 0.9      # clear of the drive rail and its wheel
+    else:
+        corner_clear = 2.2
+    mast_x = -w / 2 + max(2.2, corner_clear)
+    mast_z = ln / 2 - 1.9
     mast_needed = any(pl["key"] in ("radio", "rsl") for pl in placements)
     if mast_needed:
         features.append(tube("radio mast", TUBE_1X1, mast_h,
@@ -2230,28 +2327,40 @@ _PLACEMENT_ORDER = ("intake", "hopper", "shooter", "elevator", "manipulator", "c
 PLACEMENT_GAP_IN = 0.75          # air left between two mechanisms once they are pulled apart
 
 
-def _footprints(assemblies: list[dict[str, Any]]) -> dict[str, tuple[float, float, float, float]]:
-    """World (x0, x1, z0, z1) per mechanism, from the bodies it actually emitted.
+def _footprints(assemblies: list[dict[str, Any]], *, below: float | None = None
+                ) -> dict[str, tuple[float, float, float, float, float, float]]:
+    """World (x0, x1, y0, y1, z0, z1) per mechanism, from the bodies it actually emitted.
+
+    Three dimensions, not two. A shooter head sitting a foot above a hopper shares its plan
+    view completely and touches none of it, and a resolver working in plan alone spends every
+    move it has trying to separate the two — which is how a turret got pushed off a tower and
+    into the hopper it was being fed by.
 
     Measured, not declared. A mechanism's footprint is whatever its motors, shelves and
     carriage plates end up reaching, and no hand-written bias table knows that number.
+
+    ``below`` keeps only the bodies that reach under that height. Passing the bumper's top
+    gives the footprint that has to stay ON the frame: above the bumper a mechanism may hang
+    over the edge all it likes, and below it the bumper is in the way.
     """
     from app.services.cad_contract import _floats, _world_box, expand_mirrors  # noqa: PLC0415
-    out: dict[str, tuple[float, float, float, float]] = {}
+    out: dict[str, tuple[float, float, float, float, float, float]] = {}
     for asm in assemblies:
         origin = _floats(asm.get("origin"), 3) or [0.0, 0.0, 0.0]
-        x0 = z0 = 1e9
-        x1 = z1 = -1e9
+        lo = [1e9, 1e9, 1e9]
+        hi = [-1e9, -1e9, -1e9]
         for feature in expand_mirrors(asm.get("features") or []):
             if feature.get("t") in ("belt", "rope", "cable", "envelope"):
                 continue
             box = _world_box(feature, origin)
             if not box:
                 continue
-            x0, x1 = min(x0, box[0][0]), max(x1, box[1][0])
-            z0, z1 = min(z0, box[0][2]), max(z1, box[1][2])
-        if x1 > x0:
-            out[str(asm.get("id"))] = (x0, x1, z0, z1)
+            if below is not None and box[0][1] >= below:
+                continue
+            for k in range(3):
+                lo[k], hi[k] = min(lo[k], box[0][k]), max(hi[k], box[1][k])
+        if hi[0] > lo[0]:
+            out[str(asm.get("id"))] = (lo[0], hi[0], lo[1], hi[1], lo[2], hi[2])
     # A turret does not occupy its footprint, it occupies the circle it sweeps. Checking the
     # drawn pose is how a rotating head ends up sharing a lane with a tower.
     for asm in assemblies:
@@ -2261,16 +2370,67 @@ def _footprints(assemblies: list[dict[str, Any]]) -> dict[str, tuple[float, floa
             continue
         origin = _floats(asm.get("origin"), 3) or [0.0, 0.0, 0.0]
         cx, cz = origin[0] + float(sweep.get("x", 0.0)), origin[2] + float(sweep.get("z", 0.0))
-        x0, x1, z0, z1 = out[aid]
+        x0, x1, y0, y1, z0, z1 = out[aid]
         r = max(abs(x0 - cx), abs(x1 - cx), abs(z0 - cz), abs(z1 - cz))
-        out[aid] = (cx - r, cx + r, cz - r, cz + r)
+        out[aid] = (cx - r, cx + r, y0, y1, cz - r, cz + r)
     return out
 
 
-def _separate(spec: dict[str, Any], prints: dict[str, tuple[float, float, float, float]],
+_Box = tuple[float, float, float, float, float, float]
+
+# How many bodies of one assembly the placement pass reasons about. A hopper is a big hollow
+# box: one AABB round it is almost entirely air, so an optimiser working from that overstates
+# what it occupies and makes bad trades — it will happily shove a shooter into the middle of
+# a hopper because the box says the space was taken anyway. Bodies give it the same view the
+# clearance audit has. The cap keeps the inner loop bounded; the largest bodies are kept,
+# because those are the ones a collision is actually about.
+_PLACEMENT_BODY_CAP = 48
+
+
+def _body_boxes(assemblies: list[dict[str, Any]], cap: int = _PLACEMENT_BODY_CAP
+                ) -> dict[str, list[_Box]]:
+    """Per assembly, the world boxes of the bodies that can collide with another mechanism.
+
+    Same exclusions and the same swept-turret treatment as `clearance_report`, so the thing
+    the placement pass minimises is the thing the audit measures.
+    """
+    from app.services.cad_contract import (  # noqa: PLC0415
+        _PASSES_THROUGH, _floats, _world_box, expand_mirrors)
+    out: dict[str, list[_Box]] = {}
+    for asm in assemblies:
+        aid = str(asm.get("id"))
+        origin = _floats(asm.get("origin"), 3) or [0.0, 0.0, 0.0]
+        sweep = asm.get("sweep")
+        cx = origin[0] + float((sweep or {}).get("x", 0.0))
+        cz = origin[2] + float((sweep or {}).get("z", 0.0))
+        floor = origin[1] + float((sweep or {}).get("from_y", 0.0))
+        boxes: list[_Box] = []
+        for feature in expand_mirrors(asm.get("features") or []):
+            if feature.get("t") in _PASSES_THROUGH or feature.get("to") is not None:
+                continue
+            box = _world_box(feature, origin)
+            if not box:
+                continue
+            low, high = box
+            if sweep and high[1] >= floor:
+                r = max(abs(low[0] - cx), abs(high[0] - cx), abs(low[2] - cz), abs(high[2] - cz))
+                low = [cx - r, low[1], cz - r]
+                high = [cx + r, high[1], cz + r]
+            boxes.append((low[0], high[0], low[1], high[1], low[2], high[2]))
+        if len(boxes) > cap:
+            boxes.sort(key=lambda b: -((b[1] - b[0]) * (b[3] - b[2]) * (b[5] - b[4])))
+            boxes = boxes[:cap]
+        if boxes:
+            out[aid] = boxes
+    return out
+
+
+def _separate(spec: dict[str, Any], prints: dict[str, _Box],
               stations: dict[str, float], lanes: dict[str, float],
-              fixed: dict[str, tuple[float, float, float, float]] | None = None,
-              swept: frozenset[str] = frozenset()) -> tuple[dict, dict, list]:
+              fixed: dict[str, _Box] | None = None,
+              swept: frozenset[str] = frozenset(),
+              low: dict[str, _Box] | None = None,
+              bodies: dict[str, list[_Box]] | None = None) -> tuple[dict, dict, list]:
     """Pull interfering mechanisms apart along Z, then X, and say what could not be resolved.
 
     The placement used to be a table of biases that knew nothing about how big anything was.
@@ -2295,41 +2455,132 @@ def _separate(spec: dict[str, Any], prints: dict[str, tuple[float, float, float,
     # mechanism shoved into one has not been placed, it has been hidden. Counting them in the
     # cost is what stopped the turret being pushed out of the elevator and into a module.
     obstacles = dict(fixed or {})
+    bodies = dict(bodies or {})
+    shifts: dict[str, tuple[float, float]] = {}
 
-    def pair_overlap(a: tuple[float, float, float, float],
-                     b: tuple[float, float, float, float]) -> float:
-        return min(min(a[1], b[1]) - max(a[0], b[0]), min(a[3], b[3]) - max(a[2], b[2]))
+    def box_overlap(a: _Box, b: _Box) -> float:
+        """How deep two boxes interpenetrate: the smallest of the three axis overlaps."""
+        return min(min(a[2 * k + 1], b[2 * k + 1]) - max(a[2 * k], b[2 * k]) for k in range(3))
 
-    def outside(key: str, box: tuple[float, float, float, float]) -> float:
+    from app.services.cad_contract import PENETRATION_TOL_IN  # noqa: PLC0415
+
+    def pair_overlap(a: _Box, b: _Box) -> float:
+        """Assembly against assembly, from their bodies when we have them.
+
+        Falls back to the envelope when a set is missing — the drivetrain obstacles and the
+        outside-the-frame term still work box to box.
+        """
+        return max(0.0, box_overlap(a, b))
+
+    def set_overlap(a: str, b: str, shift: dict[str, tuple[float, float]],
+                    state: dict[str, _Box] | None = None) -> float:
+        """Total body-on-body penetration between two mechanisms, past the audit's tolerance.
+
+        This is deliberately the same quantity `clearance_report` counts, so a move the
+        optimiser calls an improvement is an improvement in the report too. Optimising the
+        assembly envelopes instead let it trade a real collision for a phantom one.
+
+        The envelopes are still worth keeping for one thing: if two of them do not touch,
+        no pair of their bodies can, and the quadratic loop is skipped. Most pairs on a robot
+        are in that case, and without the check the placement pass took seconds.
+        """
+        ba, bb = bodies.get(a), bodies.get(b)
+        if not ba or not bb:
+            return 0.0
+        if state is not None and a in state and b in state:
+            if box_overlap(state[a], state[b]) <= PENETRATION_TOL_IN:
+                return 0.0
+        dxa, dza = shift.get(a, (0.0, 0.0))
+        dxb, dzb = shift.get(b, (0.0, 0.0))
+        total = 0.0
+        for p in ba:
+            px0, px1, py0, py1, pz0, pz1 = p
+            px0 += dxa; px1 += dxa; pz0 += dza; pz1 += dza
+            for q in bb:
+                qx0, qx1, qy0, qy1, qz0, qz1 = q
+                depth = min(min(px1, qx1 + dxb) - max(px0, qx0 + dxb),
+                            min(py1, qy1) - max(py0, qy0),
+                            min(pz1, qz1 + dzb) - max(pz0, qz0 + dzb))
+                if depth > PENETRATION_TOL_IN:
+                    total += depth - PENETRATION_TOL_IN
+        return total
+
+    # How far below the bumper's top a body has to be for the frame line to be a wall rather
+    # than a suggestion. The offsets a mechanism is shifted by are the same for every body it
+    # owns, so the low footprint is tracked alongside the full one and shifted with it.
+    lows = dict(low or {})
+
+    # An inch of one mechanism inside another is not the same problem as an inch of overhang:
+    # the first cannot be built at all and the second is a packaging choice teams make every
+    # season. Weighting them equally made the optimiser stack mechanisms on top of each other
+    # rather than let anything past the frame line, which is the wrong trade in every case.
+    INTERFERENCE_WEIGHT = 3.0
+
+    def _over(box: _Box) -> float:
+        """How far a box reaches past the frame perimeter, in plan."""
+        return (max(0.0, -half_w - box[0]) + max(0.0, box[1] - half_w)
+                + max(0.0, -half_l - box[4]) + max(0.0, box[5] - half_l))
+
+    def outside(key: str, box: _Box, low_box: _Box | None) -> float:
         """How far this mechanism hangs off the frame, weighted by how much that matters.
 
         A hard "must stay on the frame" gate cannot work here: an over-bumper intake is
         supposed to hang off, and a design that starts out of bounds would freeze with no
-        legal move. As a cost term it just makes leaving the frame expensive, so the turret
-        settles inside instead of being shoved onto the back rail to dodge the tower.
-        """
-        over = (max(0.0, -half_w - box[0]) + max(0.0, box[1] - half_w)
-                + max(0.0, -half_l - box[2]) + max(0.0, box[3] - half_l))
-        # A rotating head has to fit its whole circle; anything else may reach out a little.
-        return over * (1.4 if key in swept else 0.30)
+        legal move. As a cost term it just makes leaving the frame expensive.
 
-    def cost(state: dict[str, tuple[float, float, float, float]]) -> float:
+        Height is the whole distinction. Above the bumper, hanging over the frame line is a
+        packaging choice teams make every season. Below it there is five inches of plywood
+        and foam in the way, so it is not overhang at all — it is a collision, and it is
+        priced like one. Without that split the optimiser cheerfully relieved an inch of
+        mechanism-on-mechanism overlap by driving a tower three inches into the bumper.
+        """
+        cost_ = _over(box) * (1.4 if key in swept else 0.35)
+        if low_box is not None:
+            cost_ += _over(low_box) * INTERFERENCE_WEIGHT
+        return cost_
+
+    def key_cost(key: str, state: dict[str, _Box], low_state: dict[str, _Box],
+                 shift: dict[str, tuple[float, float]]) -> float:
+        """Every term in the total that involves one mechanism.
+
+        Moving a mechanism cannot change a term it does not appear in, so a candidate is
+        scored by the delta on this alone. Rescoring the whole robot per candidate meant
+        recomputing hundreds of pairs that had not moved, and turned a 0.1 s build into
+        nearly two seconds.
+        """
+        total = outside(key, state[key], low_state.get(key))
+        for b in order:
+            if b == key or exempt(key, b):
+                continue
+            total += INTERFERENCE_WEIGHT * set_overlap(key, b, shift, state)
+        for name, box in obstacles.items():
+            total += INTERFERENCE_WEIGHT * (
+                set_overlap(key, name, shift, {**state, name: box}) if name in bodies
+                else pair_overlap(state[key], box))
+        return total
+
+    def cost(state: dict[str, _Box], low_state: dict[str, _Box] | None = None,
+             shift: dict[str, tuple[float, float]] | None = None) -> float:
+        low_state = lows if low_state is None else low_state
+        shift = shift or {}
         total = 0.0
         for i, a in enumerate(order):
-            total += outside(a, state[a])
+            total += outside(a, state[a], low_state.get(a))
             for b in order[i + 1:]:
                 if exempt(a, b):
                     continue
-                total += max(0.0, pair_overlap(state[a], state[b]))
-            for box in obstacles.values():
-                total += max(0.0, pair_overlap(state[a], box))
+                total += INTERFERENCE_WEIGHT * set_overlap(a, b, shift, state)
+            for name, box in obstacles.items():
+                total += INTERFERENCE_WEIGHT * (
+                    set_overlap(a, name, shift, {**state, name: box}) if name in bodies
+                    else pair_overlap(state[a], box))
         return total
 
-    def inside(box: tuple[float, float, float, float]) -> bool:
+    def inside(box: _Box) -> bool:
         # A loose sanity bound only — how far off the frame is worth going is decided by the
         # cost, not here. This just stops a mechanism being flung into the next postcode.
         return (-half_w <= (box[0] + box[1]) / 2 <= half_w
-                and -half_l <= (box[2] + box[3]) / 2 <= half_l)
+                and -half_l <= (box[4] + box[5]) / 2 <= half_l)
 
     # Greedy, and it may never make a design worse: a shift is committed only if it strictly
     # reduces the total interference. The first version pushed whichever mechanism was lower
@@ -2343,22 +2594,37 @@ def _separate(spec: dict[str, Any], prints: dict[str, tuple[float, float, float,
         # Lowest priority moves first, and moves furthest: the intake is bolted to the front
         # rail and never moves at all.
         for key in reversed(order[1:]):
-            x0, x1, z0, z1 = boxes[key]
+            x0, x1, y0, y1, z0, z1 = boxes[key]
+            here = key_cost(key, boxes, lows, shifts)
+            if here <= 1e-9:
+                continue                       # already clear; no move can improve on it
             for dx, dz in [(0.0, s * d) for d in (1.0, 2.0, 3.5, 5.0, 7.5) for s in (1, -1)] \
                         + [(s * d, 0.0) for d in (1.0, 2.0, 3.5, 5.0, 7.5) for s in (1, -1)]:
-                moved_box = (x0 + dx, x1 + dx, z0 + dz, z1 + dz)
+                moved_box = (x0 + dx, x1 + dx, y0, y1, z0 + dz, z1 + dz)
                 if not inside(moved_box):
                     continue
                 trial = dict(boxes)
                 trial[key] = moved_box
-                value = cost(trial)
+                trial_low = dict(lows)
+                if key in trial_low:
+                    a0, a1, b0, b1, c0, c1 = trial_low[key]
+                    trial_low[key] = (a0 + dx, a1 + dx, b0, b1, c0 + dz, c1 + dz)
+                trial_shift = dict(shifts)
+                sx0, sz0 = trial_shift.get(key, (0.0, 0.0))
+                trial_shift[key] = (sx0 + dx, sz0 + dz)
+                value = best + key_cost(key, trial, trial_low, trial_shift) - here
                 if value < best - 1e-6 and (winner is None or value < winner[0]):
                     winner = (value, key, dx, dz)
         if winner is None:
             break
         best, key, dx, dz = winner
-        x0, x1, z0, z1 = boxes[key]
-        boxes[key] = (x0 + dx, x1 + dx, z0 + dz, z1 + dz)
+        x0, x1, y0, y1, z0, z1 = boxes[key]
+        boxes[key] = (x0 + dx, x1 + dx, y0, y1, z0 + dz, z1 + dz)
+        if key in lows:                    # the low footprint rides along with its mechanism
+            a0, a1, b0, b1, c0, c1 = lows[key]
+            lows[key] = (a0 + dx, a1 + dx, b0, b1, c0 + dz, c1 + dz)
+        sx0, sz0 = shifts.get(key, (0.0, 0.0))
+        shifts[key] = (sx0 + dx, sz0 + dz)
         if key in stations:
             stations[key] = round(stations[key] + dz, 3)
         if key in lanes:
@@ -2370,14 +2636,12 @@ def _separate(spec: dict[str, Any], prints: dict[str, tuple[float, float, float,
         for b in order[i + 1:]:
             if exempt(a, b):
                 continue
-            over = pair_overlap(boxes[a], boxes[b])
-            if over > PLACEMENT_GAP_IN:
-                unresolved.append(f"{a} and {b} overlap by {over:.1f} in and this frame has "
-                                  f"nowhere left to put either")
-        for name, box in obstacles.items():
-            over = pair_overlap(boxes[a], box)
-            if over > PLACEMENT_GAP_IN:
-                unresolved.append(f"{a} reaches {over:.1f} in into {name}, which cannot move")
+            if set_overlap(a, b, shifts) > PLACEMENT_GAP_IN:
+                unresolved.append(f"{a} and {b} still interfere and this frame has nowhere "
+                                  f"left to put either")
+        for name in obstacles:
+            if name in bodies and set_overlap(a, name, shifts) > PLACEMENT_GAP_IN:
+                unresolved.append(f"{a} reaches into {name}, which cannot move")
     return stations, lanes, unresolved
 
 
@@ -2419,7 +2683,12 @@ def build_cad(spec: dict[str, Any]) -> dict[str, Any]:
     provisional = mechanisms(lanes, stations)
     stations, lanes, unresolved = _separate(
         spec, _footprints(provisional), stations, lanes, _footprints(drivetrain),
-        swept=frozenset(str(a["id"]) for a in provisional if a.get("sweep")))
+        swept=frozenset(str(a["id"]) for a in provisional if a.get("sweep")),
+        # Below the bumper's top the frame line is plywood and foam, not open air. The
+        # intake is meant to be out there, and it never moves, so it is left out.
+        low={k: v for k, v in _footprints(provisional, below=BUMPER_HEIGHT_IN).items()
+             if k != "intake"},
+        bodies={**_body_boxes(provisional), **_body_boxes(drivetrain)})
 
     assemblies: list[dict[str, Any]] = [_chassis(spec, c, stations)]
     # A chassis-only request gets a chassis. The drivetrain and the control system are

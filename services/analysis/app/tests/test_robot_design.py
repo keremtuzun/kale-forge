@@ -445,6 +445,54 @@ def test_a_robot_with_an_elevator_does_not_build_a_second_tower_for_the_climber(
         "and no crossmember is placed under feet that are never built"
 
 
+def test_the_drivetrain_owns_its_corners():
+    """Three things used to be standing inside a wheel.
+
+    The wheel offset under a swerve module was a fixed +0.2 in, which moved the front-left
+    wheel away from the rails and the other three into them. A crossmember was cut to the
+    full inside width, so on a west-coast it ran through both drive rails and both columns of
+    wheels. And the radio mast was placed 2.2 in from each edge, which is exactly where a
+    wheel is on either drivetrain.
+    """
+    from app.services.cad_contract import clearance_report
+
+    for prompt in (_PACKED, "27x27 west-coast drivebase on Krakens. Defence bot, nothing else."):
+        cad = _spec(prompt)["cad"]
+        for clash in clearance_report(cad)["clashes"]:
+            names = f"{clash['a']} {clash['b']}"
+            assert "drive wheel" not in names, f"{prompt[:24]}: {clash}"
+            assert "drive rail" not in names, f"{prompt[:24]}: {clash}"
+
+
+def test_mechanisms_are_not_packaged_inside_each_other():
+    """The placement pass reasons about BODIES, not one box per assembly.
+
+    A hopper is a big hollow box: an envelope round it is almost all air, so an optimiser
+    working from that thinks the space is taken anyway and will happily push a shooter into
+    the middle of it. Scoring the same quantity the clearance audit reports is what stopped
+    that, and it is the property worth pinning — the exact count will move as geometry
+    improves, but a design should never go backwards past this bound.
+    """
+    from app.services.cad_contract import clearance_report
+
+    # Bounds are the counts this suite's season actually produces, with a little headroom.
+    # They came down from 37, 35 and 20 respectively; the point of the bound is that they
+    # never climb back, not that these particular numbers are good.
+    worst = {
+        _PACKED: 18,
+        "Experienced team, 27 inch swerve, turreted dual flywheel hooded shooter, "
+        "circular spindexer and an active floor sweeper with indexer.": 28,
+        "26x26 robot with a horizontal series-roller intake and a four-bar linkage arm.": 10,
+        "27x27 west-coast drivebase on Krakens. Defence bot, nothing else.": 0,
+        "no mechanisms, only a 27 inch chassis": 0,
+    }
+    for prompt, bound in worst.items():
+        report = clearance_report(_spec(prompt)["cad"])
+        assert report["clash_count"] <= bound, (
+            f"{prompt[:40]}: {report['clash_count']} interfering bodies, was under {bound}; "
+            f"worst {report['worst_in']} in on {report['clashes'][:1]}")
+
+
 def test_the_team_number_is_modelled_at_its_legal_size():
     """R412 wants white numerals at least 3.75 in tall on a 0.5 in stroke, in three or more
     places about 90 deg apart. They were drawn only in the renderer, at 1.95 in — a bit over
