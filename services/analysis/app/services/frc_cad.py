@@ -170,8 +170,9 @@ def shaft(name: str, dia: float, length: float, at: list[float],
 
 def bearing(name: str, at: list[float], rot: list[float] | None = None, *,
             bore: float = _HEX_BORE, od: float = _BEARING_OD, width: float = 0.313,
-            flanged: bool = True) -> dict[str, Any]:
-    return _feat("bearing", name, at, bore=bore, od=od, w=width, rot=rot, flanged=flanged)
+            flanged: bool = True, note: str = "") -> dict[str, Any]:
+    return _feat("bearing", name, at, bore=bore, od=od, w=width, rot=rot, flanged=flanged,
+                 note=note or None)
 
 
 def pulley(name: str, teeth: int, width: float, at: list[float],
@@ -225,13 +226,40 @@ def gearbox(name: str, size: tuple[float, float, float], at: list[float],
 
 
 def gusset(name: str, size: tuple[float, float], at: list[float],
-           rot: list[float] | None = None, *, thickness: float = 0.090) -> dict[str, Any]:
-    return _feat("gusset", name, at, size=[size[0], size[1]], th=thickness, rot=rot)
+           rot: list[float] | None = None, *, thickness: float = 0.090,
+           form: str = "flat", leg: float = 0.0, holes: float = 0.0,
+           mat: str = "aluminium", note: str = "") -> dict[str, Any]:
+    """A bolt-on joining plate.
+
+    ``form`` is how the blank leaves the brake press, and it is not cosmetic — it decides how
+    many tube faces the joint actually catches:
+
+    * ``flat``     one face, the plate every corner gets;
+    * ``angle``    bent 90°, catching two faces off one part (``leg`` is the bent leg's
+                   height; it defaults to two thirds of the plate);
+    * ``triangle`` a flat plate with the unloaded corner cut away, which is what a shear
+                   gusset in a truss actually looks like.
+
+    Bent parts are 5052, not 6061: the reference teams bend sheet in 5052 because 6061 cracks
+    at the bend radius a bracket this size needs. ``holes`` is the hole pitch the blank is
+    punched on, so a gusset lands on the rail's existing rows instead of asking for new ones.
+    """
+    feature = _feat("gusset", name, at, size=[size[0], size[1]], th=thickness, rot=rot,
+                    mat=mat, note=note or None)
+    if form != "flat":
+        feature["form"] = form
+        if form == "angle":
+            feature["leg"] = round(leg or min(size) * 0.66, 3)
+            feature["alloy"] = "5052"
+    if holes:
+        feature["pitch"] = round(holes, 3)
+    return feature
 
 
 def polycarb(name: str, size: tuple[float, float, float], at: list[float],
-             rot: list[float] | None = None) -> dict[str, Any]:
-    return _feat("polycarb", name, at, size=[round(v, 3) for v in size], rot=rot)
+             rot: list[float] | None = None, *, note: str = "") -> dict[str, Any]:
+    return _feat("polycarb", name, at, size=[round(v, 3) for v in size], rot=rot,
+                 note=note or None)
 
 
 def rope(name: str, frm: list[float], to: list[float], dia: float = 0.125,
@@ -399,12 +427,48 @@ def _asm(asm_id: str, name: str, kind: str, features: list[dict[str, Any]], *,
 # (0.75 + 2.50 + 2 × 0.03 = 3.31).  Two noodles stack to make the 5.00 in face: 2 × 2.50.
 # The bumper is modelled the way the reference builds it — per side: one plywood backing,
 # two stacked noodles, one fabric wrap, mounting brackets into the rail — never one slab.
+#
+# Two authorities have to agree here.  HOW it goes together comes from the team's Onshape
+# course (one continuous ring swept round a rounded-corner path).  WHAT SIZE each piece is
+# comes from the game manual's bumper rules, because a bumper built the right way to the
+# wrong dimensions is a bumper that fails inspection:
+#
+#   R402-A  padding at least 2.25 in deep and 4.5 in tall
+#   R402-B  backing at least 4.5 in tall, 3/4 in nominal plywood
+#   R402-C  cloth over every outward, upward and downward padding face, nothing exposed
+#   R404    no hard bumper part more than 1.25 in outboard of the frame perimeter, and
+#           padding standing at least 2.0 in proud of any hard part
+#   R405    padding and backing entirely filling the BUMPER ZONE, 2.5 – 5.75 in off the floor
+#   R406    uncompressed padding at least 2.25 in around every corner
+#   R410    a rigid fastening system — removable by two people in under five minutes
+#   R412    white numerals at least 3.75 in tall with at least a 0.5 in stroke, in three or
+#           more places about 90° apart
 BUMPER_HEIGHT_IN = 5.00
 BUMPER_THICKNESS_IN = 3.31
 BUMPER_PLYWOOD_IN = 0.75
 BUMPER_NOODLE_DIA_IN = 2.50
 BUMPER_FABRIC_IN = 0.03
 BUMPER_NOODLE_IN = round(BUMPER_THICKNESS_IN - BUMPER_PLYWOOD_IN, 3)
+
+# The carpet, in robot coordinates.  The drivetrain sets every wheel so the frame rides 2 in
+# off the floor, which puts the carpet at Y = -2.0 and the rail underside (Y = 0) 2 in up.
+# Every bumper-zone dimension in the manual is measured from the carpet, so the geometry and
+# the rule check have to read that ride height from ONE constant or they will disagree about
+# whether a legal bumper is legal.
+RIDE_HEIGHT_IN = 2.00
+BUMPER_ZONE_IN = (2.50, 5.75)
+
+# R412.  4.0 in of digit height and a 5/8 in stroke clear the 3.75 / 0.5 in minimums with
+# enough margin to survive a cloth wrap, and four digits still fit inside a 27 in side.
+TEAM_NUMBER_HEIGHT_IN = 4.00
+TEAM_NUMBER_STROKE_IN = 0.625
+TEAM_NUMBER_DIGIT_W_IN = 2.55        # condensed bold, the weight teams actually cut vinyl in
+
+# Bumper mounting hardware.  The reference teams all land on the same stack: a bent 5052
+# bracket that hooks the rail, one 1/4-20 through the plywood into it, and a flange nut.
+# Two people, four nuts, well under five minutes — which is what R410 is really asking.
+BUMPER_BOLT_DIA_IN = 0.25
+BUMPER_SCREW_DIA_IN = 0.164          # #8 wood screw into the plywood edge
 
 
 def noodle(name: str, dia: float, length: float, at: list[float],
@@ -424,12 +488,37 @@ def noodle_corner(name: str, dia: float, bend: float, at: list[float],
 
 
 def fabric(name: str, size: tuple[float, float, float], at: list[float],
-           rot: list[float] | None = None, *, note: str = "") -> dict[str, Any]:
+           rot: list[float] | None = None, *, bend: float = 0.0,
+           note: str = "") -> dict[str, Any]:
     """A bumper fabric wrap: a U-channel of cloth (outer face + top + bottom returns) whose
     ``size`` is (length along the segment, height, wrapped depth). Carries the alliance
-    colour in the viewer and the team number rides on it."""
-    return _feat("fabric", name, at, size=[round(v, 3) for v in size], rot=rot,
-                 note=note or None)
+    colour in the viewer and the team number rides on it.
+
+    ``bend`` turns the straight channel into a quarter-bend of the same channel, swept at
+    that centreline radius, which is what closes a corner. R402-C wants cloth over every
+    outward-facing padding surface: four straight wraps leave eight corner noodle bends bare,
+    and bare foam at the corner is the single most common bumper re-inspection."""
+    feature = _feat("fabric", name, at, size=[round(v, 3) for v in size], rot=rot,
+                    note=note or None)
+    if bend:
+        feature["bend"] = round(bend, 3)
+    return feature
+
+
+def decal(name: str, text: str, at: list[float], *, height: float,
+          stroke: float, rot: list[float] | None = None,
+          note: str = "") -> dict[str, Any]:
+    """Applied lettering — in practice, the team number on the bumper cloth.
+
+    This is a part, not a caption. R412 gives the numerals a minimum height and a minimum
+    stroke width and an inspector measures both with a ruler, so they belong in the feature
+    tree where the rule check, the STEP export and the viewer all read the same two numbers.
+    Drawn only in the renderer, as they were, they were 1.95 in tall — a bit over half the
+    legal height — and nothing in the pipeline was in a position to notice."""
+    width = round(max(1, len(str(text))) * TEAM_NUMBER_DIGIT_W_IN, 3)
+    return _feat("decal", name, at, text=str(text),
+                 size=[width, round(height, 3), 0.02], stroke=round(stroke, 3),
+                 rot=rot, note=note or None)
 
 
 def bumper_envelope(width_in: float, length_in: float) -> dict[str, float]:
@@ -439,6 +528,9 @@ def bumper_envelope(width_in: float, length_in: float) -> dict[str, float]:
     read one definition instead of each re-deriving it from a plate size.
     """
     t = BUMPER_THICKNESS_IN
+    floor_bottom = RIDE_HEIGHT_IN                       # rail underside, off the carpet
+    floor_top = round(RIDE_HEIGHT_IN + BUMPER_HEIGHT_IN, 3)
+    hard_out = round(BUMPER_FABRIC_IN + BUMPER_PLYWOOD_IN, 3)   # plywood outer face
     return {"thickness_in": t, "height_in": BUMPER_HEIGHT_IN,
             "plywood_in": BUMPER_PLYWOOD_IN, "noodle_in": BUMPER_NOODLE_IN,
             "noodle_dia_in": BUMPER_NOODLE_DIA_IN, "noodles_per_segment": 2,
@@ -447,18 +539,36 @@ def bumper_envelope(width_in: float, length_in: float) -> dict[str, float]:
                              f"{BUMPER_NOODLE_DIA_IN:g} in noodles + fabric wrap"),
             "outer_width_in": round(width_in + 2 * t, 3),
             "outer_length_in": round(length_in + 2 * t, 3),
-            "bottom_y_in": 0.0, "top_y_in": BUMPER_HEIGHT_IN}
+            "bottom_y_in": 0.0, "top_y_in": BUMPER_HEIGHT_IN,
+            # Everything below is measured from the carpet, because that is where the manual
+            # measures it from. Quoting a bumper height without saying how high off the floor
+            # it sits says nothing about whether it fills the zone.
+            "ride_height_in": RIDE_HEIGHT_IN,
+            "floor_to_bottom_in": floor_bottom, "floor_to_top_in": floor_top,
+            "zone_in": list(BUMPER_ZONE_IN),
+            "zone_filled": floor_bottom <= BUMPER_ZONE_IN[0] + 1e-9
+                           and floor_top >= BUMPER_ZONE_IN[1] - 1e-9,
+            "hard_part_out_in": hard_out,
+            "padding_proud_of_hard_in": round(t - hard_out, 3),
+            "corner_padding_in": round(BUMPER_FABRIC_IN + BUMPER_PLYWOOD_IN
+                                       + BUMPER_NOODLE_DIA_IN, 3),
+            "number_height_in": TEAM_NUMBER_HEIGHT_IN,
+            "number_stroke_in": TEAM_NUMBER_STROKE_IN,
+            "number_colour": "white", "number_locations": 4}
 
 
-def _bumper(w: float, ln: float) -> list[dict[str, Any]]:
-    """Four bumper segments wrapping the frame, built exactly like the reference bumper.
+def _bumper(w: float, ln: float, team_number: int | str = 0) -> list[dict[str, Any]]:
+    """The bumper ring, built the way the reference builds it and sized the way R402–R412
+    measures it.
 
     Per segment, inside out: a plywood backing standing the full 5.00 in face, two Ø2.5 in
     pool noodles stacked on the plywood's outer face, and the fabric wrap closing over the
     outer face and the top and bottom returns.  The front and back segments run the full
-    outer width and the side segments are captured between them — four straight sections
-    and four corner brackets, not a moulded ring.  Every segment hangs on two mount
-    brackets reaching under the frame rail, so the bumper is attached, not adjacent.
+    outer width and the side segments are captured between them.  The corners are continuous
+    — a quarter-bend of noodle at each level and a quarter-bend of cloth over them — because
+    the course sweeps the whole ring round a rounded-corner path, and because bare foam at a
+    corner is a re-inspection.  Every segment is hung on an angle bracket and pinned by a
+    through-bolt, and carries the team number at its legal size.
     """
     t = BUMPER_THICKNESS_IN
     ply = BUMPER_PLYWOOD_IN
@@ -521,22 +631,97 @@ def _bumper(w: float, ln: float) -> list[dict[str, Any]]:
                     _at(sx * half_w, y, sz * half_l),
                     _rot(0, corner_ry[(sx, sz)], 0)))
 
-    # Attachment: a corner bracket tying each pair of plywood ends together, and two mount
-    # brackets per side hooking the segment onto the rail underside — the reference mounts
-    # its bumper to the frame, so the model does too.
+    # Corner cloth. R402-C wants cloth over every outward-facing padding surface, and four
+    # straight wraps leave the eight corner bends bare. One quarter-bend of the same U-channel
+    # per corner closes the ring — swept at the wrap's own centreline radius so it lands on
+    # the straight wraps' ends instead of near them.
+    for sx in (-1, 1):
+        for sz in (-1, 1):
+            features.append(fabric("bumper corner fabric", (0.0, h + 2 * fab, t),
+                                   _at(sx * half_w, mid_y, sz * half_l),
+                                   _rot(0, corner_ry[(sx, sz)], 0), bend=wrap_off,
+                                   note="quarter-bend of the wrap; no bare foam at the corner"))
+
+    # R412: white numerals, at least 3.75 in tall with a 0.5 in stroke, in at least three
+    # places about 90° apart. Four faces is the practical answer — it is what teams cut and
+    # it means no approach angle to the robot has an unreadable side. The decal rides on the
+    # cloth, just proud of it, so it moves with the bumper's real thickness.
+    if team_number:
+        face = wrap_off + t / 2 + 0.02
+        for tag, at, rot in (
+            ("front", _at(0, mid_y, -(half_l + face)), _rot(0, 180, 0)),
+            ("back", _at(0, mid_y, half_l + face), None),
+            ("left", _at(-(half_w + face), mid_y, 0), _rot(0, -90, 0)),
+            ("right", _at(half_w + face, mid_y, 0), _rot(0, 90, 0)),
+        ):
+            features.append(decal(f"{tag} team number", str(team_number), at,
+                                  height=TEAM_NUMBER_HEIGHT_IN,
+                                  stroke=TEAM_NUMBER_STROKE_IN, rot=rot,
+                                  note="white vinyl on the cloth; R412 minimum is "
+                                       "3.75 in tall on a 0.5 in stroke"))
+
+    # Attachment (R410). A rigid fastening system, not the single anonymous plate this used
+    # to draw: per mount, a bent 5052 bracket hooking over the rail top and down its outboard
+    # web, one 1/4-20 through the plywood into the bracket, a flange nut behind it, and two
+    # #8 screws pinning the bracket to the board so the board cannot slide off the bolt.
+    # 5052 rather than 6061 because these get bent, and 6061 cracks at the bend radius a
+    # bracket this small needs — the reference teams all bend sheet in 5052 for that reason.
     for sx in (-1, 1):
         for sz in (-1, 1):
             features.append(gusset("bumper corner bracket", (2.5, 2.5),
                                    _at(sx * (half_w - 0.4), h - 0.6, sz * (half_l - 0.4)),
-                                   thickness=0.125))
-    for sx, sz, rot_y, tag in ((0, -1, 0, "front"), (0, 1, 0, "back"),
-                               (-1, 0, 90, "left"), (1, 0, 90, "right")):
+                                   thickness=0.125, form="angle",
+                                   note="ties the two plywood ends into one ring at the corner"))
+    # A bolt runs along its own local Z, and a turned part along its own local Y, so the two
+    # halves of one joint need two different rotations to end up on one axis. Getting that
+    # wrong is invisible in a render and obvious on a robot.
+    for sx, sz, tag in ((0, -1, "front"), (0, 1, "back"), (-1, 0, "left"), (1, 0, "right")):
+        front_back = sx == 0
+        perim = half_l if front_back else half_w      # the frame plane this segment hangs on
+        sign = sz if front_back else sx
+        rot_y = 0 if front_back else 90
+        bolt_rot = None if front_back else _rot(0, 90, 0)
+        nut_rot = _rot(90, 0, 0) if front_back else _rot(0, 0, 90)
+
+        def place(along: float, out: float) -> list[float]:
+            """(position along the segment, distance outboard of the frame plane) → a point."""
+            return (_at(along, 0.0, sign * (perim + out)) if front_back
+                    else _at(sign * (perim + out), 0.0, along))
+
         for side in (-1, 1):
-            at = (_at(side * (half_w - 3.0), 0.9, sz * (half_l + fab + ply / 2)) if sx == 0
-                  else _at(sx * (half_w + fab + ply / 2), 0.9, side * (half_l - 3.0)))
-            features.append(plate(f"{tag} bumper mount {'a' if side < 0 else 'b'}",
-                                  (2.0, 1.8, 0.190), at, _rot(0, rot_y, 0),
-                                  note="hooks the plywood to the rail; one bolt, quick-release"))
+            label = "a" if side < 0 else "b"
+            along = side * ((half_w if front_back else half_l) - 3.0)
+
+            # The hanger carries the bumper's weight: an angle bolted flat to the rail top
+            # with its short leg turned down against the board's inner face, so the board is
+            # held up by aluminium and the bolt only has to keep it from swinging out.
+            hanger = place(along, -0.6)
+            hanger[1] = 2.045
+            features.append(gusset(f"{tag} bumper hanger {label}", (2.0, 1.6), hanger,
+                                   _rot(0, rot_y, 0), thickness=0.090, form="angle",
+                                   leg=1.0, holes=1.0,
+                                   note="bent 5052 angle on the rail top; the board rests on it"))
+
+            # One 1/4-20 through the board and through BOTH walls of the rail. A closed tube
+            # has no inside to reach, which is why the fastener is a through-bolt and a flange
+            # nut rather than a screw into the rail — the joint R410 is really asking for.
+            bolt = place(along, -0.4)
+            bolt[1] = 1.20
+            features.append(fastener_row(f"{tag} bumper bolt {label}", bolt, 1, [0, 0, 0],
+                                         dia=BUMPER_BOLT_DIA_IN, rot=bolt_rot, length=2.6))
+            nut = place(along, -1.15)
+            nut[1] = 1.20
+            features.append(_feat("standoff", f"{tag} bumper flange nut {label}", nut,
+                                  dia=0.55, len=0.30, rot=nut_rot, mat="steel",
+                                  note="1/4-20 flange nut, flush inside the rail's inner wall"))
+
+            # Two #8s pin the hanger's turned-down leg to the plywood, so the board cannot
+            # slide along the bolt and take the noodles off the corner with it.
+            screws = place(along, 0.15)
+            screws[1] = 2.05
+            features.append(fastener_row(f"{tag} bumper wood screws {label}", screws, 2,
+                                         [1.2, 0.0, 0.0], dia=BUMPER_SCREW_DIA_IN,
+                                         rot=bolt_rot, length=0.9))
     return features
 
 
@@ -607,13 +792,20 @@ def _chassis(spec: dict[str, Any], c: Choices, stations: dict[str, float]) -> di
             # far enough down each rail to catch two hole pitches on both legs. Thickness
             # and material follow the course's Gusset Generator settings: 3 mm 6061 with
             # holes matching the rails' O5 mm rows, so it bolts on without new holes.
+            # Bent, not flat. A flat plate on the rail top catches one face of each tube and
+            # takes the corner's moment in bolt shear alone; folding the same blank down the
+            # outboard web catches two faces per tube and puts the fold in the load path.
+            # It is one extra operation on the brake and it is why the reference chassis
+            # gussets look like angle rather than triangles.
             features.append(gusset("corner gusset", (2.95, 2.80),
                                    _at(sx * (half_w - 2.0), rail_h, sz * (half_l - 2.0)),
-                                   thickness=0.118))
+                                   thickness=0.118, form="angle", leg=1.5, holes=1.0,
+                                   note="3 mm 5052, folded; holes on the rail's 25 mm rows"))
             if c.gusset_faces > 1:
                 features.append(gusset("corner web gusset", (2.5, 1.6),
                                        _at(sx * (half_w - sec[1] - 0.1), rail_h / 2,
-                                           sz * (half_l - 2.0)), _rot(0, 0, 90)))
+                                           sz * (half_l - 2.0)), _rot(0, 0, 90),
+                                       form="triangle", holes=1.0))
     if c.bellypan_style == "two-piece":
         # Two pans split on the centreline come off independently, so the electronics side
         # can be dropped without disturbing the drivetrain side.
@@ -627,7 +819,26 @@ def _chassis(spec: dict[str, Any], c: Choices, stations: dict[str, float]) -> di
                               note=("0.090 in 6061, lattice-lightened"
                                     if c.bellypan_style == "lattice"
                                     else "0.090 in pocketed 6061, bolts to the rail underside")))
-    features += _bumper(w, ln)
+    # The pan is BOLTED, and until now nothing said so — a 0.090 sheet drawn flush under the
+    # rails with no fastener anywhere is exactly the kind of body that renders fine and comes
+    # off on the first hit. Four rows of 10-32s, on the rails' own hole pitch, plus a rivnut
+    # standoff at each corner so the pan can be dropped without losing the hardware.
+    # Under rot(90,0,0) a bolt points down its own local Z and the row's local Y is what
+    # runs fore-and-aft, so the step goes on Y. Stepping local Z here would have stacked the
+    # whole row vertically through the pan.
+    pan_bolt_rows = max(3, int((ln - 4) // 5))
+    for sx in (-1, 1):
+        features.append(fastener_row(f"bellypan bolts {'left' if sx < 0 else 'right'}",
+                                     _at(sx * (half_w - inset), 0.10, 0.0),
+                                     pan_bolt_rows, [0, 2.5, 0], rot=_rot(90, 0, 0),
+                                     length=0.55))
+    for sx in (-1, 1):
+        for sz in (-1, 1):
+            features.append(_feat("standoff", "bellypan corner standoff",
+                                  _at(sx * (half_w - 1.4), -0.045, sz * (half_l - 1.4)),
+                                  dia=0.375, len=0.30, mat="aluminium-dark",
+                                  note="rivnut boss; the pan drops without losing hardware"))
+    features += _bumper(w, ln, spec.get("team_number") or 0)
     return _asm("chassis", f"Chassis {w:g} × {ln:g} in", "structure", features,
                 note="Welded-free bolted tube frame; every joint is a gusset and four 10-32s.",
                 mates=["bellypan fixed to rails", "rails fixed to each other at the corners"])
@@ -638,8 +849,10 @@ def _swerve_module(dt: dict[str, Any], index: int, at: list[float],
                    rail_off: float) -> dict[str, Any]:
     """One swerve module, built from its real plate size, drop and wheel.
 
-    The detailed flag opens up the gear train — pinion, spur, bevel pair and the azimuth
-    ring — on one module, so the assembly reads as a mechanism instead of a black box.
+    ``detailed`` opens up the gear train — pinion, spur, bevel pair and the azimuth ring — so
+    the assembly reads as a mechanism instead of a black box. Every corner gets it: the
+    module is a catalog part and four of them on a robot are identical, so modelling one and
+    boxing the rest was a saving that bought nothing and cost the ratio check.
     ``corner`` is the frame corner this module lives in and ``rail_off`` the distance from
     the module centre to each rail's centreline, so the mounting hardware lands ON the rails
     instead of near them: the top plate rests on the rail top faces and the bolt rows drop
@@ -802,8 +1015,12 @@ def _drivetrain(spec: dict[str, Any], c: Choices) -> list[dict[str, Any]]:
                      note="Corners cut and drilled; nothing installed.")]
     corners = [(-1, -1), (1, -1), (1, 1), (-1, 1)][:count]
     rail_off = round(inset - 0.5, 3)
+    # All four, gear train and all. A robot does not carry one real module and three blocks,
+    # and every published swerve CAD shows four identical assemblies — a corner drawn as a
+    # box is the difference between CAD you can check a ratio against and a picture of a
+    # robot. The train is 21 bodies a corner; there is no reason to ration it.
     return [_swerve_module(dt, i, _at(sx * (w / 2 - inset), 0, sz * (ln / 2 - inset)),
-                           i == 0, c, (sx, sz), rail_off)
+                           True, c, (sx, sz), rail_off)
             for i, (sx, sz) in enumerate(corners)]
 
 
@@ -1326,11 +1543,28 @@ def _shooter(spec: dict[str, Any], lane_x: float, c: Choices,
                                    _at(side_x + 0.3, fy, -1.4), _rot(0, 0, 90)))
             features.append(belt("flywheel drive belt", _at(side_x + 0.3, fy, -1.4),
                                  _at(side_x + 0.3, fy, 0), 0.45))
+        # The hood is not a half pipe. It is a formed skin on two cut ribs, wrapping the ball
+        # from where the feeder hands it over to where it leaves — about 130°, not the 180°
+        # this used to draw, which put a metre of aluminium behind the flywheels doing
+        # nothing and made the whole head read as a cylinder someone had dropped on it.
         hood_name = "fixed hood" if c.shooter_hood_drive == "fixed" else "adjustable hood"
-        features.append(_feat("hood", hood_name, _at(0, y0 + 4.5, 0),
-                              r=fw + 1.0, w=round(side_x * 2 - 0.1, 3), arc=180,
+        hood_r = fw + 1.0
+        hood_y = y0 + 4.5
+        features.append(_feat("hood", hood_name, _at(0, hood_y, 0),
+                              r=hood_r, w=round(side_x * 2 - 0.1, 3), arc=130, start=25,
                               range_deg=[0, 0] if c.shooter_hood_drive == "fixed"
                                         else sh.get("hood_angle_deg", [18, 62])))
+        # The ribs are the part that actually holds the wrap's shape, and they are what a
+        # team cuts first. Two of them, one at each end of the skin, on the same arc.
+        for sx in (-1, 1):
+            features.append(_feat("rib", f"hood rib {'left' if sx < 0 else 'right'}",
+                                  _at(sx * (side_x - 0.35), hood_y, 0),
+                                  r=round(hood_r + 0.19, 3), arc=130, start=25, web=0.6,
+                                  th=0.190, rot=_rot(0, 0, 0), mat="aluminium",
+                                  note="formed rib; the skin rivets to this"))
+        features.append(polycarb("hood skin backer", (side_x * 2 - 0.8, 0.093, 2.2),
+                                 _at(0, hood_y + hood_r + 0.35, -0.9), _rot(-18, 0, 0),
+                                 note="closes the top of the wrap between the ribs"))
         if c.shooter_hood_drive == "servo":
             features.append(_feat("actuator", "hood servo", _at(side_x + 0.4, y0 + 5.6, 1.0),
                                   size=[1.6, 0.8, 0.8], kind="linear servo"))
@@ -1339,10 +1573,22 @@ def _shooter(spec: dict[str, Any], lane_x: float, c: Choices,
                                  dp=20, face=0.3, mat="anodised"))
             features.append(gear("hood pinion", 12, _at(side_x + 0.25, y0 + 6.3, 0), _rot(0, 0, 90),
                                  dp=20, face=0.3, bore=0.375))
+        # Two side plates joined by nothing but the shafts that are supposed to spin in them
+        # is a mechanism that racks the moment it is loaded. Standoffs are how the pair
+        # becomes one frame — three of them, clear of both flywheel circles and the ball path.
+        for i, (sy, sz) in enumerate(((5.9, -1.9), (1.0, -1.9), (1.0, 2.2))):
+            features.append(_feat("standoff", f"shooter plate standoff {i + 1}",
+                                  _at(0, y0 + sy, sz), dia=0.500, len=round(side_x * 2 - 0.19, 3),
+                                  rot=_rot(0, 0, 90), mat="aluminium-dark",
+                                  note="ties the two side plates into one frame"))
         for sx in (-1, 1):
             features.append(tube("shooter post", TUBE_2X1, 4.4, _at(sx * side_x, y0 + 2.2, 0),
                                  _rot(90, 0, 0), bolts=2.0,
                                  note="stands under the side plate it carries"))
+            features.append(gusset(f"shooter post gusset {'left' if sx < 0 else 'right'}",
+                                   (2.2, 2.4), _at(sx * (side_x - 0.15), y0 + 4.1, 0.9),
+                                   _rot(0, 0, 90), thickness=0.090, form="triangle",
+                                   note="post to side plate; takes the recoil couple"))
         # How the gamepiece is presented to the flywheels is its own small mechanism.
         if c.shooter_feeder == "kicker":
             features.append(shaft("kicker shaft", _HEX_BORE, (side_x + 0.4) * 2,
@@ -1429,56 +1675,144 @@ def _elevator(spec: dict[str, Any], lane_x: float, c: Choices,
                              _at(0, h * (0.35 + 0.3 * i), 0), _rot(0, 90, 0), bolts=2.5))
     # Each moving stage is the next section down the ladder, so every member is orderable.
     # If the ladder runs out before the stage count does, the tower stops there.
-    for s in range(1, min(moving, len(ladder) - 1) + 1):
+    #
+    # The tower is drawn STOWED — every stage down, carriage at the bottom. That is the state
+    # the robot is inspected in, the state it starts a match in, and the only state whose
+    # height the rules care about. Drawing it half-extended, as this did, made the bearing
+    # layout impossible to read and quietly put the carriage in mid-air.
+    stage_count = min(moving, len(ladder) - 1)
+    innermost_x = span / 2
+    innermost_top = h
+    innermost_sec = outer_sec
+    for s in range(1, stage_count + 1):
         sec, wall = ladder[s]
-        sh_len = h - s * 6
+        # Stagger, not shortening. A cascade stage is only a couple of inches shorter than
+        # the one it nests in — that stagger IS the overlap, and it is what keeps the
+        # parent's upper roller bearing on the stage at every extension including stowed.
+        # Six inches a stage put every stage's top well below its parent's top roller, so
+        # the upper blocks were bolted to a tube with nothing under them, and the tower lost
+        # most of its travel for nothing.
+        stagger = 2.0
+        sh_len = max(6.0, h - 1.2 - stagger * s)
         inset = (outer_sec[1] - sec[1]) / 2 + (s - 1) * 0.4
+        stage_y = sh_len / 2 + 1.2               # stowed: every stage bottomed out at 1.2
+        stage_top = stage_y + sh_len / 2
+        innermost_x = span / 2 - inset
+        innermost_top = stage_top
+        innermost_sec = sec
         for sx in (-1, 1):
+            x = sx * (span / 2 - inset)
             features.append(tube(f"stage {s + 1} rail", sec, sh_len,
-                                 _at(sx * (span / 2 - inset), sh_len / 2 + s * 2, 0),
+                                 _at(x, stage_y, 0),
                                  _rot(90, 0, 0), wall=wall, mat="aluminium-dark",
                                  note=f"nests inside {outer_sec[0]:g}x{outer_sec[1]:g}"
                                       if s == 1 else f"nests inside {ladder[s - 1][0][0]:g}x{ladder[s - 1][0][1]:g}"))
-            for end in (-1, 1):
-                y = sh_len / 2 + s * 2 + end * (sh_len / 2 - 0.8)
+            # Four rollers per stage, and WHICH member each one is bolted to is the whole
+            # constraint: the upper pair rides on the parent's top, the lower pair on this
+            # stage's own bottom. Two blocks bolted to the same tube — which is what putting
+            # both at the inner stage's own ends amounts to — constrain nothing.
+            # Four rollers per stage, and WHICH member each one is bolted to is the whole
+            # constraint: the upper pair bolts to the parent, the lower pair to this stage.
+            # Both sit inside the overlap, so both bear on two tubes — two blocks on the
+            # same tube, which is what putting them at one member's own ends amounts to,
+            # constrain nothing.
+            for tag, y, host in (("upper", stage_top - 1.0, "parent"),
+                                 ("lower", stage_y - sh_len / 2 + 1.0, "stage")):
+                name = f"stage {s + 1} {tag} roller"
                 if c.elevator_bearings == "slide":
-                    features.append(_feat("slide", f"stage {s + 1} slide pad",
-                                          _at(sx * (span / 2 - inset), y, 0.9),
-                                          size=[0.6, 1.2, 0.25], mat="delrin"))
+                    features.append(_feat("slide", f"{name} pad",
+                                          _at(x, y, 0.9), size=[0.6, 1.2, 0.25], mat="delrin",
+                                          note=f"bolted to the {host}"))
                 else:
-                    features.append(bearing(f"stage {s + 1} block", bore=0.375, od=0.875,
-                                            width=0.44,
-                                            at=_at(sx * (span / 2 - inset), y, 0.9),
-                                            rot=_rot(90, 0, 0)))
-    carriage_y = h * 0.52
-    features.append(plate("carriage plate", (span - 1.2, 0.250, 2.6), _at(0, carriage_y, 0), pockets=4))
-    for sx in (-1, 1):
-        for sz in (-1, 1):
-            features.append(bearing("carriage roller", _at(sx * (span / 2 - 1.4), carriage_y, sz * 0.9),
-                                    _rot(90, 0, 0), bore=0.375, od=0.875, width=0.5))
-    # Rigging: a driven element at the base, an idler at the top, a tensioner on the return.
-    # Belt, chain and rope are all built; each brings a different part to the assembly.
-    rig = c.elevator_rigging
-    rig_kind = {"chain": "#25 chain", "belt": "HTD 5 mm belt", "rope": "1/8 in Dyneema"}[rig]
-    # One drive shaft spans the base, so BOTH sides carry a driven element, and both
-    # sides get a top idler — each run starts and ends exactly on a wrap centre. The
-    # old model drove the left side only, leaving the right run attached to air.
+                    features.append(bearing(name, bore=0.375, od=0.875, width=0.44,
+                                            at=_at(x, y, 0.9), rot=_rot(90, 0, 0),
+                                            note=f"bolted to the {host}"))
+            # A stage that can leave its parent is a stage that lands on the floor. The stop
+            # is a real block inside the overlap, so it bears on both tubes.
+            features.append(hardstop(f"stage {s + 1} up stop", _at(x, stage_top - 2.2, -0.9),
+                                     size=(0.9, 0.6, 0.5)))
+
+    # The carriage rides the INNERMOST stage, drawn stowed at the bottom of it. It is a face
+    # plate standing in front of the tower with a back bracket behind each rail, tied
+    # together by standoffs, and eight rollers pinching the two rails front and back.
+    #
+    # The roller AXIS is the thing that has to be right. A roller running on a rail's front
+    # face turns about an axis across the robot, not up it — these were discs lying flat
+    # beside the tube, 0.15 in clear of the only surface they were supposed to run on, which
+    # is a carriage that would have fallen off its own elevator.
+    carriage_y = 3.2
+    cy = carriage_y + 1.4
+    rz = innermost_sec[0] / 2                 # the rail's half-depth, the face rollers run on
+    roll_r = 0.875 / 2
+    face_z = rz + 1.05
+    features.append(plate("carriage plate", (innermost_x * 2 + 2.0, 4.2, 0.250),
+                          _at(0, cy, -face_z), pockets=4,
+                          note="stands in front of the tower; the manipulator bolts to this"))
     for sx in (-1, 1):
         side = "left" if sx < 0 else "right"
-        drive_at = _at(sx * (span / 2 - 1.5), 2.2, 0.7)
-        idler_at = _at(sx * (span / 2 - 1.5), h - 0.9, 0.7)
-        features.append(belt(f"{side} rigging run", drive_at, idler_at, 0.36, kind=rig_kind))
-        if rig == "chain":
-            features.append(sprocket(f"rigging drive sprocket {side}", 18, drive_at, _rot(0, 0, 90)))
-            features.append(sprocket(f"rigging idler {side}", 18, idler_at, _rot(0, 0, 90)))
-        elif rig == "belt":
-            features.append(pulley(f"rigging drive pulley {side}", 24, 0.45, drive_at, _rot(0, 0, 90)))
-            features.append(pulley(f"rigging idler {side}", 24, 0.45, idler_at, _rot(0, 0, 90)))
-        else:
-            features.append(_feat("drum", f"rigging drum {side}", drive_at, dia=1.5, w=0.8,
-                                  rot=_rot(0, 0, 90), rope="1/8 in Dyneema"))
-            features.append(_feat("tensioner", f"rope sheave {side}", idler_at, dia=1.2, w=0.5,
-                                  rot=_rot(0, 0, 90)))
+        features.append(plate(f"carriage back bracket {side}", (2.2, 4.2, 0.250),
+                              _at(sx * innermost_x, cy, face_z),
+                              note="closes the carriage round the rail"))
+        for sy in (-1, 1):
+            features.append(_feat("standoff", f"carriage tie standoff {side}",
+                                  _at(sx * innermost_x, cy + sy * 1.6, 0),
+                                  dia=0.375, len=round(2 * face_z - 0.25, 3),
+                                  rot=_rot(90, 0, 0), mat="aluminium-dark",
+                                  note="clamps the front plate to the back bracket"))
+            for sz in (-1, 1):
+                features.append(bearing("carriage roller",
+                                        _at(sx * innermost_x, cy + sy * 1.4,
+                                            sz * (rz + roll_r)),
+                                        _rot(0, 0, 90), bore=0.375, od=0.875, width=0.5,
+                                        note=f"runs on the innermost rail's "
+                                             f"{'front' if sz < 0 else 'back'} face"))
+    # Rigging. Belt, chain and rope are all built, and each is a genuinely different machine:
+    # a belt or chain run needs a driven element and an idler on every side it drives, while
+    # a rope elevator is a WINCH — one drum, one pull, and a return that comes from gravity
+    # and the stage stack, which is why the teams that run rope run it on a single side.
+    # That distinction was being flattened into "two runs, whatever the medium", which drew a
+    # rope elevator with two drums and no drum shaft joining them.
+    rig = c.elevator_rigging
+    rig_kind = {"chain": "#25 chain", "belt": "HTD 5 mm belt", "rope": "1/8 in Dyneema"}[rig]
+    drive_y, top_y = 2.2, h - 0.9
+    if rig == "rope":
+        # The reference build: two motors on 12T pulleys into a 36T on the drum shaft — 1:3,
+        # taken before the drum so the belt sees the motor torque and not the load. The rope
+        # dead-ends on a standoff-and-washer stack riveted through the drum wall, because a
+        # rope wrapped round a smooth tube pays out under load.
+        drum_x = -(span / 2 - 1.5)
+        drum_at = _at(drum_x, drive_y, 0.7)
+        features.append(_feat("drum", "rigging drum", drum_at, dia=1.5, w=2.4,
+                              rot=_rot(0, 0, 90), rope="1/8 in Dyneema", mat="aluminium",
+                              note="aluminium tube; the rope ties off inside it"))
+        features.append(_feat("standoff", "rope tie-off standoff",
+                              _at(drum_x, drive_y + 0.55, 0.7), dia=0.375, len=0.60,
+                              rot=_rot(90, 0, 0), mat="aluminium-dark",
+                              note="riveted through the drum wall with a large washer; the "
+                                   "rope's dead end"))
+        features.append(_feat("tensioner", "rope sheave", _at(drum_x, top_y, 0.7),
+                              dia=1.2, w=0.5, rot=_rot(0, 0, 90)))
+        features.append(rope("carriage rigging", drum_at, _at(drum_x, top_y, 0.7)))
+        features.append(rope("carriage return", _at(drum_x, top_y, 0.7),
+                             _at(drum_x + 0.6, carriage_y + 1.3, 0.7)))
+        features.append(plate("rigging guard", (1.4, innermost_top * 0.9, 0.093),
+                              _at(drum_x - 0.85, innermost_top * 0.45 + 1.0, 0.7),
+                              _rot(0, 90, 0), mat="polycarb",
+                              note="keeps the rope off the stage rails on the way up"))
+    else:
+        # One drive shaft spans the base, so BOTH sides carry a driven element, and both
+        # sides get a top idler — each run starts and ends exactly on a wrap centre.
+        for sx in (-1, 1):
+            side = "left" if sx < 0 else "right"
+            drive_at = _at(sx * (span / 2 - 1.5), drive_y, 0.7)
+            idler_at = _at(sx * (span / 2 - 1.5), top_y, 0.7)
+            features.append(belt(f"{side} rigging run", drive_at, idler_at, 0.36, kind=rig_kind))
+            if rig == "chain":
+                features.append(sprocket(f"rigging drive sprocket {side}", 18, drive_at, _rot(0, 0, 90)))
+                features.append(sprocket(f"rigging idler {side}", 18, idler_at, _rot(0, 0, 90)))
+            else:
+                features.append(pulley(f"rigging drive pulley {side}", 24, 0.45, drive_at, _rot(0, 0, 90)))
+                features.append(pulley(f"rigging idler {side}", 24, 0.45, idler_at, _rot(0, 0, 90)))
     # On the upright's inboard web, where its bracket bolts — not free-floating mid-run.
     # The web plane follows the ladder's outer section, so this holds for 2x2 and 2x1 towers.
     features.append(_feat("tensioner", f"{rig} tensioner",
@@ -1487,15 +1821,29 @@ def _elevator(spec: dict[str, Any], lane_x: float, c: Choices,
     # The winch package hangs on a shelf off the upright, with the gearbox output on the
     # rigging drive shaft's own axis — drawn floating beside the tower it reads as wrong,
     # because it would be.
-    features.append(plate("gearbox mount shelf", (2.9, 0.190, 3.4), _at(-span / 2 - 1.15, 0.60, 0.7),
+    shelf_x = -span / 2 - 1.15
+    features.append(plate("gearbox mount shelf", (2.9, 0.190, 3.4), _at(shelf_x, 0.60, 0.7),
                           pockets=2, note="bolts to the upright web; gearbox and motors hang on this"))
-    features.append(gearbox("elevator gearbox", (2.6, 3.0, 1.6), _at(-span / 2 - 1.15, 2.2, 0.7),
+    features.append(gearbox("elevator gearbox", (2.6, 3.0, 1.6), _at(shelf_x, drive_y, 0.7),
                             ratio=el.get("reduction", "12:1"), stages=2))
     mkey = el.get("motor_key", "neo_vortex")
-    for i in range(int(el.get("motor_count", 2))):
+    motor_count = int(el.get("motor_count", 2))
+    for i in range(motor_count):
         features.append(motor("elevator motor", mkey,
-                              _at(-span / 2 - 1.15, 2.2, 0.7 - 1.9 - i * 2.1), _rot(0, 0, 90)))
-    features.append(shaft("rigging drive shaft", _HEX_BORE, span + 3.2, _at(-1.0, 2.2, 0.7), _rot(0, 0, 90)))
+                              _at(shelf_x, drive_y, 0.7 - 1.9 - i * 2.1), _rot(0, 0, 90)))
+    features.append(shaft("rigging drive shaft", _HEX_BORE, span + 3.2, _at(-1.0, drive_y, 0.7),
+                          _rot(0, 0, 90)))
+    if rig == "rope":
+        # The reduction is a real pair of pulleys on a real belt, not a ratio in a caption.
+        # 12T on each motor into one 36T on the drum shaft is the 1:3 the spec claims.
+        features.append(pulley("winch driven pulley", 36, 0.45, _at(shelf_x + 1.5, drive_y, 0.7),
+                               _rot(0, 0, 90)))
+        for i in range(motor_count):
+            mz = 0.7 - 1.9 - i * 2.1
+            features.append(pulley("winch motor pulley", 12, 0.45, _at(shelf_x + 1.5, drive_y, mz),
+                                   _rot(0, 0, 90)))
+            features.append(belt("winch reduction belt", _at(shelf_x + 1.5, drive_y, mz),
+                                 _at(shelf_x + 1.5, drive_y, 0.7), 0.45, kind="HTD 5 mm belt"))
     return _asm("elevator", "Elevator", "mechanism", features,
                 origin=_at(lane_x, 2.0, station_z),
                 note=f"{el.get('architecture', '')} · {stages} stage",

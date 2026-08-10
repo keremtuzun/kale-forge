@@ -372,7 +372,12 @@ def _chassis_features(spec: dict) -> list[dict]:
 def test_bumper_matches_the_measured_reference_chassis():
     """The reference bumper is a construction, not a slab: per side one 0.75 in plywood
     backing standing the full 5.00 in face, two stacked Ø2.5 in noodles, and a fabric wrap
-    3.31 in proud of the frame with its underside flush with the frame bottom."""
+    3.31 in proud of the frame with its underside flush with the frame bottom.
+
+    The attachment is a stack, not a single anonymous plate — a bent hanger carrying the
+    weight, a 1/4-20 through the board and both rail walls, and the flange nut behind it.
+    That is what R410's "rigid fastening system" is; two of them per segment is what makes
+    it removable by two people in five minutes."""
     spec = _spec("27 x 27 inch REBUILT robot with an over-bumper intake", season="2026-rebuilt")
     features = _chassis_features(spec)
     for side in ("front", "back", "left", "right"):
@@ -380,16 +385,40 @@ def test_bumper_matches_the_measured_reference_chassis():
         noodles = [f for f in features if f["n"].startswith(f"{side} bumper")
                    and f["t"] == "noodle"]
         wrap = [f for f in features if f["n"] == f"{side} bumper fabric"]
-        mounts = [f for f in features if f["n"].startswith(f"{side} bumper mount")]
+        hangers = [f for f in features if f["n"].startswith(f"{side} bumper hanger")]
+        bolts = [f for f in features if f["n"].startswith(f"{side} bumper bolt")]
+        nuts = [f for f in features if f["n"].startswith(f"{side} bumper flange nut")]
         assert len(ply) == 1 and ply[0]["size"][1] == 5.00, "plywood stands the full face"
         assert len(noodles) == 2, "two stacked noodles make the 5.00 in face"
         assert all(f["dia"] == 2.5 for f in noodles), "Ø2.5 in pool noodles"
         assert {round(f["at"][1], 2) for f in noodles} == {1.25, 3.75}, "stacked, flush bottom"
         assert len(wrap) == 1 and wrap[0]["size"][1] >= 5.00, "fabric closes over the face"
         assert wrap[0]["size"][2] == 3.31, "wrap is the full 3.31 in stack"
-        assert len(mounts) == 2, "each segment hangs on two rail mounts"
+        assert len(hangers) == 2, "each segment hangs on two rail brackets"
+        assert all(f.get("form") == "angle" for f in hangers), "the hanger is bent, not flat"
+        assert len(bolts) == 2 and all(f["dia"] == 0.25 for f in bolts), "two 1/4-20 per segment"
+        assert len(nuts) == 2, "one flange nut behind each bolt"
     corners = [f for f in features if f["n"].startswith("bumper corner bracket")]
     assert len(corners) == 4, "a bracket ties each pair of plywood ends"
+    corner_cloth = [f for f in features if f["t"] == "fabric" and f.get("bend")]
+    assert len(corner_cloth) == 4, "R402-C: cloth over the corner noodles, not bare foam"
+
+
+def test_the_team_number_is_modelled_at_its_legal_size():
+    """R412 wants white numerals at least 3.75 in tall on a 0.5 in stroke, in three or more
+    places about 90 deg apart. They were drawn only in the renderer, at 1.95 in — a bit over
+    half legal — and nothing in the pipeline could measure them. They are parts now."""
+    spec = _spec("27 x 27 inch REBUILT robot for team 8159", season="2026-rebuilt")
+    decals = [f for f in _chassis_features(spec) if f["t"] == "decal"]
+    assert len(decals) >= 3, "at least three faces carry the number"
+    for f in decals:
+        assert f["size"][1] >= 3.75, "numerals clear the minimum height"
+        assert f["stroke"] >= 0.5, "numerals clear the minimum stroke"
+        assert f["text"] == "8159", "the number on the bumper is the team's number"
+    rules = {c["rule"] for c in spec["rule_report"]["checks"]}
+    assert {"R402", "R404", "R405", "R406", "R412"} <= rules, "the bumper rules are checked"
+    assert not [c for c in spec["rule_report"]["checks"]
+                if c["rule"].startswith("R4") and not c["ok"]], "and they pass"
 
 
 def test_the_bumper_wrap_is_mitreless_like_the_rails():

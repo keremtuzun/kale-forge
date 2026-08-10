@@ -96,6 +96,9 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
   // with no material of their own, so legacy fabric-less bumpers still read as bumpers.
   const M_OF = (name, featureName) => (
     (name && M[name]) || (/bumper/.test(featureName || '') ? M.bumper : M.aluminium));
+  // The alliance colour of the current design. The number decals paint their panel in it,
+  // and they are built inside buildFeatureOf, which only ever sees one feature.
+  let bumperHex = '#c0392b';
   const box = (w, h, d, m) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
   const cyl = (rt, rb, h, m, s = 32) => new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, s), m);
   const D2R = Math.PI / 180;
@@ -392,12 +395,55 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
         return makePlate(f.size[0], f.size[1], f.size[2], m, f.pockets || 0);
       case 'gusset': {
         const g = new THREE.Group();
-        const tri = new THREE.Shape();
-        tri.moveTo(0, 0); tri.lineTo(f.size[0], 0); tri.lineTo(0, f.size[1]); tri.closePath();
-        const geo = new THREE.ExtrudeGeometry(tri, { depth: f.th || 0.09, bevelEnabled: false });
+        const th = f.th || 0.09;
+        if (f.form === 'angle') {
+          // Bent sheet: a flat leg lying in the local XZ plane and a second leg turned down
+          // 90° at its outboard edge, which is the whole point of the part — one blank
+          // catching two faces of the tube instead of a flat plate catching one.
+          const leg = f.leg || Math.min(f.size[0], f.size[1]) * 0.66;
+          const flat = box(f.size[0], th, f.size[1], m);
+          flat.position.y = -th / 2;
+          const bent = box(f.size[0], leg, th, m);
+          bent.position.set(0, -leg / 2, f.size[1] / 2 - th / 2);
+          g.add(flat, bent);
+          // Only if the blank is actually punched. THREE.Object3D.add() with no arguments
+          // is an error, not a no-op, so spreading an empty row logs on every unpunched
+          // bracket — four of them per robot, straight into the console.
+          const holes = holeRow(f.size[0], f.pitch, th, -th / 2, f.size[1] / 2 - 0.4);
+          if (holes.length) g.add(...holes);
+          return g;
+        }
+        const shape = new THREE.Shape();
+        if (f.form === 'triangle') {
+          shape.moveTo(0, 0); shape.lineTo(f.size[0], 0); shape.lineTo(0, f.size[1]);
+        } else {
+          // The default corner gusset is a plate with the unloaded corner clipped — the
+          // shape a waterjet actually cuts, not a bare right triangle.
+          const c = Math.min(f.size[0], f.size[1]) * 0.42;
+          shape.moveTo(0, 0); shape.lineTo(f.size[0], 0); shape.lineTo(f.size[0], f.size[1] - c);
+          shape.lineTo(f.size[0] - c, f.size[1]); shape.lineTo(0, f.size[1]);
+        }
+        shape.closePath();
+        const geo = new THREE.ExtrudeGeometry(shape, { depth: th, bevelEnabled: false });
         geo.rotateX(-Math.PI / 2); geo.center();
-        g.add(new THREE.Mesh(geo, M.aluminium));
+        g.add(new THREE.Mesh(geo, m));
         return g;
+      }
+      case 'decal': {
+        // The team number, at the height and stroke R412 measures. It is a part in the tree,
+        // so it is drawn from the tree — the renderer no longer invents its own size.
+        return makeNumberPanel(f.text, f.size[0], f.size[1], f.stroke || 0.5);
+      }
+      case 'rib': {
+        // A formed rib: the curved profile a hood or a shell is actually built from, rather
+        // than one smooth surface pretending to be sheet metal.
+        const arc = new THREE.Shape();
+        const r = f.r || 3, sweep = (f.arc || 90) * D2R, start = (f.start || 0) * D2R;
+        arc.absarc(0, 0, r, start, start + sweep, false);
+        arc.absarc(0, 0, Math.max(0.05, r - (f.web || 0.6)), start + sweep, start, true);
+        const geo = new THREE.ExtrudeGeometry(arc, { depth: f.th || 0.19, bevelEnabled: false });
+        geo.translate(0, 0, -(f.th || 0.19) / 2); geo.rotateY(Math.PI / 2);
+        return new THREE.Mesh(geo, m);
       }
       case 'shaft':
         return makeShaft(f.dia, f.len, f.form);
@@ -444,6 +490,21 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
         // closing over the noodle stack. size = [length, height, wrapped depth]; the skin
         // faces local +Z and the segment's rot turns it outward.
         const g = new THREE.Group();
+        if (f.bend) {
+          // A corner is the same channel swept through 90°, so the cloth stays continuous
+          // over the corner noodles instead of stopping at the tangent point and leaving
+          // foam showing. A quarter-annulus, standing the wrap's full height: the arc runs
+          // +X → +Z and the feature's rot picks the quadrant, matching the corner noodles.
+          const [, ch, cd] = f.size, skin = 0.05;
+          const rOut = f.bend + cd / 2;
+          const q = new THREE.Shape();
+          q.absarc(0, 0, rOut, 0, Math.PI / 2, false);
+          q.absarc(0, 0, Math.max(0.05, rOut - skin), Math.PI / 2, 0, true);
+          const geo = new THREE.ExtrudeGeometry(q, { depth: ch, bevelEnabled: false });
+          geo.rotateX(Math.PI / 2); geo.translate(0, ch / 2, 0);
+          g.add(new THREE.Mesh(geo, M.bumper));
+          return g;
+        }
         const [len, h, d] = f.size, skin = 0.05;
         const face = box(len, h, skin, M.bumper); face.position.z = d / 2 - skin / 2; g.add(face);
         for (const sy of [-1, 1]) {
@@ -531,7 +592,10 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
         return g;
       }
       case 'hood': {
-        const geo = new THREE.CylinderGeometry(f.r, f.r, f.w, 26, 1, true, 0, Math.PI);
+        // Honour the emitted wrap. A hood that always drew a full half-cylinder put a lot of
+        // metal behind the flywheels that no shooter has.
+        const sweep = (f.arc || 180) * D2R, from = (f.start || 0) * D2R;
+        const geo = new THREE.CylinderGeometry(f.r, f.r, f.w, 26, 1, true, from, sweep);
         const hood = new THREE.Mesh(geo, mat({ color: 0x9aa0a6, metalness: 0.86, roughness: 0.34, side: THREE.DoubleSide }));
         hood.rotation.z = Math.PI / 2;
         return hood;
@@ -580,66 +644,53 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
     }
   }
 
-  // Team numbers go on all four bumpers. They are decals, not parts, so they are drawn here
-  // from spec.team_number rather than carried in the CAD tree — putting them in the geometry
-  // would change every chassis assembly the design model was trained on.
+  // The team number is a `decal` feature in the CAD tree now, so it is placed by the
+  // compiler and drawn here at whatever size the compiler emitted. That matters: R412 sets a
+  // 3.75 in minimum height and a 0.5 in minimum stroke, and while these numbers lived only
+  // in the renderer they were 1.95 in tall — a bit over half legal — with nothing in the
+  // pipeline in a position to measure them.
+  //
   // The plane is sized to the digits and the canvas is sized to the plane, at one pixel
-  // density. Any mismatch between those two aspect ratios shows up as stretched type, which
-  // is what a 2:1 canvas mapped onto a 7:1 plane was doing.
-  function makeBumperNumber(number, bumperColor) {
-    const text = String(number);
-    const DIGIT_W = 1.30, HEIGHT = 1.95;     // inches; a tall digit on a 2.5 in bumper face
-    const width = text.length * DIGIT_W;
+  // density. Any mismatch between those two aspect ratios shows up as stretched type.
+  function makeNumberPanel(text, width, height, stroke) {
+    const label = String(text == null ? '' : text);
     const PX = 128;
     const canvas = document.createElement('canvas');
-    canvas.width = Math.round(width * PX);
-    canvas.height = Math.round(HEIGHT * PX);
+    canvas.width = Math.max(2, Math.round(width * PX));
+    canvas.height = Math.max(2, Math.round(height * PX));
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = bumperColor; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    // Condensed weights are what teams actually cut; it also keeps four digits inside the
-    // panel without squeezing the glyphs.
-    ctx.font = `bold ${Math.round(canvas.height * 0.78)}px "Helvetica Neue", Inter, Arial, sans-serif`;
+    ctx.fillStyle = bumperHex; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Condensed bold is what teams cut vinyl in; it also keeps four digits inside the panel
+    // without squeezing the glyphs. The cap height is the rule-bearing dimension, so the
+    // glyphs fill the panel rather than sitting in it with leading.
+    ctx.font = `bold ${Math.round(canvas.height * 0.92)}px "Helvetica Neue", Inter, Arial, sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = readableOn(bumperColor);
-    ctx.fillText(text, canvas.width / 2, canvas.height / 2 + canvas.height * 0.03,
-                 canvas.width * 0.94);
+    // R412 says white. On an alliance bumper that is always the readable choice anyway, and
+    // picking a "more readable" dark numeral for a light bumper would be drawing an illegal
+    // robot — the earlier contrast-matching behaviour did exactly that.
+    ctx.fillStyle = '#ffffff';
+    ctx.lineWidth = Math.max(1, stroke * PX * 0.12);
+    ctx.fillText(label, canvas.width / 2, canvas.height / 2 + canvas.height * 0.03,
+                 canvas.width * 0.96);
     const texture = new THREE.CanvasTexture(canvas);
     texture.anisotropy = 8; texture.colorSpace = THREE.SRGBColorSpace;
     return new THREE.Mesh(
-      new THREE.PlaneGeometry(width, HEIGHT),
+      new THREE.PlaneGeometry(width, height),
       new THREE.MeshBasicMaterial({ map: texture, clippingPlanes: [sectionPlane] }));
   }
 
-  // White on a dark bumper, near-black on a light one. A fixed white number disappears on
-  // white or yellow bumpers, which teams do run.
-  function readableOn(hex) {
-    const c = new THREE.Color(hex);
-    const luma = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
-    return luma > 0.6 ? '#15181b' : '#ffffff';
-  }
-
-  // The numbers ride on the outer face of the bumper, so they follow the bumper's real
-  // thickness and height rather than the constants the first 0.75 in backing plate happened
-  // to have. A team number floating inside the noodle is the failure this avoids.
-  function addBumperNumbers(group, number, colour, W, L, bumper) {
-    const t = (bumper && bumper.thickness_in) || 3.31;
-    const h = (bumper && bumper.height_in) || 5.0;
-    const halfW = W / 2 + t, halfL = L / 2 + t;
-    const face = 0.02;                       // just proud of the bumper so it never z-fights
-    const y = h / 2;
-    const places = [
-      { at: [0, y, -(halfL + face)], rot: [0, Math.PI, 0] },
-      { at: [0, y, halfL + face], rot: [0, 0, 0] },
-      { at: [-(halfW + face), y, 0], rot: [0, -Math.PI / 2, 0] },
-      { at: [halfW + face, y, 0], rot: [0, Math.PI / 2, 0] },
-    ];
-    for (const p of places) {
-      const mesh = makeBumperNumber(number, colour);
-      mesh.position.set(p.at[0], p.at[1], p.at[2]);
-      mesh.rotation.set(p.rot[0], p.rot[1], p.rot[2]);
-      mesh.userData.part = 'chassis';
-      group.add(mesh);
+  // The punched hole row a bolt-on bracket is cut with. Drawn as through-pockets so a gusset
+  // reads as something that lands on the rail's existing holes rather than a blank slab.
+  function holeRow(span, pitch, th, y, z) {
+    if (!pitch || pitch <= 0) return [];
+    const n = Math.max(0, Math.floor((span - 0.6) / pitch) + 1);
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const h = cyl(0.1, 0.1, th * 3, M.pocket, 10);
+      h.position.set((i - (n - 1) / 2) * pitch, y, z);
+      out.push(h);
     }
+    return out;
   }
 
   // Belts, cables and ropes connect two points, so they are placed by their endpoints
@@ -752,7 +803,7 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
     if (!cad || !cad.assemblies) { frameView(); return; }
     const frame = spec.frame || {};
     const W = frame.width_in || 28, L = frame.length_in || 28;
-    const bumperHex = (spec.bumper_color && spec.bumper_color.hex) || '#c0392b';
+    bumperHex = (spec.bumper_color && spec.bumper_color.hex) || '#c0392b';
     M.bumper.color.set(bumperHex);
     let tallest = 12;
 
@@ -832,9 +883,6 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
         id: asm.id, group, base: group.position.clone(),
         explode: explodeVector(asm, W, L),
       };
-      if (asm.id === 'chassis') {
-        if (spec.team_number) addBumperNumbers(group, spec.team_number, bumperHex, W, L, spec.bumper);
-      }
       assemblies.push(entry);
       spin.forEach(s => spinners.push(s));
       tallest = Math.max(tallest, org[1] + top + 2);

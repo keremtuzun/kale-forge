@@ -18,9 +18,16 @@ PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8899
 
 
 class dev_handler(handler):
+    # Dev-only text drop box: lets one browser tab hand a generated FeatureScript to
+    # another origin (e.g. an Onshape tab) that CORS would otherwise wall off. Plain
+    # text both ways, held in memory, never persisted.
+    _dropped: dict[str, bytes] = {}
+
     def do_GET(self):  # noqa: N802
         # The auth API lives on the production domain; locally, answer it ourselves so the
-        # sign-in gate closes and the studio is usable.
+        # sign-in gate closes and the studio is usable. This used to be a second do_GET
+        # further up the class body, which Python simply discarded — the gate never opened
+        # locally and the viewer could not be exercised without a deploy.
         if self.path.startswith("/api/auth/me"):
             body = b'{"name": "Local Dev"}'
             self.send_response(200)
@@ -29,14 +36,6 @@ class dev_handler(handler):
             self.end_headers()
             self.wfile.write(body)
             return
-        super().do_GET()
-
-    # Dev-only text drop box: lets one browser tab hand a generated FeatureScript to
-    # another origin (e.g. an Onshape tab) that CORS would otherwise wall off. Plain
-    # text both ways, held in memory, never persisted.
-    _dropped: dict[str, bytes] = {}
-
-    def do_GET(self):  # noqa: N802
         if self.path.startswith("/fs-get"):
             body = self._dropped.get("fs", b"")
             self.send_response(200)

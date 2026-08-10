@@ -8,9 +8,9 @@ from typing import Any
 
 ALLOWED_FEATURES = frozenset({
     "actuator", "bearing", "belt", "bevel", "bolts", "brake", "cable",
-    "chain_track", "component", "drum", "envelope", "fabric", "gear", "gearbox",
+    "chain_track", "component", "decal", "drum", "envelope", "fabric", "gear", "gearbox",
     "gusset", "hardstop", "hood", "hook", "motor", "noodle", "noodle_corner", "pawl", "plate",
-    "polycarb", "pulley", "rope", "sensor", "shaft", "slide", "sprocket",
+    "polycarb", "pulley", "rib", "rope", "sensor", "shaft", "slide", "sprocket",
     "standoff", "tensioner", "tube", "wheel",
 })
 CATALOG_SECTIONS = frozenset({
@@ -387,6 +387,19 @@ def _local_extents(feature: dict[str, Any]) -> list[float] | None:
     if kind == "hood":
         r = _f(feature.get("r"), 2.0)
         return [_f(feature.get("w"), 2.0) / 2, r, r]
+    if kind == "rib":
+        # A formed rib is an arc segment: thin along its own X, out to the arc radius in the
+        # plane. Boxing it by the full circle is conservative in the direction that matters
+        # (it never claims to reach further than the arc does).
+        r = _f(feature.get("r"), 2.0)
+        return [_f(feature.get("th"), 0.19) / 2, r, r]
+    if kind == "fabric" and feature.get("bend"):
+        # A corner wrap is a quarter-bend, so its `size` carries no straight length. Box it
+        # by its section the way a corner noodle is boxed — deliberately smaller than the
+        # swept arc, because an oversized box would manufacture contacts the audit is
+        # supposed to be looking for.
+        size = _floats(feature.get("size"), 3) or [0.0, 5.0, 3.3]
+        return [size[2] / 2, size[1] / 2, size[2] / 2]
     if kind == "bolts":
         dia = _f(feature.get("dia"), 0.19)
         length = _f(feature.get("len"), 0.75)
@@ -607,6 +620,50 @@ def season_rule_report(spec: dict[str, Any]) -> dict[str, Any]:
             detail=(f"{worst['part']} is modelled {worst['below_in']:.1f} in below the wheel "
                     "contact plane — it would be through the carpet."))
 
+    # Bumper rules. These are worth checking automatically precisely because they are the
+    # ones a team loses a match to: they are measured with a ruler at inspection, they are
+    # easy to get wrong by half an inch, and none of them show up as anything odd in a
+    # render. Every number here comes from the geometry the compiler actually emitted.
+    bumper = spec.get("bumper") or {}
+    if bumper.get("thickness_in"):
+        zone = bumper.get("zone_in") or [2.5, 5.75]
+        bottom = float(bumper.get("floor_to_bottom_in", 0.0))
+        top = float(bumper.get("floor_to_top_in", 0.0))
+        add("R405", "bumper zone filled", [round(bottom, 2), round(top, 2)],
+            [zone[0], zone[1]], "in off the floor",
+            bottom <= zone[0] + 1e-6 and top >= zone[1] - 1e-6,
+            detail=(f"padding and backing span {bottom:.2f}–{top:.2f} in off the carpet; the "
+                    f"zone is {zone[0]:g}–{zone[1]:g} in"))
+        add("R402", "backing height", bumper.get("height_in"), 4.5, "in",
+            float(bumper.get("height_in", 0)) >= 4.5 - 1e-6,
+            detail=f"{bumper.get('plywood_in')} in plywood, {bumper.get('height_in')} in tall")
+        add("R402", "padding depth", bumper.get("noodle_in"), 2.25, "in",
+            float(bumper.get("noodle_in", 0)) >= 2.25 - 1e-6,
+            detail=f"{bumper.get('noodles_per_segment')} stacked "
+                   f"Ø{bumper.get('noodle_dia_in')} in noodles")
+        hard_out = float(bumper.get("hard_part_out_in", 0.0))
+        proud = float(bumper.get("padding_proud_of_hard_in", 0.0))
+        add("R404", "hard part setback", round(hard_out, 2), 1.25, "in",
+            hard_out <= 1.25 + 1e-6,
+            detail="outermost hard bumper part, measured from the frame perimeter")
+        add("R404", "padding proud of hard parts", round(proud, 2), 2.0, "in",
+            proud >= 2.0 - 1e-6, detail="foam standing beyond the plywood face")
+        add("R406", "corner padding", bumper.get("corner_padding_in"), 2.25, "in",
+            float(bumper.get("corner_padding_in", 0)) >= 2.25 - 1e-6,
+            detail="continuous quarter-bend of noodle at each level, cloth over it")
+        numerals = [f for a in (cad.get("assemblies") or [])
+                    for f in (a.get("features") or []) if f.get("t") == "decal"]
+        if numerals:
+            height = min(_f(f.get("size", [0, 0, 0])[1], 0.0) for f in numerals)
+            stroke = min(_f(f.get("stroke"), 0.0) for f in numerals)
+            add("R412", "team number height", round(height, 2), 3.75, "in",
+                height >= 3.75 - 1e-6,
+                detail=f"{len(numerals)} numerals modelled, {round(stroke, 3):g} in stroke "
+                       f"against a 0.5 in minimum")
+            add("R412", "team number placements", len(numerals), 3, "faces",
+                len(numerals) >= 3 and stroke >= 0.5 - 1e-6,
+                detail="white numerals, one per bumper face, about 90° apart")
+
     mass = (spec.get("mass_estimate") or {}).get("total_lb")
     weight_limit = limits.get("weight_lb")
     if mass and weight_limit:
@@ -646,8 +703,14 @@ _FIDELITY_BY_KIND = {
     "gear": "detailed", "sprocket": "detailed", "pulley": "detailed", "bearing": "detailed",
     "wheel": "detailed", "polycarb": "detailed", "bolts": "detailed", "standoff": "detailed",
     "hardstop": "detailed", "hook": "detailed", "drum": "detailed", "hood": "detailed",
+    "rib": "detailed",
     "belt": "concept", "rope": "concept", "cable": "concept", "noodle": "concept",
     "noodle_corner": "concept",
+    # A decal carries its true height, stroke and placement — the three things R412 is
+    # measured on — but the glyph outlines are a raster, not a modelled profile. That is a
+    # concept part by this table's own definition, and calling it detailed would be the
+    # marketing copy outrunning the geometry again.
+    "decal": "concept",
     "fabric": "concept", "bevel": "concept", "pawl": "concept", "slide": "concept",
     "brake": "concept", "tensioner": "concept", "chain_track": "concept",
     "motor": "envelope", "gearbox": "envelope", "component": "envelope",

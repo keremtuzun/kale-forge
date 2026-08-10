@@ -175,18 +175,65 @@ def solid(f):
         size = f.get("size") or [27.0, 5.06, 3.31]
         length, h, d = (_num(v, 1.0) for v in size[:3])
         sk = 0.06
+        if f.get("bend"):
+            # The corner wrap: the same channel section swept 90° about Y, on the +X→+Z
+            # quadrant the corner noodle uses, so cloth and foam turn the corner together.
+            bend = _num(f.get("bend"), 1.66) * IN
+            outer = (cq.Workplane("XZ").moveTo(bend, 0).rect(d * IN, h * IN)
+                     .revolve(90, (0, 0, 0), (0, 1, 0)))
+            inner = (cq.Workplane("XZ").moveTo(bend, 0)
+                     .rect((d - 2 * sk) * IN, (h - 2 * sk) * IN)
+                     .revolve(90, (0, 0, 0), (0, 1, 0)))
+            return outer.cut(inner)
         outer = _box(length, h, d)
         inner = cq.Workplane("XY").box((length - 2 * sk) * IN, (h - 2 * sk) * IN, d * IN)
         return outer.cut(inner.translate((0, 0, -sk * IN)))
+    if t == "rib":
+        # A formed arc rib: the profile a hood skin is riveted to. Thin along X, arc in YZ.
+        r = _num(f.get("r"), 3.0)
+        web = min(_num(f.get("web"), 0.6), r - 0.05)
+        th = _num(f.get("th"), 0.19)
+        start = _num(f.get("start"), 0.0)
+        sweep = max(_num(f.get("arc"), 90.0), 10.0)
+        ring = (cq.Workplane("YZ").circle(r * IN).circle((r - web) * IN)
+                .extrude(th * IN / 2.0, both=True))
+        # Keep only the swept sector: a wedge, cut out of the full annulus.
+        pts = [(0.0, 0.0)]
+        steps = max(4, int(sweep // 15) + 2)
+        for i in range(steps + 1):
+            a = math.radians(start + sweep * i / steps)
+            pts.append((math.cos(a) * r * IN * 1.4, math.sin(a) * r * IN * 1.4))
+        wedge = (cq.Workplane("YZ").polyline(pts).close()
+                 .extrude(th * IN, both=True))
+        return ring.intersect(wedge)
+    if t == "decal":
+        # A vinyl numeral panel is a real applied part with a real thickness, so it exports
+        # as one. The glyphs are not cut — nothing downstream would use them.
+        size = f.get("size") or [6.0, 4.0, 0.02]
+        return _box(_num(size[0], 6.0), _num(size[1], 4.0), max(_num(size[2], 0.02), 0.01))
     if t == "gusset":
         size = f.get("size") or [3.0, 3.0]
         a, b = _num(size[0], 3.0), _num(size[1], 3.0)
         th = _num(f.get("th"), 0.09)
-        tri = (cq.Workplane("XZ")
-               .polyline([(-a * IN / 2, -b * IN / 2), (a * IN / 2, -b * IN / 2),
-                          (-a * IN / 2, b * IN / 2)]).close()
-               .extrude(th * IN / 2.0, both=True))
-        return tri
+        if f.get("form") == "angle":
+            # Folded sheet: one flat leg plus the leg bent down at its outboard edge. Unioned
+            # rather than left as two bodies, because the fold is what the part is for.
+            leg = _num(f.get("leg"), min(a, b) * 0.66)
+            flat = _box(a, th, b).translate((0, -th * IN / 2, 0))
+            bent = _box(a, leg, th).translate((0, -leg * IN / 2, (b - th) * IN / 2))
+            return flat.union(bent)
+        if f.get("form") == "triangle":
+            return (cq.Workplane("XZ")
+                    .polyline([(-a * IN / 2, -b * IN / 2), (a * IN / 2, -b * IN / 2),
+                               (-a * IN / 2, b * IN / 2)]).close()
+                    .extrude(th * IN / 2.0, both=True))
+        # The default plate has its unloaded corner clipped, which is what a waterjet cuts.
+        clip = min(a, b) * 0.42
+        return (cq.Workplane("XZ")
+                .polyline([(-a * IN / 2, -b * IN / 2), (a * IN / 2, -b * IN / 2),
+                           (a * IN / 2, (b / 2 - clip) * IN), ((a / 2 - clip) * IN, b * IN / 2),
+                           (-a * IN / 2, b * IN / 2)]).close()
+                .extrude(th * IN / 2.0, both=True))
     if t == "shaft" or t == "noodle":
         dia = _num(f.get("dia"), 0.5)
         length = _num(f.get("len"), 1.0)

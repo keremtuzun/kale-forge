@@ -10,11 +10,10 @@
 // Coordinates match frc_cad.py: inches, +X robot right, +Y up, -Z toward the front,
 // origin at the frame centre on the top face of the bellypan.
 export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, RoomEnvironment, canvas }) {
-  // preserveDrawingBuffer keeps the frame readable after the draw call, so the canvas can be
-  // saved or captured as a PNG. It costs a little performance and buys the thing people
-  // actually want from a design tool: a picture of their robot they can send someone.
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true,
-                                             preserveDrawingBuffer: true });
+  // No preserveDrawingBuffer: capture() renders explicitly right before reading the
+  // canvas, so the buffer never needs to survive between frames — and keeping it did
+  // measurable GPU memory/bandwidth damage on large robots.
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.2;
@@ -97,13 +96,18 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
   // with no material of their own, so legacy fabric-less bumpers still read as bumpers.
   const M_OF = (name, featureName) => (
     (name && M[name]) || (/bumper/.test(featureName || '') ? M.bumper : M.aluminium));
+  // The alliance colour of the current design. The number decals paint their panel in it,
+  // and they are built inside buildFeatureOf, which only ever sees one feature.
+  let bumperHex = '#c0392b';
   const box = (w, h, d, m) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
   const cyl = (rt, rb, h, m, s = 32) => new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, s), m);
   const D2R = Math.PI / 180;
 
   // ── reusable part shapes ─────────────────────────────────────────────────────
-  // A plate is extruded from a rounded outline with real pocket holes cut through it —
-  // the pockets are geometry, not a painted-on texture.
+  // A plate is extruded from a rounded outline. In this WEBGL PREVIEW the pockets are
+  // dark inset geometry laid over the face — a visual read, not removed material; the
+  // exported STEP/FeatureScript carry the true cut bores. The dossier's fidelity
+  // section is the honest statement of which is which.
   function makePlate(w, t, d, m, pockets) {
     const r = Math.min(0.35, w * 0.12, d * 0.12);
     const shape = new THREE.Shape();
@@ -391,12 +395,55 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
         return makePlate(f.size[0], f.size[1], f.size[2], m, f.pockets || 0);
       case 'gusset': {
         const g = new THREE.Group();
-        const tri = new THREE.Shape();
-        tri.moveTo(0, 0); tri.lineTo(f.size[0], 0); tri.lineTo(0, f.size[1]); tri.closePath();
-        const geo = new THREE.ExtrudeGeometry(tri, { depth: f.th || 0.09, bevelEnabled: false });
+        const th = f.th || 0.09;
+        if (f.form === 'angle') {
+          // Bent sheet: a flat leg lying in the local XZ plane and a second leg turned down
+          // 90° at its outboard edge, which is the whole point of the part — one blank
+          // catching two faces of the tube instead of a flat plate catching one.
+          const leg = f.leg || Math.min(f.size[0], f.size[1]) * 0.66;
+          const flat = box(f.size[0], th, f.size[1], m);
+          flat.position.y = -th / 2;
+          const bent = box(f.size[0], leg, th, m);
+          bent.position.set(0, -leg / 2, f.size[1] / 2 - th / 2);
+          g.add(flat, bent);
+          // Only if the blank is actually punched. THREE.Object3D.add() with no arguments
+          // is an error, not a no-op, so spreading an empty row logs on every unpunched
+          // bracket — four of them per robot, straight into the console.
+          const holes = holeRow(f.size[0], f.pitch, th, -th / 2, f.size[1] / 2 - 0.4);
+          if (holes.length) g.add(...holes);
+          return g;
+        }
+        const shape = new THREE.Shape();
+        if (f.form === 'triangle') {
+          shape.moveTo(0, 0); shape.lineTo(f.size[0], 0); shape.lineTo(0, f.size[1]);
+        } else {
+          // The default corner gusset is a plate with the unloaded corner clipped — the
+          // shape a waterjet actually cuts, not a bare right triangle.
+          const c = Math.min(f.size[0], f.size[1]) * 0.42;
+          shape.moveTo(0, 0); shape.lineTo(f.size[0], 0); shape.lineTo(f.size[0], f.size[1] - c);
+          shape.lineTo(f.size[0] - c, f.size[1]); shape.lineTo(0, f.size[1]);
+        }
+        shape.closePath();
+        const geo = new THREE.ExtrudeGeometry(shape, { depth: th, bevelEnabled: false });
         geo.rotateX(-Math.PI / 2); geo.center();
-        g.add(new THREE.Mesh(geo, M.aluminium));
+        g.add(new THREE.Mesh(geo, m));
         return g;
+      }
+      case 'decal': {
+        // The team number, at the height and stroke R412 measures. It is a part in the tree,
+        // so it is drawn from the tree — the renderer no longer invents its own size.
+        return makeNumberPanel(f.text, f.size[0], f.size[1], f.stroke || 0.5);
+      }
+      case 'rib': {
+        // A formed rib: the curved profile a hood or a shell is actually built from, rather
+        // than one smooth surface pretending to be sheet metal.
+        const arc = new THREE.Shape();
+        const r = f.r || 3, sweep = (f.arc || 90) * D2R, start = (f.start || 0) * D2R;
+        arc.absarc(0, 0, r, start, start + sweep, false);
+        arc.absarc(0, 0, Math.max(0.05, r - (f.web || 0.6)), start + sweep, start, true);
+        const geo = new THREE.ExtrudeGeometry(arc, { depth: f.th || 0.19, bevelEnabled: false });
+        geo.translate(0, 0, -(f.th || 0.19) / 2); geo.rotateY(Math.PI / 2);
+        return new THREE.Mesh(geo, m);
       }
       case 'shaft':
         return makeShaft(f.dia, f.len, f.form);
@@ -422,6 +469,14 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
       }
       case 'wheel':
         return makeWheel(f.dia, f.w, f.kind, spin, f.n);
+      case 'noodle_corner': {
+        // Quarter-bend of noodle at a bumper corner: the ring is continuous around
+        // the corner, matching the course's swept-ring bumper. Torus arc lies flat
+        // (about Y); f.rot picks the quadrant.
+        const geo = new THREE.TorusGeometry(f.bend, f.dia / 2, 10, 14, Math.PI / 2);
+        geo.rotateX(Math.PI / 2);
+        return new THREE.Mesh(geo, M.foam);
+      }
       case 'noodle': {
         // A pool noodle: foam cylinder along local Y (the shaft convention — the feature's
         // rot lays it along its segment), with the moulded centre bore visible at the ends.
@@ -435,6 +490,21 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
         // closing over the noodle stack. size = [length, height, wrapped depth]; the skin
         // faces local +Z and the segment's rot turns it outward.
         const g = new THREE.Group();
+        if (f.bend) {
+          // A corner is the same channel swept through 90°, so the cloth stays continuous
+          // over the corner noodles instead of stopping at the tangent point and leaving
+          // foam showing. A quarter-annulus, standing the wrap's full height: the arc runs
+          // +X → +Z and the feature's rot picks the quadrant, matching the corner noodles.
+          const [, ch, cd] = f.size, skin = 0.05;
+          const rOut = f.bend + cd / 2;
+          const q = new THREE.Shape();
+          q.absarc(0, 0, rOut, 0, Math.PI / 2, false);
+          q.absarc(0, 0, Math.max(0.05, rOut - skin), Math.PI / 2, 0, true);
+          const geo = new THREE.ExtrudeGeometry(q, { depth: ch, bevelEnabled: false });
+          geo.rotateX(Math.PI / 2); geo.translate(0, ch / 2, 0);
+          g.add(new THREE.Mesh(geo, M.bumper));
+          return g;
+        }
         const [len, h, d] = f.size, skin = 0.05;
         const face = box(len, h, skin, M.bumper); face.position.z = d / 2 - skin / 2; g.add(face);
         for (const sy of [-1, 1]) {
@@ -522,7 +592,10 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
         return g;
       }
       case 'hood': {
-        const geo = new THREE.CylinderGeometry(f.r, f.r, f.w, 26, 1, true, 0, Math.PI);
+        // Honour the emitted wrap. A hood that always drew a full half-cylinder put a lot of
+        // metal behind the flywheels that no shooter has.
+        const sweep = (f.arc || 180) * D2R, from = (f.start || 0) * D2R;
+        const geo = new THREE.CylinderGeometry(f.r, f.r, f.w, 26, 1, true, from, sweep);
         const hood = new THREE.Mesh(geo, mat({ color: 0x9aa0a6, metalness: 0.86, roughness: 0.34, side: THREE.DoubleSide }));
         hood.rotation.z = Math.PI / 2;
         return hood;
@@ -571,66 +644,53 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
     }
   }
 
-  // Team numbers go on all four bumpers. They are decals, not parts, so they are drawn here
-  // from spec.team_number rather than carried in the CAD tree — putting them in the geometry
-  // would change every chassis assembly the design model was trained on.
+  // The team number is a `decal` feature in the CAD tree now, so it is placed by the
+  // compiler and drawn here at whatever size the compiler emitted. That matters: R412 sets a
+  // 3.75 in minimum height and a 0.5 in minimum stroke, and while these numbers lived only
+  // in the renderer they were 1.95 in tall — a bit over half legal — with nothing in the
+  // pipeline in a position to measure them.
+  //
   // The plane is sized to the digits and the canvas is sized to the plane, at one pixel
-  // density. Any mismatch between those two aspect ratios shows up as stretched type, which
-  // is what a 2:1 canvas mapped onto a 7:1 plane was doing.
-  function makeBumperNumber(number, bumperColor) {
-    const text = String(number);
-    const DIGIT_W = 1.30, HEIGHT = 1.95;     // inches; a tall digit on a 2.5 in bumper face
-    const width = text.length * DIGIT_W;
+  // density. Any mismatch between those two aspect ratios shows up as stretched type.
+  function makeNumberPanel(text, width, height, stroke) {
+    const label = String(text == null ? '' : text);
     const PX = 128;
     const canvas = document.createElement('canvas');
-    canvas.width = Math.round(width * PX);
-    canvas.height = Math.round(HEIGHT * PX);
+    canvas.width = Math.max(2, Math.round(width * PX));
+    canvas.height = Math.max(2, Math.round(height * PX));
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = bumperColor; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    // Condensed weights are what teams actually cut; it also keeps four digits inside the
-    // panel without squeezing the glyphs.
-    ctx.font = `bold ${Math.round(canvas.height * 0.78)}px "Helvetica Neue", Inter, Arial, sans-serif`;
+    ctx.fillStyle = bumperHex; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Condensed bold is what teams cut vinyl in; it also keeps four digits inside the panel
+    // without squeezing the glyphs. The cap height is the rule-bearing dimension, so the
+    // glyphs fill the panel rather than sitting in it with leading.
+    ctx.font = `bold ${Math.round(canvas.height * 0.92)}px "Helvetica Neue", Inter, Arial, sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = readableOn(bumperColor);
-    ctx.fillText(text, canvas.width / 2, canvas.height / 2 + canvas.height * 0.03,
-                 canvas.width * 0.94);
+    // R412 says white. On an alliance bumper that is always the readable choice anyway, and
+    // picking a "more readable" dark numeral for a light bumper would be drawing an illegal
+    // robot — the earlier contrast-matching behaviour did exactly that.
+    ctx.fillStyle = '#ffffff';
+    ctx.lineWidth = Math.max(1, stroke * PX * 0.12);
+    ctx.fillText(label, canvas.width / 2, canvas.height / 2 + canvas.height * 0.03,
+                 canvas.width * 0.96);
     const texture = new THREE.CanvasTexture(canvas);
     texture.anisotropy = 8; texture.colorSpace = THREE.SRGBColorSpace;
     return new THREE.Mesh(
-      new THREE.PlaneGeometry(width, HEIGHT),
+      new THREE.PlaneGeometry(width, height),
       new THREE.MeshBasicMaterial({ map: texture, clippingPlanes: [sectionPlane] }));
   }
 
-  // White on a dark bumper, near-black on a light one. A fixed white number disappears on
-  // white or yellow bumpers, which teams do run.
-  function readableOn(hex) {
-    const c = new THREE.Color(hex);
-    const luma = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
-    return luma > 0.6 ? '#15181b' : '#ffffff';
-  }
-
-  // The numbers ride on the outer face of the bumper, so they follow the bumper's real
-  // thickness and height rather than the constants the first 0.75 in backing plate happened
-  // to have. A team number floating inside the noodle is the failure this avoids.
-  function addBumperNumbers(group, number, colour, W, L, bumper) {
-    const t = (bumper && bumper.thickness_in) || 3.31;
-    const h = (bumper && bumper.height_in) || 5.0;
-    const halfW = W / 2 + t, halfL = L / 2 + t;
-    const face = 0.02;                       // just proud of the bumper so it never z-fights
-    const y = h / 2;
-    const places = [
-      { at: [0, y, -(halfL + face)], rot: [0, Math.PI, 0] },
-      { at: [0, y, halfL + face], rot: [0, 0, 0] },
-      { at: [-(halfW + face), y, 0], rot: [0, -Math.PI / 2, 0] },
-      { at: [halfW + face, y, 0], rot: [0, Math.PI / 2, 0] },
-    ];
-    for (const p of places) {
-      const mesh = makeBumperNumber(number, colour);
-      mesh.position.set(p.at[0], p.at[1], p.at[2]);
-      mesh.rotation.set(p.rot[0], p.rot[1], p.rot[2]);
-      mesh.userData.part = 'chassis';
-      group.add(mesh);
+  // The punched hole row a bolt-on bracket is cut with. Drawn as through-pockets so a gusset
+  // reads as something that lands on the rail's existing holes rather than a blank slab.
+  function holeRow(span, pitch, th, y, z) {
+    if (!pitch || pitch <= 0) return [];
+    const n = Math.max(0, Math.floor((span - 0.6) / pitch) + 1);
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const h = cyl(0.1, 0.1, th * 3, M.pocket, 10);
+      h.position.set((i - (n - 1) / 2) * pitch, y, z);
+      out.push(h);
     }
+    return out;
   }
 
   // Belts, cables and ropes connect two points, so they are placed by their endpoints
@@ -639,23 +699,63 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
     const a = new THREE.Vector3(f.at[0], f.at[1], f.at[2]);
     const b = new THREE.Vector3(f.to[0], f.to[1], f.to[2]);
     if (f.t === 'belt') {
-      const g = new THREE.Group();
       const dir = b.clone().sub(a);
-      const len = dir.length();
-      if (len < 0.01) return null;
-      // A belt is a loop: two runs on either side of the pulley centres, not a single bar.
-      // The offset has to be perpendicular to the run, or a horizontal belt separates along
-      // the wrong axis and reads as one thick bar.
-      const axis = dir.clone().normalize();
-      const up = Math.abs(axis.y) > 0.9 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0);
-      const perp = new THREE.Vector3().crossVectors(axis, up).normalize();
+      const d = dir.length();
+      if (d < 0.01) return null;
+      const run = dir.clone().normalize();
+      const mat = /chain/.test(f.kind || '') ? M.steel : M.black;
+      const w = 0.05 + (f.w || 0.35);
+      // A belt is a loop that WRAPS its pulleys: two tangent runs joined by arcs at
+      // the pitch radii the enrichment pass resolved from the endpoint features. The
+      // loop plane's normal is the pulley axis, carried in the data (f.axis).
+      if (f.r1 && f.r2 && d > Math.abs(f.r1 - f.r2) + 0.05) {
+        const half = (f.thick || 0.12) / 2;
+        let axis = f.axis ? new THREE.Vector3(f.axis[0], f.axis[1], f.axis[2]) : null;
+        if (!axis || axis.lengthSq() < 0.5 || Math.abs(axis.clone().normalize().dot(run)) > 0.95) {
+          const up = Math.abs(run.y) > 0.9 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0);
+          axis = new THREE.Vector3().crossVectors(run, up);
+        }
+        axis.addScaledVector(run, -axis.dot(run)).normalize();  // exactly ⊥ the run
+        const perp = new THREE.Vector3().crossVectors(axis, run).normalize();
+        const phi = Math.acos(Math.max(-1, Math.min(1, (f.r1 - f.r2) / d)));
+        const SEG = 20;
+        const boundary = (r1, r2) => {
+          const pts = [];
+          for (let k = 0; k <= SEG; k++) { const ang = phi + (Math.PI * 2 - 2 * phi) * k / SEG; pts.push([Math.cos(ang) * r1, Math.sin(ang) * r1]); }
+          for (let k = 0; k <= SEG; k++) { const ang = -phi + 2 * phi * k / SEG; pts.push([d + Math.cos(ang) * r2, Math.sin(ang) * r2]); }
+          return pts;
+        };
+        const shape = new THREE.Shape();
+        const o = boundary(f.r1 + half, f.r2 + half);
+        shape.moveTo(o[0][0], o[0][1]);
+        for (let i = 1; i < o.length; i++) shape.lineTo(o[i][0], o[i][1]);
+        shape.closePath();
+        const holePts = boundary(Math.max(f.r1 - half, 0.02), Math.max(f.r2 - half, 0.02));
+        const hole = new THREE.Path();
+        hole.moveTo(holePts[0][0], holePts[0][1]);
+        for (let i = 1; i < holePts.length; i++) hole.lineTo(holePts[i][0], holePts[i][1]);
+        hole.closePath();
+        shape.holes.push(hole);
+        const geo = new THREE.ExtrudeGeometry(shape, { depth: w, bevelEnabled: false });
+        geo.translate(0, 0, -w / 2);
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.applyMatrix4(new THREE.Matrix4().makeBasis(run, perp, axis));
+        mesh.position.copy(a);
+        const g = new THREE.Group(); g.add(mesh);
+        return g;
+      }
+      // Endpoints that resolved to nothing fall back to the flat two-run read; the
+      // transmission report names them, so the gap is visible, never silent.
+      const g = new THREE.Group();
+      const up = Math.abs(run.y) > 0.9 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0);
+      const perp = new THREE.Vector3().crossVectors(run, up).normalize();
       const gap = ((f.w || 0.35) * 1.6) / 2;
       const mid = a.clone().lerp(b, 0.5);
       for (const side of [-1, 1]) {
-        const run = box(0.10, len, 0.05 + (f.w || 0.35), /chain/.test(f.kind || '') ? M.steel : M.black);
-        run.position.copy(mid).addScaledVector(perp, side * gap);
-        run.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis);
-        g.add(run);
+        const bar = box(0.10, d, w, mat);
+        bar.position.copy(mid).addScaledVector(perp, side * gap);
+        bar.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), run);
+        g.add(bar);
       }
       return g;
     }
@@ -682,6 +782,14 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
     world.traverse(o => {
       if (o.isCSS2DObject && o.element && o.element.parentNode) o.element.parentNode.removeChild(o.element);
       if (o.isMesh && o.geometry) o.geometry.dispose();
+      // Highlight clones belong to one mesh; the shared palette materials do not and
+      // must survive into the next design.
+      if (o.isMesh && origMats.has(o) && o.material !== origMats.get(o)) o.material.dispose();
+      // Bumper-number planes own their CanvasTexture and material; nothing else
+      // references them, and un-disposed textures accumulate GPU memory per revision.
+      if (o.isMesh && o.material && o.material.map && o.material.map.isCanvasTexture){
+        o.material.map.dispose(); o.material.dispose();
+      }
     });
     scene.remove(world);
     while (labelRenderer.domElement.firstChild) labelRenderer.domElement.removeChild(labelRenderer.domElement.firstChild);
@@ -695,7 +803,7 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
     if (!cad || !cad.assemblies) { frameView(); return; }
     const frame = spec.frame || {};
     const W = frame.width_in || 28, L = frame.length_in || 28;
-    const bumperHex = (spec.bumper_color && spec.bumper_color.hex) || '#c0392b';
+    bumperHex = (spec.bumper_color && spec.bumper_color.hex) || '#c0392b';
     M.bumper.color.set(bumperHex);
     let tallest = 12;
 
@@ -775,9 +883,6 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
         id: asm.id, group, base: group.position.clone(),
         explode: explodeVector(asm, W, L),
       };
-      if (asm.id === 'chassis') {
-        addBumperNumbers(group, spec.team_number || 8159, bumperHex, W, L, spec.bumper);
-      }
       assemblies.push(entry);
       spin.forEach(s => spinners.push(s));
       tallest = Math.max(tallest, org[1] + top + 2);
@@ -819,7 +924,12 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
         o.material = o.material.clone();
         o.material.emissive = new THREE.Color(0x2a7d4f); o.material.emissiveIntensity = 0.34;
       } else if (origMats.has(o)) {
+        // The clone made above is this mesh's own material and nothing else uses it, so it
+        // has to be released here. Without this, every part the user clicks leaves a
+        // material (and its compiled shader program) behind for the life of the page.
+        const highlightMat = o.material;
         o.material = origMats.get(o);
+        if (highlightMat !== o.material) highlightMat.dispose();
       }
     });
   }
@@ -891,12 +1001,25 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
   addEventListener('resize', resize); resize();
 
   const clock = new THREE.Clock();
-  (function tick() {
+  // Someone who asked for reduced motion still needs to see the design change when they
+  // explode it or switch view — so the transitions snap to their end state instead of
+  // easing. Content is never withheld, only the animation between states.
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  // A hidden pane must not burn a core on frames nobody sees: rAF keeps firing in some
+  // embedders even when nothing composites.
+  let hidden = document.hidden;
+  document.addEventListener('visibilitychange', () => {
+    hidden = document.hidden;
+    if (!hidden) { clock.getDelta(); requestAnimationFrame(tick); }
+  });
+  function tick() {
+    if (hidden) return;                       // resumed by the visibilitychange handler
     const dt = clock.getDelta();
-    exploded += (explodeTarget - exploded) * Math.min(1, dt * 4);
+    const ease = reduceMotion.matches ? 1 : null;   // 1 = jump straight to the target
+    exploded += (explodeTarget - exploded) * (ease || Math.min(1, dt * 4));
     assemblies.forEach(a => {
       const t = a.base.clone().addScaledVector(a.explode, exploded);
-      a.group.position.lerp(t, Math.min(1, dt * 6));
+      a.group.position.lerp(t, ease || Math.min(1, dt * 6));
     });
     if (running) spinners.forEach(s => { if (s.obj.parent) s.obj.rotation[s.axis] += s.speed * dt; });
     // Articulated mechanisms sweep their limited arc — deploy toward the front, pause, stow,
@@ -911,18 +1034,19 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
       a.group.rotation.x = ang;
     });
     if (camTarget) {
-      camera.position.lerp(camTarget, Math.min(1, dt * 3));
+      camera.position.lerp(camTarget, ease || Math.min(1, dt * 3));
       if (camera.position.distanceTo(camTarget) < 0.5) camTarget = null;
     }
     if (ctrlTarget) {
-      controls.target.lerp(ctrlTarget, Math.min(1, dt * 3));
+      controls.target.lerp(ctrlTarget, ease || Math.min(1, dt * 3));
       if (controls.target.distanceTo(ctrlTarget) < 0.4) ctrlTarget = null;
     }
     controls.update();
     renderer.render(scene, camera);
     labelRenderer.render(scene, camera);
     requestAnimationFrame(tick);
-  })();
+  }
+  tick();
 
   return {
     load,

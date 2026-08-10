@@ -272,10 +272,49 @@ def _disclike(fid: str, f: dict[str, Any], label: str, dia_key: str, dia_default
 
 def _gusset(fid: str, f: dict[str, Any]) -> list[str]:
     a, b = (_num(v) for v in (f.get("size") or [3, 3])[:2])
-    dims, v = _dims(fid, [("a", a), ("b", b), ("th", _num(f.get("th"), 0.09))])
+    th = _num(f.get("th"), 0.09)
+    if f.get("form") == "angle":
+        # A folded blank is one part, not two plates that happen to meet, so it is emitted as
+        # one feature. The alloy rides in the comment because it is a real constraint on the
+        # part: 5052 bends where 6061 cracks.
+        dims, v = _dims(fid, [("a", a), ("b", b), ("leg", _num(f.get("leg"), b * 0.66)),
+                              ("th", th)])
+        pos, at = _pos(fid, f)
+        return [f'    // {f.get("n", "gusset")} — folded 90°, '
+                f'{f.get("alloy", "5052")} sheet', dims, pos,
+                f'    kaleAngle(context, id + "{fid}", {v["a"]}, {v["b"]}, {v["leg"]}, '
+                f'{v["th"]}, {at}, {_rot(f.get("rot"))});']
+    dims, v = _dims(fid, [("a", a), ("b", b), ("th", th)])
     pos, at = _pos(fid, f)
     return [f'    // {f.get("n", "gusset")}', dims, pos,
             f'    kaleGusset(context, id + "{fid}", {v["a"]}, {v["b"]}, {v["th"]}, '
+            f'{at}, {_rot(f.get("rot"))});']
+
+
+def _rib(fid: str, f: dict[str, Any]) -> list[str]:
+    start = _num(f.get("start"), 0.0)
+    dims, v = _dims(fid, [("r", _num(f.get("r"), 3.0)), ("web", _num(f.get("web"), 0.6)),
+                          ("th", _num(f.get("th"), 0.19)), ("fromDeg", start),
+                          ("toDeg", start + _num(f.get("arc"), 90.0))])
+    pos, at = _pos(fid, f)
+    return [f'    // {f.get("n", "rib")} — formed arc rib', dims, pos,
+            f'    kaleRib(context, id + "{fid}", {v["r"]}, {v["web"]}, {v["th"]}, '
+            f'{v["fromDeg"]}, {v["toDeg"]}, {at}, {_rot(f.get("rot"))});']
+
+
+def _decal(fid: str, f: dict[str, Any]) -> list[str]:
+    """The team number, as the applied panel it is.
+
+    Onshape has no text-on-a-surface primitive worth exporting to STEP, so the numeral panel
+    is emitted as the thin applique it physically is, with the text and the two dimensions an
+    inspector actually measures written into the comment beside it.
+    """
+    sx, sy, sz = (_num(v) for v in (f.get("size") or [6, 4, 0.02])[:3])
+    dims, v = _dims(fid, [("sx", sx), ("sy", sy), ("sz", sz)])
+    pos, at = _pos(fid, f)
+    return [f'    // {f.get("n", "decal")} — "{f.get("text", "")}", {sy:g} in tall, '
+            f'{_num(f.get("stroke"), 0.5):g} in stroke, white (R412)', dims, pos,
+            f'    kaleBox(context, id + "{fid}", {v["sx"]}, {v["sy"]}, {v["sz"]}, '
             f'{at}, {_rot(f.get("rot"))});']
 
 
@@ -339,7 +378,12 @@ _EMITTERS = {
     # The course sweeps the bumper as one continuous ring: each corner is a real
     # quarter-bend of noodle, revolved 90° about the corner's vertical axis.
     "noodle_corner": lambda i, f: _noodle_corner(i, f),
-    "fabric": lambda i, f: _boxlike(i, f, (27.0, 5.06, 3.31)),
+    # A straight wrap is a channel; a corner wrap is the same channel swept 90°, so it goes
+    # out through the same quarter-revolve the corner noodle uses, at the wrap's own section.
+    "fabric": lambda i, f: (_noodle_corner(i, {**f, "dia": (f.get("size") or [0, 5, 3.31])[2]})
+                            if f.get("bend") else _boxlike(i, f, (27.0, 5.06, 3.31))),
+    "decal": _decal,
+    "rib": _rib,
     "polycarb": lambda i, f: _boxlike(i, f, (1, 0.093, 1)),
     "hardstop": lambda i, f: _boxlike(i, f, (0.75, 0.5, 0.75)),
     "gearbox": lambda i, f: _boxlike(i, f, (2, 2, 1.2)),
@@ -552,6 +596,73 @@ function kaleGusset(context is Context, id is Id, a is number, b is number,
     opExtrude(context, id + "ext", {
             "entities" : qSketchRegion(id + "sk"),
             "direction" : vector(0, 1, 0),
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : th * inch
+    });
+    kaleMove(context, id, qCreatedBy(id + "ext", EntityType.BODY), at, rot);
+}
+
+// A folded bracket: one blank, one 90 degree bend, two tube faces caught. `leg` is how far
+// the bent leg comes down off the flat one. It is one part on purpose — modelling it as two
+// plates loses the thing that makes it stiff.
+function kaleAngle(context is Context, id is Id, a is number, b is number,
+                   leg is number, th is number, at is Vector, rot is Vector)
+{
+    fCuboid(context, id + "flat", {
+            "corner1" : vector(-a / 2, -th, -b / 2) * inch,
+            "corner2" : vector(a / 2, 0, b / 2) * inch
+    });
+    fCuboid(context, id + "bent", {
+            "corner1" : vector(-a / 2, -leg, b / 2 - th) * inch,
+            "corner2" : vector(a / 2, 0, b / 2) * inch
+    });
+    opBoolean(context, id + "weld", {
+            "tools" : qUnion([qCreatedBy(id + "flat", EntityType.BODY),
+                              qCreatedBy(id + "bent", EntityType.BODY)]),
+            "operationType" : BooleanOperationType.UNION
+    });
+    kaleMove(context, id, qCreatedBy(id + "flat", EntityType.BODY), at, rot);
+}
+
+// A formed rib: the cut arc a hood or shell is built on. `web` is how deep the rib is
+// radially, which is the dimension that decides whether it holds its shape.
+function kaleRib(context is Context, id is Id, radius is number, web is number,
+                 th is number, fromDeg is number, toDeg is number,
+                 at is Vector, rot is Vector)
+{
+    var span = max(abs(toDeg - fromDeg), 10);
+    var sketch = newSketchOnPlane(context, id + "sk", {
+            "sketchPlane" : plane(vector(-th / 2, 0, 0) * inch, vector(1, 0, 0))
+    });
+    var a0 = fromDeg * degree;
+    var a1 = (fromDeg + span) * degree;
+    var am = (fromDeg + span / 2) * degree;
+    var rOut = radius * inch;
+    var rIn = max(radius - web, 0.05) * inch;
+    // Centre/start/end angles do not make an arc here — skArc wants three points, and the
+    // centre-radius form quietly creates nothing at all.
+    skArc(sketch, "outer", {
+            "start" : vector(cos(a0), sin(a0)) * rOut,
+            "mid" : vector(cos(am), sin(am)) * rOut,
+            "end" : vector(cos(a1), sin(a1)) * rOut
+    });
+    skArc(sketch, "inner", {
+            "start" : vector(cos(a0), sin(a0)) * rIn,
+            "mid" : vector(cos(am), sin(am)) * rIn,
+            "end" : vector(cos(a1), sin(a1)) * rIn
+    });
+    skLineSegment(sketch, "capA", {
+            "start" : vector(cos(a0), sin(a0)) * rIn,
+            "end" : vector(cos(a0), sin(a0)) * rOut
+    });
+    skLineSegment(sketch, "capB", {
+            "start" : vector(cos(a1), sin(a1)) * rIn,
+            "end" : vector(cos(a1), sin(a1)) * rOut
+    });
+    skSolve(sketch);
+    opExtrude(context, id + "ext", {
+            "entities" : qSketchRegion(id + "sk"),
+            "direction" : vector(1, 0, 0),
             "endBound" : BoundingType.BLIND,
             "endDepth" : th * inch
     });

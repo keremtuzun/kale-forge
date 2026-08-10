@@ -64,8 +64,12 @@ def test_chassis_only_builds_a_chassis():
     assert ids == {"chassis"}, f"expected chassis only, got {sorted(ids)}"
     for mech in ("intake", "hopper", "shooter", "elevator", "manipulator", "climber"):
         assert not (spec.get(mech) or {}).get("included"), f"{mech} should be excluded"
-    # It used to emit ~121 parts including swerve modules and a control system.
-    assert spec["cad"]["feature_total"] < 60
+    # It used to emit ~121 parts including swerve modules and a control system. The bound is
+    # on SCOPE, not on detail: the bumper's hangers, through-bolts, flange nuts, corner cloth
+    # and team-number decals, and the bellypan's fastener rows and standoffs, are all parts a
+    # bare chassis genuinely has. What must never come back is a mechanism nobody asked for,
+    # and `ids == {"chassis"}` above is what actually guards that.
+    assert spec["cad"]["feature_total"] < 100
 
 
 def test_chassis_only_featurescript_disables_mechanisms():
