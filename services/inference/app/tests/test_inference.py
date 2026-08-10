@@ -163,3 +163,35 @@ class TestMLXProvider:
 
         assert _strip_fences('```json\n{"a": 1}\n```') == '{"a": 1}'
         assert _strip_fences('{"a": 1}') == '{"a": 1}'
+
+
+def test_an_unavailable_provider_is_reported_as_unavailable_not_as_bad_model_output(monkeypatch):
+    """A dead model server must not be blamed on the model.
+
+    The handler used to answer ProviderUnavailable by synthesizing a StubProvider result, which
+    for any schema-carrying request then failed validation — so a model process that was not
+    running came back to the caller as "model output violated the constrained JSON contract".
+    """
+    from fastapi.testclient import TestClient
+
+    from app import main as main_module
+    from app.providers.base import Provider, ProviderUnavailable
+
+    class DeadProvider(Provider):
+        name = "local_llamaserver"
+
+        def generate(self, req):
+            raise ProviderUnavailable("llama-server unreachable at http://127.0.0.1:8010/v1")
+
+    monkeypatch.setattr(main_module, "_provider", DeadProvider())
+    client = TestClient(main_module.app)
+    response = client.post("/v1/generate", json={
+        "system": "s", "user": "u", "max_tokens": 32, "temperature": 0.1,
+        "json_schema": {"type": "object", "properties": {"a": {"type": "string", "enum": ["x"]}},
+                        "required": ["a"]},
+    })
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert "unavailable" in detail["message"]
+    assert "llama-server unreachable" in detail["detail"]
+    assert "constrained JSON contract" not in str(detail)

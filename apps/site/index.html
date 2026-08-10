@@ -14,6 +14,28 @@
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
+
+  <!-- Entry sequence. Hidden until app.js arms it, so a visitor without JavaScript gets the
+       site straight away rather than a beige wall they cannot dismiss. -->
+  <div id="intro" hidden>
+    <div class="intro-cols" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+    <div class="intro-inner">
+      <div class="intro-meta"><span>KALE FORGE — FRC DESIGN INTELLIGENCE</span><span>SHEET 01 / 2026</span></div>
+      <h1 class="intro-title">
+        <span class="mask"><span style="--d:.05s">Robots,</span></span>
+        <span class="mask"><span style="--d:.17s">resolved.</span></span>
+      </h1>
+      <div class="intro-rule"><i id="intro-bar"></i></div>
+      <div class="intro-foot">
+        <p class="intro-count"><b id="intro-num">000</b><i>LOADING SHEET</i></p>
+        <button id="enter" type="button">Continue to the site <span>→</span></button>
+        <button class="intro-skip" id="intro-skip" type="button">SKIP</button>
+      </div>
+    </div>
+  </div>
+  <!-- Armed during parse, not from the deferred bundle, so the page never flashes behind it. -->
+  <script>document.documentElement.classList.add("intro-armed");document.getElementById("intro").hidden=false;</script>
+
   <header class="site-header">
     <a class="brand" href="/" aria-label="Kale Forge welcome">
       <img src="/brand/kale-mark.png" width="30" height="30" alt="">
@@ -21,6 +43,7 @@
     </a>
     <nav aria-label="Primary navigation">
       <a aria-current="page" href="/">Welcome</a>
+      <a href="/app">Design Review</a>
       <a class="studio-link" href="/studio">Design Studio <span>↗</span></a>
     </nav>
   </header>
@@ -28,41 +51,41 @@
   <main id="main">
     <section class="hero">
       <div class="hero-copy">
-        <p class="kicker"><span></span>FRC design intelligence · 2026</p>
-        <div>
+        <p class="kicker" data-reveal style="--d:.04s"><span></span>FRC design intelligence · 2026</p>
+        <div data-reveal style="--d:.12s">
           <h1>Robots,<br>resolved.</h1>
           <p class="lede">Describe the machine. Kale Forge resolves the architecture, calculations, parts, interfaces, and a parametric Onshape model you can keep engineering.</p>
         </div>
-        <div class="hero-actions">
+        <div class="hero-actions" data-reveal style="--d:.22s">
           <a class="primary-action" href="/studio">Enter Design Studio <span>→</span></a>
-          <p>Self-hosted model<br>Zero flattened CAD</p>
+          <p>Self-hosted model<br>Editable concept CAD</p>
         </div>
       </div>
-      <aside class="record" aria-label="Example design record">
+      <aside class="record" aria-label="Example design record" data-reveal style="--d:.3s">
         <div class="record-head"><span>DESIGN RECORD / KF-26-0142</span><b>RESOLVED</b></div>
         <div class="cad-figure">
-          <img src="/kale-forge-hero.png" alt="Detailed Kale Forge mecanum robot chassis engineering drawing with editable dimensions">
+          <img src="/kale-forge-hero.png" alt="Detailed Kale Forge swerve robot chassis engineering drawing with editable dimensions">
           <small>ISO / PARAMETRIC ASSEMBLY</small><small>UNITS / MM</small>
         </div>
         <dl>
           <div><dt>FRAME</dt><dd><b>27 × 27 in</b><span>108 / 110 in perimeter</span></dd></div>
           <div><dt>DRIVE</dt><dd><b>MK4i L2 · Kraken X60</b><span>15.6 ft/s free</span></dd></div>
           <div><dt>POWER</dt><dd><b>REV PDH · 14 channels</b><span>120 A main</span></dd></div>
-          <div><dt>SOURCE</dt><dd><b>228 named parts</b><span>0 flattened bodies</span></dd></div>
+          <div><dt>SOURCE</dt><dd><b>228 named parts</b><span>concept fidelity, stated per part</span></dd></div>
         </dl>
       </aside>
     </section>
 
     <section class="method">
-      <header><p>01 / METHOD</p><h2>Evidence before confidence.</h2></header>
-      <article><span>01</span><h3>Constrain</h3><p>Season rules, stated dimensions, named hardware, build resources, and acceptance criteria become hard inputs.</p></article>
-      <article><span>02</span><h3>Resolve</h3><p>The model proposes architecture while deterministic math closes ratios, power, geometry, travel, and mass.</p></article>
-      <article><span>03</span><h3>Prove</h3><p>Every result carries the part tree, derivations, binder rationale, risks, and tests needed before fabrication.</p></article>
+      <header data-reveal><p>01 / METHOD</p><h2>Evidence before confidence.</h2></header>
+      <article data-reveal style="--d:.08s"><span>01</span><h3>Constrain</h3><p>Season rules, stated dimensions, named hardware, build resources, and acceptance criteria become hard inputs.</p></article>
+      <article data-reveal style="--d:.16s"><span>02</span><h3>Resolve</h3><p>The model proposes architecture while deterministic math closes ratios, power, geometry, travel, and mass.</p></article>
+      <article data-reveal style="--d:.24s"><span>03</span><h3>Prove</h3><p>Every result carries the part tree, derivations, binder rationale, risks, and tests needed before fabrication.</p></article>
     </section>
 
     <section class="source">
-      <div><p>02 / EDITABLE BY CONSTRUCTION</p><h2>Nothing arrives flattened.</h2></div>
-      <div class="source-copy">
+      <div data-reveal><p>02 / EDITABLE BY CONSTRUCTION</p><h2>Parametric source stays with the design.</h2></div>
+      <div class="source-copy" data-reveal style="--d:.12s">
         <p>Kale Forge publishes FeatureScript source, not triangles. Each body is generated from a named call. Dimensions remain named variables. Derived measures remain formulas. Revisions update the same source tab.</p>
         <pre><em>// drive spur · 40T @ 20DP</em>
 var drive_spur_teeth = 40;
@@ -76,9 +99,20 @@ var rail_len = frameLength - 1.5;</pre>
       </div>
     </section>
 
+    <section class="method">
+      <header data-reveal><p>03 / DESIGN REVIEW</p><h2>Upload the board. Keep the mistakes out of copper.</h2></header>
+      <article data-reveal style="--d:.08s"><span>01</span><h3>Upload</h3><p>A KiCad project, schematic or PCB, a SPICE netlist, or a BOM. Everything normalizes into one inspectable representation of your design.</p></article>
+      <article data-reveal style="--d:.16s"><span>02</span><h3>Check</h3><p>A deterministic rule engine runs 40+ connectivity, component, power and layout checks and finds structural problems before any AI is involved.</p></article>
+      <article data-reveal style="--d:.24s"><span>03</span><h3>Explain</h3><p>The self-hosted Kale review model explains each finding, prioritizes the fixes and answers design questions — and a citation gate drops any claim about parts that don't exist.</p></article>
+      <div class="hero-actions" data-reveal style="--d:.32s;grid-column:1/-1;margin-top:8px">
+        <a class="primary-action" href="/app">Review a PCB <span>→</span></a>
+        <p>Sign-in required<br>Findings are advisory, not an inspection</p>
+      </div>
+    </section>
+
     <section class="closing">
-      <div><p>BUILD FROM A REQUIREMENT</p><h2>Open the studio. Keep the source.</h2></div>
-      <a href="/studio">Start a design <span>→</span></a>
+      <div data-reveal><p>BUILD FROM A REQUIREMENT</p><h2>Open the studio. Keep the source.</h2></div>
+      <a href="/studio" data-reveal style="--d:.1s">Start a design <span>→</span></a>
     </section>
   </main>
 

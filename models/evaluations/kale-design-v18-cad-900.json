@@ -1,0 +1,198 @@
+{
+  "model": "Qwen/Qwen3-4B-Instruct-2507",
+  "adapter": "models/adapters/kale-design-qwen3-4b-v18",
+  "elapsed_s": 676.2,
+  "intent": {
+    "prompts": 9,
+    "valid_json": 9,
+    "enum_clean": 9,
+    "distinct_designs": 9,
+    "detail": [
+      {
+        "parsed": true,
+        "has_subsystems": true,
+        "enum_violations": [],
+        "clean": true,
+        "prompt": "We are a rookie team. Design a robot on a 27 x 27 inch frame that cycl",
+        "season": "2026-rebuilt"
+      },
+      {
+        "parsed": true,
+        "has_subsystems": true,
+        "enum_violations": [],
+        "clean": true,
+        "prompt": "MK5i swerve on Krakens at R2 with a ground-to-feeder tunnel intake and",
+        "season": "2025-reefscape"
+      },
+      {
+        "parsed": true,
+        "has_subsystems": true,
+        "enum_violations": [],
+        "clean": true,
+        "prompt": "27 inch REEFSCAPE robot, three-stage cascade elevator, wristed carriag",
+        "season": "2025-reefscape"
+      },
+      {
+        "parsed": true,
+        "has_subsystems": true,
+        "enum_violations": [],
+        "clean": true,
+        "prompt": "27x27 west-coast drivebase on Krakens. Defence bot, nothing else.",
+        "season": "offseason"
+      },
+      {
+        "parsed": true,
+        "has_subsystems": true,
+        "enum_violations": [],
+        "clean": true,
+        "prompt": "Experienced team, 27 inch swerve, turreted dual flywheel hooded shoote",
+        "season": "2026-rebuilt"
+      },
+      {
+        "parsed": true,
+        "has_subsystems": true,
+        "enum_violations": [],
+        "clean": true,
+        "prompt": "Just an MK4n swerve module on a Kraken X60.",
+        "season": "offseason"
+      },
+      {
+        "parsed": true,
+        "has_subsystems": true,
+        "enum_violations": [],
+        "clean": true,
+        "prompt": "Resource-limited team, 26x26, horizontal series-roller intake and a fo",
+        "season": "2025-reefscape"
+      },
+      {
+        "parsed": true,
+        "has_subsystems": true,
+        "enum_violations": [],
+        "clean": true,
+        "prompt": "26x29 robot with a staged accelerator-and-flywheel shooter, a twin-lan",
+        "season": "2026-rebuilt"
+      },
+      {
+        "parsed": true,
+        "has_subsystems": true,
+        "enum_violations": [],
+        "clean": true,
+        "prompt": "Design a 28 x 28 inch REBUILT robot with an over-bumper intake and a h",
+        "season": "2026-rebuilt"
+      }
+    ]
+  },
+  "cad_held_out": {
+    "prompts": 7,
+    "valid_json": 0,
+    "schema_clean": 0,
+    "mean_features": 0.0,
+    "detail": [
+      {
+        "parsed": false,
+        "subsystem": "intake",
+        "season": "2025-reefscape",
+        "prompt": "26x26 robot with a ground-to-feeder tunnel intake."
+      },
+      {
+        "parsed": false,
+        "subsystem": "shooter",
+        "season": "2025-reefscape",
+        "prompt": "28 inch robot with a variable-hood flywheel shooter."
+      },
+      {
+        "parsed": false,
+        "subsystem": "elevator",
+        "season": "2025-reefscape",
+        "prompt": "28x28 robot with a 2 stage telescoping box elevator."
+      },
+      {
+        "parsed": false,
+        "subsystem": "arm",
+        "season": "2025-reefscape",
+        "prompt": "27 inch robot with a four-bar linkage arm reaching 22 in."
+      },
+      {
+        "parsed": false,
+        "subsystem": "climber",
+        "season": "2025-reefscape",
+        "prompt": "29 inch robot with a winch-driven carriage climb."
+      },
+      {
+        "parsed": false,
+        "subsystem": "hopper",
+        "season": "2026-rebuilt",
+        "prompt": "27x27 REBUILT robot with a serpentine tunnel indexer."
+      },
+      {
+        "parsed": false,
+        "subsystem": "hopper",
+        "season": "2026-rebuilt",
+        "prompt": "26x29 REBUILT robot with a paddle-wheel agitator hopper."
+      }
+    ]
+  },
+  "cad": {
+    "prompts": 9,
+    "valid_json": 0,
+    "has_features": 0,
+    "schema_clean": 0,
+    "mean_features": 0.0,
+    "detail": [
+      {
+        "parsed": false,
+        "subsystem": "intake",
+        "season": "2026-rebuilt",
+        "prompt": "27x27 swerve robot built around a dual-roller over-bumper intake."
+      },
+      {
+        "parsed": false,
+        "subsystem": "elevator",
+        "season": "2025-reefscape",
+        "prompt": "28x28 REEFSCAPE robot with a 3 stage belt-rigged cascade tower."
+      },
+      {
+        "parsed": false,
+        "subsystem": "shooter",
+        "season": "2026-rebuilt",
+        "prompt": "27 inch robot with a turreted dual flywheel hooded shooter on Krakens."
+      },
+      {
+        "parsed": false,
+        "subsystem": "hopper",
+        "season": "2026-rebuilt",
+        "prompt": "27x27 REBUILT robot with a circular spindexer feeding a hooded shooter"
+      },
+      {
+        "parsed": false,
+        "subsystem": "arm",
+        "season": "2025-reefscape",
+        "prompt": "28x28 robot with a double-jointed arm reaching 24 in."
+      },
+      {
+        "parsed": false,
+        "subsystem": "climber",
+        "season": "2026-rebuilt",
+        "prompt": "27 inch robot with dual telescoping winch hooks."
+      },
+      {
+        "parsed": false,
+        "subsystem": "chassis",
+        "season": "2025-reefscape",
+        "prompt": "30x28 swerve robot, bolted 2x1 tube frame."
+      },
+      {
+        "parsed": false,
+        "subsystem": "swerve module",
+        "season": "offseason",
+        "prompt": "Just an MK4i swerve module on a Kraken X60 at L2."
+      },
+      {
+        "parsed": false,
+        "subsystem": "intake",
+        "season": "2025-reefscape",
+        "prompt": "26x26 robot with a horizontal series-roller intake."
+      }
+    ]
+  }
+}

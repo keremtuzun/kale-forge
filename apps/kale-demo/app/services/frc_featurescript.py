@@ -50,13 +50,27 @@ def _num(value: Any, default: float = 0.0) -> float:
 
 
 def _ident(name: str, used: dict[str, int]) -> str:
-    """A stable, unique, FeatureScript-safe identifier for a feature id string."""
+    """A stable, unique, FeatureScript-safe identifier for a feature id string.
+
+    Uniqueness must hold across the WHOLE set of issued identifiers, not per base
+    name: "module standoff 2" sanitises to module_standoff_2, which is exactly what
+    the third "module standoff" used to receive from its de-dup counter. Onshape
+    aborts the entire robot's regeneration on one duplicate feature id, so `used`
+    doubles as the set of every identifier ever handed out.
+    """
     safe = "".join(ch if ch.isalnum() else "_" for ch in name).strip("_") or "part"
     if safe[0].isdigit():
         safe = "p" + safe
-    count = used.get(safe, 0)
-    used[safe] = count + 1
-    return safe if count == 0 else f"{safe}_{count}"
+    candidate, n = safe, used.get(safe, 0)
+    while True:
+        if n:
+            candidate = f"{safe}_{n}"
+        if candidate not in used:
+            break
+        n += 1
+    used[safe] = n + 1
+    used[candidate] = used.get(candidate, 0)
+    return candidate
 
 
 def _vec(at: list[float]) -> str:
@@ -201,7 +215,9 @@ def _toothed(fid: str, f: dict[str, Any], kind: str) -> list[str]:
         pitch_in = _num(f.get("pitch_in"), 0.25)
         dims, v = _dims(fid, [("teeth", teeth), ("pitch_in", pitch_in), ("w", width),
                               ("bore", bore)])
-        pd_expr = f'{v["pitch_in"]} / sin(PI / {v["teeth"]})'
+        # sin() takes an angle, not a number: the unitless form regenerates as an
+        # execution error the moment the first sprocket builds in Onshape.
+        pd_expr = f'{v["pitch_in"]} / sin(PI / {v["teeth"]} * radian)'
         comment = f"{teeth}T #{int(round(1 / pitch_in * 6.25))} chain → PD {_num(f.get('pd')):.3f} in"
     pos, at = _pos(fid, f)
     return [f'    // {f.get("n", kind)} — {comment}', dims, pos,
@@ -232,6 +248,15 @@ def _boxlike(fid: str, f: dict[str, Any], default: tuple[float, float, float]) -
     pos, at = _pos(fid, f)
     return [f'    // {f.get("n", f.get("t", "part"))}', dims, pos,
             f'    kaleBox(context, id + "{fid}", {v["sx"]}, {v["sy"]}, {v["sz"]}, '
+            f'{at}, {_rot(f.get("rot"))});']
+
+
+def _noodle_corner(fid: str, f: dict[str, Any]) -> list[str]:
+    dims, v = _dims(fid, [("dia", _num(f.get("dia"), 2.5)), ("bend", _num(f.get("bend"), 3.0))])
+    pos, at = _pos(fid, f)
+    return [f'    // {f.get("n", "bumper corner noodle")} — quarter-bend, continuous ring',
+            dims, pos,
+            f'    kaleNoodleCorner(context, id + "{fid}", {v["dia"]}, {v["bend"]}, '
             f'{at}, {_rot(f.get("rot"))});']
 
 
@@ -308,6 +333,13 @@ _EMITTERS = {
     # The hood is a swept arc the gamepiece rides against, so it is emitted as a real arc
     # rather than a block — its radius is what sets the exit angle.
     "hood": _hood,
+    # Bumper construction: the noodle is a real foam cylinder and the fabric wrap is its
+    # editable envelope — both dimensioned, so the bumper stays a construction in Onshape too.
+    "noodle": lambda i, f: _shaft(i, {**f, "form": "round"}),
+    # The course sweeps the bumper as one continuous ring: each corner is a real
+    # quarter-bend of noodle, revolved 90° about the corner's vertical axis.
+    "noodle_corner": lambda i, f: _noodle_corner(i, f),
+    "fabric": lambda i, f: _boxlike(i, f, (27.0, 5.06, 3.31)),
     "polycarb": lambda i, f: _boxlike(i, f, (1, 0.093, 1)),
     "hardstop": lambda i, f: _boxlike(i, f, (0.75, 0.5, 0.75)),
     "gearbox": lambda i, f: _boxlike(i, f, (2, 2, 1.2)),
@@ -428,6 +460,26 @@ function kaleCylinder(context is Context, id is Id, dia is number, len is number
 }
 
 // 1/2 in hex is the FRC default shaft; modelled as a real hexagon so a bore cut from it fits.
+// A quarter-bend of bumper noodle: the course models the bumper as one ring swept
+// around a rounded-corner path, so corners are continuous foam, not butted ends.
+// The circle is revolved 90 degrees about the corner's vertical axis; the arc spans
+// the +X to +Z quadrant and `rot` walks it around the frame.
+function kaleNoodleCorner(context is Context, id is Id, dia is number, bend is number,
+                          at is Vector, rot is Vector)
+{
+    var sketch = newSketchOnPlane(context, id + "sk", {
+            "sketchPlane" : plane(vector(0, 0, 0) * inch, vector(0, 0, -1), vector(1, 0, 0))
+    });
+    skCircle(sketch, "c", { "center" : vector(bend, 0) * inch, "radius" : dia / 2 * inch });
+    skSolve(sketch);
+    opRevolve(context, id + "rev", {
+            "entities" : qSketchRegion(id + "sk"),
+            "axis" : line(vector(0, 0, 0) * inch, vector(0, -1, 0)),
+            "angleForward" : 90 * degree
+    });
+    kaleMove(context, id, qCreatedBy(id + "rev", EntityType.BODY), at, rot);
+}
+
 function kaleHexShaft(context is Context, id is Id, acrossFlats is number, len is number,
                       at is Vector, rot is Vector)
 {
@@ -604,7 +656,9 @@ def _gamepiece_note(season: dict[str, Any]) -> str:
 
 def build_featurescript(spec: dict[str, Any], name: str = "Kale FRC Robot") -> str:
     """Emit the whole robot as one parametric Feature Studio source file."""
+    from app.services.cad_contract import require_valid_cad
     cad = spec.get("cad") or {}
+    require_valid_cad(cad)
     assemblies = cad.get("assemblies") or []
     frame = spec.get("frame") or {}
     season = spec.get("season") or {}
@@ -612,6 +666,10 @@ def build_featurescript(spec: dict[str, Any], name: str = "Kale FRC Robot") -> s
 
     width = _num(frame.get("width_in"), 27.0)
     length = _num(frame.get("length_in"), 27.0)
+    # Needed by both the precondition (dialog defaults) and the defaults map below.
+    _has_mech = bool([n for n in ("intake", "hopper", "shooter", "elevator",
+                                  "manipulator", "climber")
+                      if (spec.get(n) or {}).get("included")])
 
     out: list[str] = [
         f"FeatureScript {_FS_STD};",
@@ -642,12 +700,21 @@ def build_featurescript(spec: dict[str, Any], name: str = "Kale FRC Robot") -> s
         "export const kaleRobot = defineFeature(function(context is Context, id is Id, definition is map)",
         "    precondition",
         "    {",
-        '        annotation { "Name" : "Frame width" } isLength(definition.frameWidth, LENGTH_BOUNDS);',
-        '        annotation { "Name" : "Frame length" } isLength(definition.frameLength, LENGTH_BOUNDS);',
-        '        annotation { "Name" : "Build chassis" } definition.doChassis is boolean;',
-        '        annotation { "Name" : "Build drivetrain" } definition.doDrivetrain is boolean;',
-        '        annotation { "Name" : "Build mechanisms" } definition.doMechanisms is boolean;',
-        '        annotation { "Name" : "Build electrical" } definition.doElectrical is boolean;',
+        # Dialog defaults live HERE, not in defineFeature's defaults map: the map only
+        # fills absent parameters at regeneration, while the dialog reads the bound
+        # spec's middle value and the "Default" annotation. Without these, the feature
+        # opened at 2.5 cm with every subsystem unchecked — an empty robot.
+        f'        annotation {{ "Name" : "Frame width" }} isLength(definition.frameWidth, '
+        f'{{ (inch) : [6, {width:g}, 60] }} as LengthBoundSpec);',
+        f'        annotation {{ "Name" : "Frame length" }} isLength(definition.frameLength, '
+        f'{{ (inch) : [6, {length:g}, 60] }} as LengthBoundSpec);',
+        '        annotation { "Name" : "Build chassis", "Default" : true } definition.doChassis is boolean;',
+        f'        annotation {{ "Name" : "Build drivetrain", "Default" : '
+        f'{"true" if spec.get("include_drivetrain", True) else "false"} }} definition.doDrivetrain is boolean;',
+        f'        annotation {{ "Name" : "Build mechanisms", "Default" : '
+        f'{"true" if _has_mech else "false"} }} definition.doMechanisms is boolean;',
+        f'        annotation {{ "Name" : "Build electrical", "Default" : '
+        f'{"true" if spec.get("include_electrical", True) else "false"} }} definition.doElectrical is boolean;',
         "    }",
         "    {",
         f"        // Design values: {width:g} x {length:g} in frame.",
@@ -677,7 +744,10 @@ def build_featurescript(spec: dict[str, Any], name: str = "Kale FRC Robot") -> s
             f"        if (definition.{gate})",
             "        {",
         ]
-        for f in asm.get("features") or []:
+        # Expansion happens in assembly coordinates, BEFORE the origin offset below: a mirror
+        # reflects across the assembly's own centreline, not across the robot's.
+        from app.services.cad_contract import expand_mirrors  # noqa: PLC0415
+        for f in expand_mirrors(asm.get("features") or []):
             if "at" not in f:
                 continue
             placed = dict(f)
@@ -691,14 +761,18 @@ def build_featurescript(spec: dict[str, Any], name: str = "Kale FRC Robot") -> s
             out += ["    " + line for line in _feature_lines(placed, used)]
         out += ["        }", ""]
 
+    # The default configuration has to match the scope that was actually requested. It used
+    # to be hardcoded true, so a chassis-only design still shipped `doMechanisms : true` and
+    # rebuilt every mechanism the moment the feature was regenerated in Onshape.
+    _flag = lambda value: "true" if value else "false"  # noqa: E731
     out += [
         "    }, {",
         f"        frameWidth : {width:g} * inch,",
         f"        frameLength : {length:g} * inch,",
         "        doChassis : true,",
-        "        doDrivetrain : true,",
-        "        doMechanisms : true,",
-        "        doElectrical : true",
+        f"        doDrivetrain : {_flag(spec.get('include_drivetrain', True))},",
+        f"        doMechanisms : {_flag(_has_mech)},",
+        f"        doElectrical : {_flag(spec.get('include_electrical', True))}",
         "    });",
         "",
     ]

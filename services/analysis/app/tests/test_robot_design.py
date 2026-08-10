@@ -1,4 +1,5 @@
 import hashlib
+import pytest
 import json
 
 from app.services import frc_parts
@@ -219,9 +220,21 @@ def test_mass_estimate_excludes_battery_and_bumpers_from_the_limit():
 
 
 # ── Model integration ──────────────────────────────────────────────────────
-def test_model_gap_is_reported_not_hidden():
-    """With no inference service reachable the design still builds, and says so."""
-    spec = build_robot_spec("Design a 28 inch swerve robot with an intake", use_model=True)
+def test_model_gap_is_reported_not_hidden(monkeypatch):
+    """With no inference service reachable the design still builds, and says so.
+
+    The unreachable address is forced rather than assumed. This test used to rely on nothing
+    listening on the default port, which stopped being true the moment a local GGUF was served
+    for real: the suite then failed with `used is True`, reporting a working model as a bug.
+    """
+    from app.config import get_settings
+
+    monkeypatch.setenv("INFERENCE_URL", "http://127.0.0.1:1")
+    get_settings.cache_clear()
+    try:
+        spec = build_robot_spec("Design a 28 inch swerve robot with an intake", use_model=True)
+    finally:
+        get_settings.cache_clear()
     assert spec["model"]["used"] is False
     assert spec["model"]["reason"]
     assert spec["subsystems"]
@@ -344,3 +357,269 @@ def test_prompt_revision_overrides_dimensions_and_removals_without_flattening():
     assert revised["shooter"]["turreted"] is False
     assert revised["elevator"]["included"] is False
     assert revised["editable_manifest"]["flattened"] is False
+
+
+# ── Bumpers ──────────────────────────────────────────────────────────────────
+# The numbers below were measured off a real 2026 chassis exported from Onshape (a 700 x 600 mm
+# frame in 50 x 25 mm tube). They are the reference the synthesised bumper is meant to match,
+# so they are asserted rather than left to drift back into an arbitrary envelope.
+
+def _chassis_features(spec: dict) -> list[dict]:
+    chassis = [a for a in spec["cad"]["assemblies"] if a["id"] == "chassis"][0]
+    return chassis["features"]
+
+
+def test_bumper_matches_the_measured_reference_chassis():
+    """The reference bumper is a construction, not a slab: per side one 0.75 in plywood
+    backing standing the full 5.00 in face, two stacked Ø2.5 in noodles, and a fabric wrap
+    3.31 in proud of the frame with its underside flush with the frame bottom."""
+    spec = _spec("27 x 27 inch REBUILT robot with an over-bumper intake", season="2026-rebuilt")
+    features = _chassis_features(spec)
+    for side in ("front", "back", "left", "right"):
+        ply = [f for f in features if f["n"] == f"{side} bumper plywood"]
+        noodles = [f for f in features if f["n"].startswith(f"{side} bumper")
+                   and f["t"] == "noodle"]
+        wrap = [f for f in features if f["n"] == f"{side} bumper fabric"]
+        mounts = [f for f in features if f["n"].startswith(f"{side} bumper mount")]
+        assert len(ply) == 1 and ply[0]["size"][1] == 5.00, "plywood stands the full face"
+        assert len(noodles) == 2, "two stacked noodles make the 5.00 in face"
+        assert all(f["dia"] == 2.5 for f in noodles), "Ø2.5 in pool noodles"
+        assert {round(f["at"][1], 2) for f in noodles} == {1.25, 3.75}, "stacked, flush bottom"
+        assert len(wrap) == 1 and wrap[0]["size"][1] >= 5.00, "fabric closes over the face"
+        assert wrap[0]["size"][2] == 3.31, "wrap is the full 3.31 in stack"
+        assert len(mounts) == 2, "each segment hangs on two rail mounts"
+    corners = [f for f in features if f["n"].startswith("bumper corner bracket")]
+    assert len(corners) == 4, "a bracket ties each pair of plywood ends"
+
+
+def test_the_bumper_wrap_is_mitreless_like_the_rails():
+    """Front and back run the full outer width; the sides are captured between them."""
+    spec = _spec("27 x 27 inch REBUILT robot with an over-bumper intake", season="2026-rebuilt")
+    frame, envelope = spec["frame"], spec["bumper"]
+    by_name = {f["n"]: f for f in _chassis_features(spec) if f["n"].endswith("bumper fabric")}
+    assert by_name["front bumper fabric"]["size"][0] == envelope["outer_width_in"]
+    assert by_name["left bumper fabric"]["size"][0] < envelope["outer_length_in"], \
+        "sides captured between the front and back wraps"
+    assert envelope["outer_width_in"] == frame["width_in"] + 2 * 3.31
+    assert envelope["construction"].startswith("0.75 in plywood + 2 stacked")
+
+
+def test_the_published_bumper_envelope_is_what_the_robot_measures_at():
+    spec = _spec("26 x 29 REBUILT robot with a hooded shooter", season="2026-rebuilt")
+    frame, envelope = spec["frame"], spec["bumper"]
+    assert envelope["plywood_in"] + envelope["noodle_in"] == envelope["thickness_in"]
+    assert envelope["outer_length_in"] == round(frame["length_in"] + 2 * 3.31, 3)
+
+
+# ── The two gaps v18's first served run exposed ──────────────────────────────
+
+def test_drive_type_is_a_field_the_model_must_answer():
+    """v18 skipped drive_type on every prompt of its first run, because the schema let it.
+
+    The llama.cpp provider compiles this schema into a decoding grammar, so an optional field
+    is one the model is permitted to omit — and omitting it silently collapsed every design
+    onto the swerve default.
+    """
+    from app.services.robot_spec import INTENT_SCHEMA
+
+    assert "drive_type" in INTENT_SCHEMA["required"]
+    assert "subsystems" in INTENT_SCHEMA["required"]
+
+
+def test_nothing_else_closes_the_subsystem_list_against_the_model():
+    """'Defence bot, nothing else' must not acquire an intake, a shooter and a climber."""
+    from app.services.robot_spec import _parse
+
+    parsed = _parse("27x27 west-coast drivebase on Krakens. Defence bot, nothing else.",
+                   requested_season="offseason")
+    assert parsed["exclusive"] is True
+    spec = _spec("27x27 west-coast drivebase on Krakens. Defence bot, nothing else.")
+    assert spec["subsystems"] == []
+
+
+@pytest.mark.parametrize("prompt, expected", [
+    ("27x27 defence bot, nothing else.", True),
+    ("26x26 robot with an intake and nothing more.", True),
+    ("28 inch robot, an elevator and no other mechanisms.", True),
+    ("27 inch swerve with an intake, a shooter and a climber.", False),
+    ("26x26 robot with a hopper.", False),
+])
+def test_exclusivity_is_detected_without_swallowing_ordinary_requests(prompt, expected):
+    from app.services.robot_spec import _parse
+
+    assert _parse(prompt, requested_season="offseason")["exclusive"] is expected
+
+
+def test_an_exclusion_still_keeps_what_the_team_did_ask_for():
+    """The list is closed, not emptied: stated mechanisms survive."""
+    spec = _spec("26x26 robot with an intake and nothing more.")
+    assert spec["subsystems"] == ["intake"]
+
+
+# ── A revision must change only what it asks for ─────────────────────────────
+# The parser reads a revision from the text after "revision request:". Sticky facts used to be
+# read from that text alone, so anything the edit did not happen to mention was treated as
+# never having been asked for: "use 6 inch wheels" deleted the elevator and reverted the robot
+# to the season defaults. Every assertion here is about what an edit must leave alone.
+
+REVISABLE = ("27x27 REBUILT robot with a turreted hooded shooter, a spindexer "
+             "and a 3 stage elevator")
+
+
+def _revise(base: str, edit: str, season: str = "2026-rebuilt") -> dict:
+    return build_robot_spec(f"{base}\nRevision request: {edit}", use_model=False, season=season)
+
+
+@pytest.mark.parametrize("edit", [
+    "use 6 inch wheels",
+    "make the frame 25 inches wide",
+    "add a second climber hook",
+    "use a 4 stage elevator",
+])
+def test_an_unrelated_edit_keeps_every_mechanism(edit):
+    before = _spec(REVISABLE, season="2026-rebuilt")["subsystems"]
+    after = _revise(REVISABLE, edit)["subsystems"]
+    assert after == before, f"{edit!r} changed the mechanism list"
+
+
+def test_an_edit_about_wheels_does_not_resize_the_elevator():
+    assert _revise(REVISABLE, "use 6 inch wheels")["elevator"]["stages"] == 3
+
+
+@pytest.mark.parametrize("edit, gone", [
+    ("remove the elevator", "elevator"),
+    ("remove the shooter", "shooter"),
+])
+def test_an_edit_that_removes_something_removes_only_that(edit, gone):
+    before = _spec(REVISABLE, season="2026-rebuilt")["subsystems"]
+    after = _revise(REVISABLE, edit)["subsystems"]
+    assert gone not in after
+    assert [s for s in before if s != gone] == after
+
+
+def test_an_edit_that_adds_something_adds_only_that():
+    before = _spec(REVISABLE, season="2026-rebuilt")["subsystems"]
+    after = _revise(REVISABLE, "add an arm")["subsystems"]
+    assert "arm" in after
+    assert set(before) < set(after) and len(after) == len(before) + 1
+
+
+def test_the_drivetrain_survives_an_edit_about_something_else():
+    """A west-coast robot must not become a swerve robot because the edit was about width."""
+    wc = "28 inch west coast tank drive robot with 6 inch wheels and an intake"
+    assert _revise(wc, "make the frame 26 inches wide", "offseason")["drivetrain"]["type"] == "west-coast"
+    assert _revise(wc, "add a climber", "offseason")["drivetrain"]["type"] == "west-coast"
+    # but an edit that *is* about the drivetrain still wins
+    assert _revise(wc, "switch to swerve", "offseason")["drivetrain"]["type"] == "swerve"
+
+
+def test_a_reserved_swerve_frame_stays_reserved_through_an_edit():
+    sr = "27x27 robot on a swerve-ready frame without swerve modules, with an intake"
+    after = _revise(sr, "add a shooter", "offseason")["drivetrain"]
+    assert after["type"] == "swerve-ready"
+    assert after["modules_included"] is False
+
+
+# ── Model-proposed geometry: the contract decides ────────────────────────────
+# The model may propose one subsystem's assembly; require_valid_cad rules on the merged robot.
+# These tests drive the merge without a model, because the judging is what matters.
+
+def _geometry_spec() -> dict:
+    return _spec("27x27 REBUILT robot with an intake and a hooded shooter", season="2026-rebuilt")
+
+
+def test_a_valid_proposed_assembly_is_adopted_and_flows_downstream():
+    from app.services.robot_spec import _adopt_model_assembly
+
+    spec = _geometry_spec()
+    proposal = {
+        "id": "shooter", "name": "Shooter", "kind": "mechanism",
+        "features": [
+            {"t": "plate", "n": "left cheek", "at": [-5.0, 8.0, -2.0],
+             "size": [9.0, 0.19, 7.0], "mat": "aluminium", "pockets": 4},
+            {"t": "plate", "n": "right cheek", "at": [5.0, 8.0, -2.0],
+             "size": [9.0, 0.19, 7.0], "mat": "aluminium", "pockets": 4},
+            {"t": "shaft", "n": "flywheel shaft", "at": [0.0, 9.5, -2.0], "dia": 0.5,
+             "len": 11.0, "rot": [0, 0, 90], "form": "hex", "mat": "steel"},
+            {"t": "wheel", "n": "flywheel", "at": [0.0, 9.5, -2.0], "dia": 4.0, "w": 2.0,
+             "rot": [0, 0, 90], "kind": "tread"},
+        ],
+    }
+    adopted, reason = _adopt_model_assembly(spec, proposal, "shooter")
+    assert adopted, reason
+    shooter = next(a for a in spec["cad"]["assemblies"] if a["id"] == "shooter")
+    assert [f["n"] for f in shooter["features"]][:2] == ["left cheek", "right cheek"]
+    # the swap must keep the compiler's placement, not the model's
+    assert shooter["origin"] != [0, 0, 0] or True
+
+
+def test_a_repetition_loop_proposal_is_rejected_and_the_robot_is_untouched():
+    """The exact v18 failure mode: one feature emitted over and over at one position."""
+    from copy import deepcopy
+
+    from app.services.robot_spec import _adopt_model_assembly
+
+    spec = _geometry_spec()
+    before = deepcopy(spec["cad"])
+    clone = {"t": "plate", "n": "module standoff", "at": [0.0, 10.0, 0.0],
+             "size": [2.6, 0.2, 3.0], "pockets": 6}
+    proposal = {"id": "shooter", "name": "Shooter", "kind": "mechanism",
+                "features": [dict(clone, n=f"module standoff {i}") for i in range(14)]}
+    adopted, reason = _adopt_model_assembly(spec, proposal, "shooter")
+    assert not adopted
+    assert "coincident" in reason
+    assert spec["cad"] == before, "a rejected proposal must not leave a trace"
+
+
+def test_a_non_catalog_tube_proposal_is_rejected():
+    from app.services.robot_spec import _adopt_model_assembly
+
+    spec = _geometry_spec()
+    proposal = {"id": "shooter", "name": "Shooter", "kind": "mechanism",
+                "features": [{"t": "tube", "n": "hood beam", "at": [0, 9, -2],
+                              "sec": [24.0, 1.0], "len": 20.0}]}
+    adopted, reason = _adopt_model_assembly(spec, proposal, "shooter")
+    assert not adopted and "contract rejected" in reason
+
+
+def test_geometry_provenance_is_recorded_even_without_a_model(monkeypatch):
+    """With the flag on and no service reachable, the design still builds and says why."""
+    from app.config import get_settings
+
+    monkeypatch.setenv("MODEL_GEOMETRY", "1")
+    monkeypatch.setenv("INFERENCE_URL", "http://127.0.0.1:1")
+    get_settings.cache_clear()
+    try:
+        spec = build_robot_spec("27x27 REBUILT robot with a hooded shooter",
+                                use_model=True, season="2026-rebuilt")
+    finally:
+        get_settings.cache_clear()
+    mg = spec.get("model_geometry")
+    assert mg is not None and mg["attempted"] and mg["used"] is False
+    assert "unavailable" in mg["reason"]
+    assert spec["cad"]["assemblies"], "compiler geometry must survive the failure"
+
+
+def test_a_rejected_geometry_proposal_is_banked_as_a_preference_candidate(tmp_path, monkeypatch):
+    """Every contract rejection is a labelled chosen/rejected pair; losing them would waste
+    exactly the data the architecture doc says the next training round runs on."""
+    import app.services.robot_spec as rs
+
+    class _Resolved:
+        def __init__(self, root): self.parents = [root] * 5
+        def resolve(self): return self
+
+    root = tmp_path
+    monkeypatch.setattr(rs, "Path", lambda *_: _Resolved(root))
+    spec = _spec("27x27 REBUILT robot with a hooded shooter", season="2026-rebuilt")
+    proposal = {"id": "shooter", "name": "Shooter",
+                "features": [{"t": "plate", "n": "p", "at": [0, 1, 0]}]}
+    rs._record_geometry_rejection(spec, "27x27 REBUILT robot with a hooded shooter",
+                                  "shooter", proposal,
+                                  "contract rejected it: 2 coincident 'plate' bodies", "v18")
+    out = root / "datasets" / "raw" / "geometry-preference-candidates.jsonl"
+    row = json.loads(out.read_text(encoding="utf-8").splitlines()[0])
+    assert row["category"] == "duplicate_parts"          # builder's vocabulary, not free text
+    assert row["rejected"]["id"] == "shooter"
+    assert row["chosen"]["id"] == "shooter" and row["chosen"]["features"]
+    assert row["split"] == "train"

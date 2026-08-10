@@ -602,6 +602,7 @@ def _parse(prompt: str, requested_season: str = "") -> dict[str, Any]:
         "prompt": prompt, "latest": latest, "lower": p,
     }
 
+
 DEFAULT_TEAM_NUMBER = 8159
 
 # A team number has to be *asked for*, never inferred from a loose integer: a prompt is full

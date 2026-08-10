@@ -286,34 +286,17 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
   function makeMotor(dia, len) {
     const g = new THREE.Group();
     const R = dia / 2, bodyH = len - 0.75;
-    const bandH = 0.3, bandY = -bodyH / 2 + 0.42;
-    const bandBottom = bandY - bandH / 2, bandTop = bandY + bandH / 2;
-    // The coloured collar used to be a solid cylinder drawn *inside* a full-length black
-    // cylinder. Split the can at the collar and put its ribs just outside the shell so the
-    // motor is a union of touching solids, never intersecting ones.
-    const addCanSection = (bottom, top) => {
-      const h = top - bottom;
-      if (h <= 0) return;
-      const y = (bottom + top) / 2;
-      const can = cyl(R, R, h, M.black, 44); can.position.y = y; g.add(can);
-      for (let i = 0; i < 26; i++) {
-        const a = (i / 26) * Math.PI * 2;
-        const f = box(0.05, h * 0.9, 0.045, M['plastic-black']);
-        f.position.set(Math.cos(a) * (R + 0.025), y, Math.sin(a) * (R + 0.025));
-        f.rotation.y = -a; g.add(f);
-      }
-    };
-    addCanSection(-bodyH / 2, bandBottom);
-    addCanSection(bandTop, bodyH / 2);
-    const band = cyl(R + 0.05, R + 0.05, bandH, M.orange, 44);
-    band.position.y = bandY; g.add(band);
-    const flangeH = 0.15, bossH = 0.16, shaftH = 0.55;
-    const flange = cyl(R, R, flangeH, M['aluminium-dark'], 44);
-    flange.position.y = -bodyH / 2 - flangeH / 2; g.add(flange);
-    const boss = cyl(0.38, 0.38, bossH, M.hub, 24);
-    boss.position.y = -bodyH / 2 - flangeH - bossH / 2; g.add(boss);
-    const shaft = cyl(0.175, 0.175, shaftH, M.steel, 12);
-    shaft.position.y = -bodyH / 2 - flangeH - bossH - shaftH / 2; g.add(shaft);
+    const can = cyl(R, R, bodyH, M.black, 44); g.add(can);
+    for (let i = 0; i < 26; i++) {
+      const a = (i / 26) * Math.PI * 2;
+      const f = box(0.05, bodyH * 0.9, 0.045, M['plastic-black']);
+      f.position.set(Math.cos(a) * R, 0, Math.sin(a) * R); f.rotation.y = -a; g.add(f);
+    }
+    const band = cyl(R + 0.05, R + 0.05, 0.3, M.orange, 44);
+    band.position.y = -bodyH / 2 + 0.42; g.add(band);
+    const flange = cyl(R, R, 0.15, M['aluminium-dark'], 44); flange.position.y = -bodyH / 2 - 0.07; g.add(flange);
+    const boss = cyl(0.38, 0.38, 0.16, M.hub, 24); boss.position.y = -bodyH / 2 - 0.2; g.add(boss);
+    const shaft = cyl(0.175, 0.175, 0.55, M.steel, 12); shaft.position.y = -bodyH / 2 - 0.5; g.add(shaft);
     for (let i = 0; i < 5; i++) {
       const fin = cyl(R * 0.8, R * 0.8, 0.045, M['aluminium-dark'], 36);
       fin.position.y = bodyH / 2 + 0.1 + i * 0.085; g.add(fin);
@@ -936,36 +919,27 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
     const radius = Math.max(size.length() / 2, 6);
     const vFov = camera.fov * D2R;
     const hFov = 2 * Math.atan(Math.tan(vFov / 2) * Math.max(camera.aspect, 0.4));
-    // The bounding-sphere formula already returns the fit distance. Multiplying it by 0.62
-    // moved the camera inside wide mechanisms and clipped the entire lower half of an intake.
-    return radius / Math.sin(Math.min(vFov, hFov) / 2) * 1.05;
+    return radius / Math.sin(Math.min(vFov, hFov) / 2) * 0.62;
   }
 
   let camTarget = null, ctrlTarget = null;
   function centre() {
-    return worldBounds.getCenter(new THREE.Vector3());
+    const c = worldBounds.getCenter(new THREE.Vector3());
+    return new THREE.Vector3(0, c.y, 0);
   }
   function frameView() {
     const d = fitDistance(), c = centre();
-    camera.position.set(c.x + d * 0.62, c.y + d * 0.48, c.z + d * 0.72);
+    camera.position.set(d * 0.62, c.y + d * 0.48, d * 0.72);
     controls.target.copy(c);
     camTarget = null; ctrlTarget = null;
   }
   function setView(v) {
     const d = fitDistance(), c = centre();
     ctrlTarget = c.clone();
-    // Orthographic-style presets still use a perspective camera, so place it beyond the
-    // measured envelope before adding the fit distance. The previous `-d` front view could
-    // land inside a deployed intake, leaving only a clipped triangle at the bottom edge.
-    if (v === 'top') camTarget = new THREE.Vector3(c.x + 0.01,
-                                                   worldBounds.max.y + d * 0.72,
-                                                   c.z + 0.01);
-    else if (v === 'front') camTarget = new THREE.Vector3(c.x, c.y,
-                                                          worldBounds.min.z - d * 0.72);
-    else if (v === 'side') camTarget = new THREE.Vector3(worldBounds.max.x + d * 0.72,
-                                                         c.y, c.z + 0.01);
-    else camTarget = new THREE.Vector3(c.x + d * 0.62, c.y + d * 0.48,
-                                       c.z + d * 0.72);
+    if (v === 'top') { camTarget = new THREE.Vector3(0.01, c.y + d * 1.15, 0.01); ctrlTarget = new THREE.Vector3(0, 0, 0); }
+    else if (v === 'front') camTarget = new THREE.Vector3(0, c.y + d * 0.16, -d);
+    else if (v === 'side') camTarget = new THREE.Vector3(d, c.y + d * 0.16, 0.01);
+    else camTarget = new THREE.Vector3(d * 0.62, c.y + d * 0.48, d * 0.72);
   }
 
   function resize() {
@@ -1031,13 +1005,6 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
     setView,
     toggleExplode: () => { explodeTarget = explodeTarget ? 0 : 1; return !!explodeTarget; },
     toggleRun: () => { running = !running; return running; },
-    // Kept for pages from the previous deployment. New designs do not create floating
-    // labels, but an older cached studio may still show the toggle and must not throw.
-    toggleLabels: () => {
-      const hidden = labelRenderer.domElement.style.display !== 'none';
-      labelRenderer.domElement.style.display = hidden ? 'none' : '';
-      return !hidden;
-    },
     setCut,
     select,
     onPick: (fn) => { onPick = fn; },

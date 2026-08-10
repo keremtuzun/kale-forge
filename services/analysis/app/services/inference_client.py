@@ -3,6 +3,7 @@ model, and it points exclusively at Kale-controlled infrastructure (INFERENCE_UR
 No external commercial AI provider is ever contacted."""
 from __future__ import annotations
 
+import os
 import time
 from typing import Any, Optional
 
@@ -12,6 +13,13 @@ from pydantic import BaseModel
 
 class InferenceUnavailable(RuntimeError):
     pass
+
+
+def _auth_headers() -> dict[str, str]:
+    """Bearer for the cloud inference box. Read from the environment, not the constructor,
+    so `robot_spec.py` stays byte-identical between the site bundle and the backend."""
+    token = os.environ.get("INFERENCE_TOKEN", "")
+    return {"Authorization": f"Bearer {token}"} if token else {}
 
 
 class InferenceResult(BaseModel):
@@ -48,7 +56,8 @@ class InferenceClient:
         }
         started = time.monotonic()
         try:
-            resp = httpx.post(f"{self.base_url}/v1/generate", json=payload, timeout=self.timeout)
+            resp = httpx.post(f"{self.base_url}/v1/generate", json=payload,
+                              headers=_auth_headers(), timeout=self.timeout)
         except httpx.HTTPError as exc:
             raise InferenceUnavailable(f"inference service unreachable: {exc}") from exc
         if resp.status_code >= 500:
@@ -61,7 +70,7 @@ class InferenceClient:
 
     def health(self) -> dict[str, Any]:
         try:
-            resp = httpx.get(f"{self.base_url}/health", timeout=5.0)
+            resp = httpx.get(f"{self.base_url}/health", headers=_auth_headers(), timeout=5.0)
             return resp.json()
         except httpx.HTTPError as exc:
             raise InferenceUnavailable(str(exc)) from exc

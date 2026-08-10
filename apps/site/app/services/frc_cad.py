@@ -683,10 +683,8 @@ def _swerve_module(dt: dict[str, Any], index: int, at: list[float],
                                  2, [2.2, 0, 0], rot=_rot(90, 0, 0), length=1.4))
     if c.module_mount == "corner-plate":
         # A corner plate spreads the module's load into both rails instead of relying on the
-        # bolts through one rail wall. Clamp it inside the frame face: the previous p + 1.4
-        # plate crossed 0.15 in into the bumper plywood at every corner.
-        spreader = p + 1.0
-        features.append(plate("module corner plate", (spreader, 0.190, spreader),
+        # bolts through one rail wall.
+        features.append(plate("module corner plate", (p + 1.4, 0.190, p + 1.4),
                               _at(0, top_y + 0.19, 0), pockets=2,
                               note="spreads the module load across both rails"))
     else:
@@ -836,12 +834,7 @@ def _intake(spec: dict[str, Any], c: Choices) -> dict[str, Any] | None:
 
     # The pivot sits above the bumper top on two towers; the arms reach over the bumper.
     pivot_y = BUMPER_HEIGHT_IN + 1.6
-    tower_z = 0.6                                            # tower feet stay on the rail
-    # The axle itself must live outside the complete bumper stack. With the old axle at
-    # z=+0.6, every moving plate had to sweep through 3.31 in of plywood/noodle/fabric before
-    # it could reach the roller. A pair of rigid hangers now crosses above the bumper and
-    # carries the pivot in a plane with 1.5 in of inward-shape clearance.
-    pivot_z = -(bumper_face + 1.5)
+    pivot_z = 0.6                                            # just inside the front rail
     # Deployed, the first roller floats a half inch off the carpet, clear of the bumper.
     roll1_y = roller_d / 2 + 0.5
     roll1_z = -(bumper_face + roller_d / 2 + 0.7)
@@ -855,16 +848,12 @@ def _intake(spec: dict[str, Any], c: Choices) -> dict[str, Any] | None:
     for sx, side in ((-1, "left"), (1, "right")):
         tx = sx * tower_x
         features.append(plate(f"pivot tower {side}", (0.190, pivot_y - rail_top + 1.0, 2.6),
-                              _at(tx, (pivot_y + rail_top) / 2 - 0.3, tower_z), pockets=2,
+                              _at(tx, (pivot_y + rail_top) / 2 - 0.3, pivot_z), pockets=2,
                               note="stands on the front rail; carries the pivot bearing"))
         features.append(gusset(f"tower foot gusset {side}", (2.2, 1.8),
-                               _at(tx, rail_top + 0.1, tower_z + 0.9), _rot(90, 0, 0)))
+                               _at(tx, rail_top + 0.1, pivot_z + 0.9), _rot(90, 0, 0)))
         features.append(fastener_row(f"tower foot bolts {side}", _at(tx, rail_top + 0.1, 0.5),
                                      2, [0, 0.9, 0], rot=_rot(90, 0, 0), length=1.3))
-        hanger_len = abs(pivot_z - tower_z)
-        features.append(tube(f"pivot axle hanger {side}", TUBE_1X1, hanger_len,
-                             _at(tx, pivot_y, (pivot_z + tower_z) / 2),
-                             note="runs above the bumper; carries the external dead axle"))
         features.append(bearing(f"pivot bearing {side}", _at(tx, pivot_y, pivot_z),
                                 _rot(0, 0, 90), bore=0.625, od=1.375, width=0.5))
         if c.intake_hardstops:
@@ -889,10 +878,7 @@ def _intake(spec: dict[str, Any], c: Choices) -> dict[str, Any] | None:
                               pockets=3, note=f"{arm_len:.1f} in between pivot and roller"))
 
     # Rollers climb back up the arm toward the frame, so a gamepiece walks over the bumper.
-    # The tutorial builds the transmission outboard of the right side plate: the roller
-    # shaft is deliberately long enough to carry the pulley, and the pulley plane is kept
-    # clear of the plate instead of being rendered inside it.
-    drive_x = width / 2 + 0.85
+    drive_x = width / 2 + 0.55
 
     def transmit(name: str, teeth: int, at: list[float]) -> dict[str, Any]:
         # Belt/chain modes only. The gear drive builds its own train further down,
@@ -909,7 +895,7 @@ def _intake(spec: dict[str, Any], c: Choices) -> dict[str, Any] | None:
         y = roll1_y + unit_y * along
         z = roll1_z + unit_z * along
         roller_ats.append(_at(0, y, z))
-        features.append(shaft(f"roller {r + 1} shaft", _HEX_BORE, width + 3.0,
+        features.append(shaft(f"roller {r + 1} shaft", _HEX_BORE, width + 1.0,
                               _at(0, y, z), _rot(0, 0, 90)))
         for sx, side in ((-1, "left"), (1, "right")):
             features.append(bearing(f"roller {r + 1} bearing {side}",
@@ -927,29 +913,14 @@ def _intake(spec: dict[str, Any], c: Choices) -> dict[str, Any] | None:
     # one reduction run down to the first roller, roller-to-roller runs after that. They
     # hang on a drive plate held off the arm plate by two standoffs — a gearbox drawn in
     # free air beside the arm is exactly the floating-part defect this file must not make.
-    drive_plate_x = width / 2 + 0.55
-    # Power goes to the roller nearest the pivot, just as in the week-four assembly. The
-    # output pulley is located from a named centre distance, not dragged until the belt
-    # looks plausible. This also keeps the large pulley clear of the driven roller pulley.
-    powered_roller = max(0, count - 1)
-    output_teeth = 36
-    driven_teeth = 18
-    output_r = output_teeth * 5.0 / 25.4 / math.pi / 2
-    driven_r = driven_teeth * 5.0 / 25.4 / math.pi / 2
-    transmission_clearance = 0.45
-    transmission_centres = output_r + driven_r + transmission_clearance
-    # Offset perpendicular to the arm centreline, reproducing the tutorial's triangular
-    # side-plate layout. Putting the large pulley between the roller and pivot leaves too
-    # little room and drives it through the dead axle.
-    output_y = roller_ats[powered_roller][1] + unit_z * transmission_centres
-    output_z = roller_ats[powered_roller][2] - unit_y * transmission_centres
+    drive_plate_x = drive_x + 0.32
     features.append(plate("intake drive plate", (0.190, 3.6, 3.4),
-                          _at(drive_plate_x, output_y, output_z), pockets=1,
+                          _at(drive_plate_x, pivot_y - 1.9, pivot_z - 1.0), pockets=1,
                           note="outboard of the arm on standoffs; gearbox and motor bolt to this"))
     for so, sy in ((1, 1.2), (2, -1.2)):
         features.append(_feat("standoff", f"drive plate standoff {so}",
-                              _at((width / 2 + drive_plate_x) / 2, output_y + sy,
-                                  output_z),
+                              _at((width / 2 + drive_plate_x) / 2, pivot_y - 1.9 + sy,
+                                  pivot_z - 1.0),
                               dia=0.375, len=round(drive_plate_x - width / 2, 3),
                               rot=_rot(0, 0, 90)))
     if drive == "gear":
@@ -988,50 +959,27 @@ def _intake(spec: dict[str, Any], c: Choices) -> dict[str, Any] | None:
                                          (roller_ats[r][2] + roller_ats[r + 1][2]) / 2),
                                      _rot(0, 0, 90), dp=gear_dp, face=0.375))
     else:
-        # Stack the pulley, gearbox and motor face-to-face along X. Their old centres were
-        # only 1.2 in apart, which buried most of a 3.6 in motor inside the gearbox.
-        pulley_half_width = 0.45 / 2
-        gearbox_half_x = 1.0
-        gearbox_x = drive_x + pulley_half_width + 0.05 + gearbox_half_x
-        motor_len = MOTORS.get(mkey, MOTORS["neo"]).get("length_in", 3.5)
-        motor_x = gearbox_x + gearbox_half_x + 0.05 + motor_len / 2
-        gb_at = _at(gearbox_x, output_y, output_z)
+        gb_at = _at(drive_x + 0.85, pivot_y - 1.9, pivot_z - 1.4)
         features.append(gearbox("intake gearbox", (2.0, 2.2, 1.2), gb_at,
                                 ratio=ik.get("gear_reduction", "4:1"), stages=2))
         features.append(motor("intake motor", mkey,
-                              _at(motor_x, output_y, output_z), _rot(0, 0, 90)))
-        features.append(transmit("gearbox output", output_teeth,
-                                 _at(drive_x, output_y, output_z)))
+                              _at(drive_x + 2.05, pivot_y - 1.9, pivot_z - 1.4), _rot(0, 0, 90)))
+        features.append(transmit("gearbox output", 36, _at(drive_x, pivot_y - 1.9, pivot_z - 1.4)))
         kind = "#25 chain" if drive == "chain" else "HTD 5 mm 15 mm belt"
-        features.append(belt("reduction run", _at(drive_x, output_y, output_z),
-                             _at(drive_x, roller_ats[powered_roller][1],
-                                 roller_ats[powered_roller][2]), 0.35, kind=kind))
+        features.append(belt("reduction run", _at(drive_x, pivot_y - 1.9, pivot_z - 1.4),
+                             _at(drive_x, roller_ats[0][1], roller_ats[0][2]), 0.35, kind=kind))
         for r in range(count - 1):
             features.append(belt(f"roller {r + 1}→{r + 2} run",
                                  _at(drive_x, roller_ats[r][1], roller_ats[r][2]),
                                  _at(drive_x, roller_ats[r + 1][1], roller_ats[r + 1][2]),
                                  0.35, kind=kind))
         features.append(_feat("tensioner", f"{drive} tensioner",
-                              _at(drive_x + 0.7,
-                                  (roller_ats[powered_roller][1] + output_y) / 2,
-                                  (roller_ats[powered_roller][2] + output_z) / 2),
-                              dia=0.9, w=0.4,
+                              _at(drive_x + 0.7, (roller_ats[0][1] + pivot_y - 1.9) / 2,
+                                  (roller_ats[0][2] + pivot_z - 1.4) / 2), dia=0.9, w=0.4,
                               rot=_rot(0, 0, 90)))
     if ik.get("indexer"):
-        # Start the handoff after the powered roller's tangent point. The former guide began
-        # inside the compliant wheels and crossed the pivot axle, producing obvious z-fighting
-        # in the browser even though the part list itself was valid. This is a chassis-mounted
-        # ramp above the bumper, not part of the deploy arm; the articulation static list keeps
-        # it from sweeping through the bumper on the way to the stowed pose.
-        guide_len = centre + 2.0
-        guide_angle = 10.0
-        guide_dy, guide_dz = math.sin(math.radians(guide_angle)), math.cos(math.radians(guide_angle))
-        guide_start_y = roller_ats[powered_roller][1] + guide_dy * (roller_d / 2 + 0.25)
-        guide_start_z = roller_ats[powered_roller][2] + guide_dz * (roller_d / 2 + 0.25)
-        guide_y = guide_start_y + guide_dy * guide_len / 2
-        guide_z = guide_start_z + guide_dz * guide_len / 2
         features.append(polycarb("indexer guide", (width - 1.0, 0.093, centre + 2.0),
-                                 _at(0, guide_y, guide_z), _rot(-guide_angle, 0, 0)))
+                                 _at(0, pivot_y - 0.8, pivot_z + 1.6), _rot(-18, 0, 0)))
 
     # The limited deploy arc, for the viewer and any downstream consumer: rotation about the
     # dead axle from the deployed pose (as modelled, 0°) up and back to the stow.  The green
@@ -1044,17 +992,15 @@ def _intake(spec: dict[str, Any], c: Choices) -> dict[str, Any] | None:
                               "at": [0, round(pivot_y, 3), round(pivot_z, 3)],
                               "deg": [0.0, stow_deg], "home": 0.0,
                               "static": ["pivot tower left", "pivot tower right",
-                                         "pivot axle hanger left", "pivot axle hanger right",
                                          "tower foot gusset left", "tower foot gusset right",
                                          "tower foot bolts left", "tower foot bolts right",
                                          "pivot bearing left", "pivot bearing right",
                                          "stowed hard stop left", "stowed hard stop right",
                                          "deployed hard stop left", "deployed hard stop right",
-                                         "pivot dead axle", "indexer guide"],
+                                         "pivot dead axle"],
                               "note": "deploys toward the front over the bumper; "
                                       "limited arc between the hard stops"},
                 mates=["pivot towers bolt to the front rail, two 10-32s each",
-                       "hanger rails cross above the bumper and carry the external dead axle",
                        "arms revolute about the dead axle, limited by the hard stops",
                        "roller shafts revolute in the arm plates",
                        "gearbox and motor on the standoff-mounted drive plate"])

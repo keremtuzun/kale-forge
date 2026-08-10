@@ -509,6 +509,7 @@ def drivetrain_summary(module_key: str, module: dict[str, Any], motor_key: str,
                    "both need a real current-limited simulation before you trust them."),
     }
 
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Electrical layout + power budget.  This is where Kale's electrical side earns
 # its keep: real channels, real breakers, real wire gauges.
