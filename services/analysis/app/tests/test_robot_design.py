@@ -479,10 +479,10 @@ def test_mechanisms_are_not_packaged_inside_each_other():
     # They came down from 37, 35 and 20 respectively; the point of the bound is that they
     # never climb back, not that these particular numbers are good.
     worst = {
-        _PACKED: 18,
+        _PACKED: 9,
         "Experienced team, 27 inch swerve, turreted dual flywheel hooded shooter, "
-        "circular spindexer and an active floor sweeper with indexer.": 28,
-        "26x26 robot with a horizontal series-roller intake and a four-bar linkage arm.": 10,
+        "circular spindexer and an active floor sweeper with indexer.": 15,
+        "26x26 robot with a horizontal series-roller intake and a four-bar linkage arm.": 2,
         "27x27 west-coast drivebase on Krakens. Defence bot, nothing else.": 0,
         "no mechanisms, only a 27 inch chassis": 0,
     }
@@ -530,6 +530,29 @@ def test_no_motor_hangs_outside_the_bumper(prompt):
             if out > 0.05:
                 offenders.append(f"{assembly['id']}/{feature['n']} {out:.2f} in out")
     assert not offenders, offenders
+
+
+@pytest.mark.parametrize("prompt", [
+    "27x27 west-coast drivebase on Krakens. Defence bot, nothing else.",
+    "tank drive with 8 motors and a kicker-fed hopper shooter",
+    "28 inch swerve with intake and shooter",
+    _PACKED,
+])
+def test_no_more_than_four_propulsion_motors(prompt):
+    """R502. A tank drive's every drive motor is a propulsion motor, and six across two
+    gearboxes — the old six-CIM drivebase — has been illegal since the limit came down to
+    four. The rule report had been saying so on every west-coast design while the geometry
+    went on building six.
+
+    Swerve is the interesting case and it is fine: steering motors are explicitly not
+    propulsion, so four drive plus four steer is eight motors and four against this limit.
+    """
+    spec = _spec(prompt)
+    drive = [f for a in spec["cad"]["assemblies"] if a["kind"] == "drivetrain"
+             for f in a["features"] if f["t"] == "motor" and "steer" not in f["n"]]
+    assert len(drive) <= 4, [f["n"] for f in drive]
+    stated = int((spec.get("drivetrain") or {}).get("drive_motors", 0))
+    assert stated == len(drive), f"spec says {stated} drive motors, geometry has {len(drive)}"
 
 
 def test_the_team_number_is_modelled_at_its_legal_size():

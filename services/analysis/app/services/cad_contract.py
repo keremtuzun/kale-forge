@@ -429,6 +429,70 @@ def _local_extents(feature: dict[str, Any]) -> list[float] | None:
     return [0.4, 0.4, 0.4]
 
 
+def _rot_matrix(rot: Any) -> list[list[float]] | None:
+    """R for R = Rx·Ry·Rz — the signed matrix, not |R|.
+
+    `_abs_rot` gives the absolute matrix, which is all an AABB needs and all the structural
+    audit ever wanted. Interference needs to know which way a part actually points.
+    """
+    values = _floats(rot, 3)
+    if values is None or not any(values):
+        return None
+    rx, ry, rz = (math.radians(v) for v in values)
+    cx, sx = math.cos(rx), math.sin(rx)
+    cy, sy = math.cos(ry), math.sin(ry)
+    cz, sz = math.cos(rz), math.sin(rz)
+    return [[cy * cz, -cy * sz, sy],
+            [cx * sz + sx * sy * cz, cx * cz - sx * sy * sz, -sx * cy],
+            [sx * sz - cx * sy * cz, sx * cz + cx * sy * sz, cx * cy]]
+
+
+def _obb(feature: dict[str, Any], origin: list[float]):
+    """(centre, half-extents, axes) for a body, in world space. None → unplaceable."""
+    at = _floats(feature.get("at"), 3)
+    ext = _local_extents(feature)
+    if at is None or ext is None:
+        return None
+    rotation = _rot_matrix(feature.get("rot"))
+    axes = ([[rotation[r][c] for r in range(3)] for c in range(3)] if rotation
+            else [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+    return ([origin[i] + at[i] for i in range(3)], ext, axes)
+
+
+def _obb_penetration(a, b) -> float:
+    """How deep two oriented boxes interpenetrate, by the separating axis theorem.
+
+    Returns the smallest overlap over the 15 candidate axes, or 0.0 if any axis separates
+    them. The AABB version of this reports a tilted panel as the whole block of air its
+    corners span — a bumper funnel raked 35° boxes several inches thick — so half the
+    interferences it found were between parts that never come near each other.
+    """
+    (ca, ea, aa), (cb, eb, ab) = a, b
+    delta = [cb[i] - ca[i] for i in range(3)]
+    candidates = list(aa) + list(ab)
+    for i in range(3):
+        for j in range(3):
+            axis = [aa[i][1] * ab[j][2] - aa[i][2] * ab[j][1],
+                    aa[i][2] * ab[j][0] - aa[i][0] * ab[j][2],
+                    aa[i][0] * ab[j][1] - aa[i][1] * ab[j][0]]
+            if axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2] > 1e-9:
+                candidates.append(axis)
+    best = float("inf")
+    for axis in candidates:
+        norm = math.sqrt(sum(v * v for v in axis))
+        if norm < 1e-9:
+            continue
+        unit = [v / norm for v in axis]
+        centre_gap = abs(sum(delta[i] * unit[i] for i in range(3)))
+        reach = (sum(ea[k] * abs(sum(aa[k][i] * unit[i] for i in range(3))) for k in range(3))
+                 + sum(eb[k] * abs(sum(ab[k][i] * unit[i] for i in range(3))) for k in range(3)))
+        overlap = reach - centre_gap
+        if overlap <= 0.0:
+            return 0.0
+        best = min(best, overlap)
+    return 0.0 if best is float("inf") else best
+
+
 def _abs_rot(rot: Any) -> list[list[float]] | None:
     """|R| for R = Rx·Ry·Rz (the shared Euler convention), or None for no rotation."""
     values = _floats(rot, 3)
@@ -479,7 +543,11 @@ def _structural_bodies(cad: dict[str, Any]) -> list[dict[str, Any]]:
             if box is None:
                 continue
             bodies.append({"aid": aid, "name": str(feature.get("n") or feature.get("t")),
-                           "t": feature.get("t"), "kind": feature.get("kind"), "box": box})
+                           "t": feature.get("t"), "kind": feature.get("kind"), "box": box,
+                           # The oriented box as well as the axis-aligned one: the AABB is
+                           # what "does this touch anything" wants (conservative never
+                           # misses a float), the OBB is what "is this inside that" wants.
+                           "obb": _obb(feature, origin)})
     return bodies
 
 
@@ -605,10 +673,20 @@ def clearance_report(cad: dict[str, Any]) -> dict[str, Any]:
             overlap = [min(a["box"][1][k], b["box"][1][k]) - max(a["box"][0][k], b["box"][0][k])
                        for k in range(3)]
             depth = min(overlap)
-            if depth > PENETRATION_TOL_IN:
-                clashes.append({"a": f"{a['aid']}/{a['name']}", "b": f"{b['aid']}/{b['name']}",
-                                "depth_in": round(depth, 3),
-                                "swept": bool(a.get("swept") or b.get("swept"))})
+            if depth <= PENETRATION_TOL_IN:
+                continue                       # broad phase: the AABB never misses a hit
+            # Narrow phase on the ORIENTED boxes. A tilted panel's AABB is mostly the air its
+            # corners span — a barrel guide raked 36° or a hopper funnel raked 35° boxes
+            # several inches thick — and half the interferences the AABB found were between
+            # parts that never come near each other. A swept turret keeps the AABB, because
+            # for a body of revolution that box IS the model.
+            if not (a.get("swept") or b.get("swept")) and a.get("obb") and b.get("obb"):
+                depth = _obb_penetration(a["obb"], b["obb"])
+                if depth <= PENETRATION_TOL_IN:
+                    continue
+            clashes.append({"a": f"{a['aid']}/{a['name']}", "b": f"{b['aid']}/{b['name']}",
+                            "depth_in": round(depth, 3),
+                            "swept": bool(a.get("swept") or b.get("swept"))})
     clashes.sort(key=lambda c: -c["depth_in"])
     pairs = sorted({tuple(sorted((c["a"].split("/")[0], c["b"].split("/")[0])))
                     for c in clashes})

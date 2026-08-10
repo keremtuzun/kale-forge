@@ -343,13 +343,21 @@ def _module_inset(spec: dict[str, Any]) -> float:
 
 
 def _module_bands(spec: dict[str, Any], pad: float = 0.0) -> list[tuple[float, float]]:
-    """The Z bands the swerve wheels occupy, front and back, with `pad` of margin."""
+    """The Z bands a crossmember must not land in, because the drivetrain is already there.
+
+    On a swerve robot that is the two corners' wheels. On a west-coast it is the pair of
+    drop-centre gearboxes, which sit inboard of the drive rails on the robot's centreline —
+    a crossmember at z = 0 goes straight through both of them.
+    """
+    dt = spec.get("drivetrain") or {}
+    half_l = spec["frame"]["length_in"] / 2
     inset = _module_inset(spec)
     if not inset:
+        if dt.get("type") == "west-coast":
+            reach = 1.0 + pad + 0.3           # gearbox half-depth in Z
+            return [(-reach, reach)]
         return []
-    dt = spec.get("drivetrain") or {}
     reach = dt.get("wheel_diameter_in", 4.0) / 2 + pad + 0.2
-    half_l = spec["frame"]["length_in"] / 2
     centre = half_l - inset
     return [(-centre - reach, -centre + reach), (centre - reach, centre + reach)]
 
@@ -1052,6 +1060,7 @@ def _drivetrain(spec: dict[str, Any], c: Choices) -> list[dict[str, Any]]:
             axle_y = wheel_d / 2 - 2.0
             axle_x = (rail_x + frame_rail_x) / 2
             prev: list[float] | None = None
+            axle_zs: list[tuple[float, float]] = []      # (z, drop) of every sprocket on this side
             for i in range(per_side):
                 z = (i - (per_side - 1) / 2) * ((ln - 8) / max(1, per_side - 1))
                 centre = abs(i - (per_side - 1) / 2) < 0.25
@@ -1073,6 +1082,7 @@ def _drivetrain(spec: dict[str, Any], c: Choices) -> list[dict[str, Any]]:
                                          _at(sx * rail_x, axle_y - drop, z), 0.3,
                                          kind="#25 chain"))
                 prev = _at(sx * rail_x, axle_y - drop, z)
+                axle_zs.append((z, drop))
             # The gearbox bolts to the drive rail's inboard web on its own plate; the motors
             # stack on the gearbox face instead of marching into empty air above it.
             features.append(plate("gearbox mount plate", (0.190, 3.0, 3.4),
@@ -1085,8 +1095,14 @@ def _drivetrain(spec: dict[str, Any], c: Choices) -> list[dict[str, Any]]:
                                     ratio=f"{dt.get('drive_ratio', 8.45):g}:1", stages=2))
             features.append(sprocket("gearbox output sprocket", 12, _at(sx * rail_x, 3.0, 0),
                                      _rot(0, 0, 90)))
-            features.append(belt("gearbox→centre axle chain", _at(sx * rail_x, 3.0, 0),
-                                 _at(sx * rail_x, axle_y - 0.125, 0), 0.3, kind="#25 chain"))
+            # The gearbox drives whichever axle is nearest it, and with four propulsion
+            # motors that is a two-wheel-per-side base with NO centre axle at all. Aiming at
+            # a dropped centre wheel that only exists on a six-wheel base left the chain's
+            # end wrapping nothing — which is exactly what the transmission audit is for.
+            drive_z, drive_drop = min(axle_zs, key=lambda a: abs(a[0])) if axle_zs else (0.0, 0.0)
+            features.append(belt("gearbox→axle chain", _at(sx * rail_x, 3.0, 0),
+                                 _at(sx * rail_x, axle_y - drive_drop, drive_z), 0.3,
+                                 kind="#25 chain"))
             motor_posts = [(2.6, -1.8), (4.4, -1.8), (3.5, 1.8)][:max(1, count // 2)]
             for m, (my, mz) in enumerate(motor_posts):
                 features.append(motor("drive motor", dt.get("motor_key", "kraken_x60"),
@@ -1094,8 +1110,11 @@ def _drivetrain(spec: dict[str, Any], c: Choices) -> list[dict[str, Any]]:
         return [_asm("drivetrain", "West-coast drivetrain", "drivetrain", features,
                      note=dt.get("selection_reason", ""),
                      mates=["drive rails tie to the frame rails on three bolted plates a side",
-                            "axles ride bearings in both rails",
-                            "centre wheels dropped 1/8 in so the robot turns on four patches"])]
+                            "axles ride bearings in both rails"]
+                           + (["centre wheels dropped 1/8 in so the robot turns on four patches"]
+                              if per_side > 2 else
+                              ["four wheels, all on one plane — a two-per-side base has no "
+                               "centre to drop"]))]
 
     plate_in = dt.get("plate_in") or (4.10, 4.10)
     # Close enough to the corner that the module top plate laps onto the rail top faces —
@@ -1335,8 +1354,21 @@ def _hopper(spec: dict[str, Any], lane_x: float, c: Choices,
     # floor width at face value produced a 29 in hopper on a 27 in frame, whose funnels
     # reached through both bumpers and into the front swerve modules — and, because it was
     # the widest thing on the robot, left the placement pass nowhere to put anything else.
+    #
+    # How much room there is depends on the DRIVETRAIN. A swerve robot gives up the frame
+    # rails; a west-coast gives up the rails, the drive rails inboard of them and the
+    # drop-centre gearboxes inboard of those, which is most of a foot off the width. Sized
+    # against the rails alone, the hopper's corner posts, support rails and index wheels all
+    # ended up inside the drive gearboxes.
     rail_w = TUBE_2X1[1]
-    max_width = w - 2 * (rail_w + 0.4)
+    if (spec.get("drivetrain") or {}).get("type") == "west-coast":
+        # drive rail centreline, gearbox offset, gearbox half-width, clearance
+        side_reserved = 2.6 + 1.6 + 1.6 + 0.4
+    else:
+        # A swerve module's wheel and motors own its corner, and the hopper sits forward in
+        # the front modules' band, so it has to stop short of them and not just of the rails.
+        side_reserved = max(rail_w + 1.0, _module_inset(spec) + 1.2)
+    max_width = w - 2 * side_reserved
     max_depth = ln - 2 * (rail_w + 0.4)
     width = min(hp.get("floor_width_in", 20.0), max_width)
     depth = min(hp.get("floor_depth_in", 14.0), max_depth)
@@ -1449,7 +1481,20 @@ def _hopper(spec: dict[str, Any], lane_x: float, c: Choices,
     # Power: gearbox outboard of the wall on its own plate, one run to the index shaft.
     # The plate stands off the hopper wall, the gearbox bolts to the plate, and the motors
     # stack against the gearbox face — the whole package used to hang in free air.
-    drive_x = width / 2 + 0.9
+    # The transmission plane, and everything outboard of it, measured against the DRIVETRAIN
+    # rather than the frame line: the hopper sits in the front modules' band on a swerve and
+    # alongside the drop-centre gearboxes on a west-coast, and both reach a long way inboard
+    # of the rail. The driven pulley, the gearbox output and the motor all share this plane —
+    # clamping the gearbox alone left its output pulley behind on the old axis, driving a
+    # belt that ran diagonally to nothing.
+    _inset_h = _module_inset(spec)
+    if (spec.get("drivetrain") or {}).get("type") == "west-coast":
+        hop_limit = w / 2 - (2.6 + 1.6 + 1.6) - 0.3
+    else:
+        hop_limit = w / 2 - (_inset_h + 2.4 if _inset_h else 0.35)
+    drive_x = _package_x(spec, lane_x, width / 2 + 0.9,
+                         0.45 + 1.65 + MOTORS.get(mkey, MOTORS["neo_550"])["length_in"] / 2 + 0.3,
+                         limit=hop_limit)
     features.append(plate("hopper drive plate", (0.190, 4.0, 4.5),
                           _at(width / 2 + 0.35, shaft_y + 1.0, -depth * 0.05),
                           note="stands off the wall; carries the gearbox and motors"))
@@ -1461,8 +1506,7 @@ def _hopper(spec: dict[str, Any], lane_x: float, c: Choices,
     # measured against the frame and not against the hopper. A second motor goes BESIDE the
     # first along the robot, not further outboard: that is how a two-motor gearbox is built,
     # and marching them outward is what put the second one through the bumper.
-    gb_x = _package_x(spec, lane_x, width / 2 + 1.35,
-                      1.65 + MOTORS.get(mkey, MOTORS["neo_550"])["length_in"] / 2 + 0.3)
+    gb_x = drive_x + 0.45
     features.append(gearbox("hopper gearbox", (2.0, 2.2, 1.2), _at(gb_x, shaft_y + 1.6, depth * 0.1),
                             ratio=hp.get("gear_reduction", "12:1"), stages=2))
     for i in range(int(hp.get("motor_count", 1))):
@@ -1582,7 +1626,16 @@ def _shooter(spec: dict[str, Any], lane_x: float, c: Choices,
     barrel = sh.get("barrel_length_in", 0.0)
     mkey = sh.get("motor_key", "kraken_x60")
     width = sh.get("width_in", 10.0)
+    # A raked barrel hangs its breech end well below its pivot, and how far below depends on
+    # how long the barrel is: a 20 in barrel at 36° reaches nearly six inches down, plus the
+    # guide under it. Pinned at 6.0 the breech ended up at y = 0.6 — under the frame rails,
+    # through three crossmembers and into the hopper it is fed by. The pivot rises with the
+    # barrel so the whole thing clears the rail top it stands on.
+    _RAKE = 36.0
     pivot_y = 6.0
+    if stacked and barrel > 4:
+        pivot_y = max(pivot_y, 0.45 + (barrel / 2) * math.sin(math.radians(_RAKE))
+                      + fw * 0.73)
     features: list[dict[str, Any]] = []
 
     if stacked and barrel > 4:
@@ -1591,13 +1644,17 @@ def _shooter(spec: dict[str, Any], lane_x: float, c: Choices,
         # is centred to keep the original inner face at fw + 0.5, clear of the flywheel.
         for sx in (-1, 1):
             features.append(tube("barrel side rail", TUBE_1X1, barrel,
-                                 _at(sx * (fw + 1.0), pivot_y, 0), _rot(-36, 0, 0), bolts=2.0))
+                                 _at(sx * (fw + 1.0), pivot_y, 0), _rot(-_RAKE, 0, 0), bolts=2.0))
+        # The guide is the barrel's floor, so it is offset PERPENDICULAR to the barrel, not
+        # straight down. Straight down left it hanging out of the raked tube it belongs to.
+        _c, _s = math.cos(math.radians(_RAKE)), math.sin(math.radians(_RAKE))
         features.append(polycarb("barrel guide", (fw * 1.8, 0.093, barrel),
-                                 _at(0, pivot_y - fw * 0.9, 0), _rot(-36, 0, 0)))
+                                 _at(0, pivot_y - fw * 0.9 * _c, fw * 0.9 * _s),
+                                 _rot(-_RAKE, 0, 0)))
         # Every stage motor bolts to one raked plate riding the right barrel rail — motors
         # beside a barrel with nothing holding them are ballast, not a drivetrain.
         features.append(plate("barrel drive plate", (0.190, 3.2, barrel * 0.72),
-                              _at(fw + 1.55, pivot_y, -0.2), _rot(-36, 0, 0),
+                              _at(fw + 1.55, pivot_y, -0.2), _rot(-_RAKE, 0, 0),
                               note="bolts to the right barrel rail; every stage motor mounts to this"))
         for s in range(stages):
             z = -barrel / 2 + (s + 0.7) * (barrel / (stages + 0.4))
@@ -1627,6 +1684,13 @@ def _shooter(spec: dict[str, Any], lane_x: float, c: Choices,
         # how the old model ended up with posts starting mid-air.
         turret = bool(sh.get("turreted"))
         y0 = 1.61 if turret else 0.0
+        # The head's centre height follows the FLYWHEEL, because the lower wheel hangs a full
+        # radius below the shaft and the shaft hangs (fw + 0.25) below the centre. Pinned at
+        # 4.5 it worked for a 4 in wheel and only just; a 5 in wheel put the lower flywheel's
+        # bottom edge at y = 1.25, three quarters of an inch inside the crossmember the
+        # shooter is bolted to. Everything else on the head is dimensioned off this.
+        head_y = max(4.5, 2 * fw + 0.6)
+        rise = head_y - 4.5
         # The side plates ARE the mechanism's structure: flywheel bearings, feeder shaft,
         # hood and hood drive all mount to them, and they stand on the posts. Shafts run
         # plate-to-plate — a bearing with no plate and a pulley past the end of its shaft
@@ -1635,11 +1699,11 @@ def _shooter(spec: dict[str, Any], lane_x: float, c: Choices,
         m_len = MOTORS.get(mkey, MOTORS["kraken_x60"])["length_in"]
         for sx in (-1, 1):
             features.append(plate(f"shooter side plate {'left' if sx < 0 else 'right'}",
-                                  (0.190, 6.6, 5.6), _at(sx * side_x, y0 + 3.5, 0.5),
+                                  (0.190, 6.6 + rise, 5.6), _at(sx * side_x, y0 + 3.5 + rise / 2, 0.5),
                                   pockets=3,
                                   note="carries the flywheel bearings, the feeder and the hood"))
         for sy in (-1, 1):
-            fy = y0 + 4.5 + sy * (fw + 0.25)
+            fy = y0 + head_y + sy * (fw + 0.25)
             features.append(shaft("flywheel shaft", _HEX_BORE, (side_x + 0.4) * 2,
                                   _at(0, fy, 0), _rot(0, 0, 90)))
             for sx in (-1, 1):
@@ -1661,7 +1725,7 @@ def _shooter(spec: dict[str, Any], lane_x: float, c: Choices,
         # nothing and made the whole head read as a cylinder someone had dropped on it.
         hood_name = "fixed hood" if c.shooter_hood_drive == "fixed" else "adjustable hood"
         hood_r = fw + 1.0
-        hood_y = y0 + 4.5
+        hood_y = y0 + head_y
         features.append(_feat("hood", hood_name, _at(0, hood_y, 0),
                               r=hood_r, w=round(side_x * 2 - 0.1, 3), arc=130, start=25,
                               range_deg=[0, 0] if c.shooter_hood_drive == "fixed"
@@ -1678,12 +1742,12 @@ def _shooter(spec: dict[str, Any], lane_x: float, c: Choices,
                                  _at(0, hood_y + hood_r + 0.35, -0.9), _rot(-18, 0, 0),
                                  note="closes the top of the wrap between the ribs"))
         if c.shooter_hood_drive == "servo":
-            features.append(_feat("actuator", "hood servo", _at(side_x + 0.4, y0 + 5.6, 1.0),
+            features.append(_feat("actuator", "hood servo", _at(side_x + 0.4, y0 + head_y + 1.1, 1.0),
                                   size=[1.6, 0.8, 0.8], kind="linear servo"))
         elif c.shooter_hood_drive == "rack":
-            features.append(gear("hood sector gear", 60, _at(side_x + 0.25, y0 + 4.5, 0), _rot(0, 0, 90),
+            features.append(gear("hood sector gear", 60, _at(side_x + 0.25, y0 + head_y, 0), _rot(0, 0, 90),
                                  dp=20, face=0.3, mat="anodised"))
-            features.append(gear("hood pinion", 12, _at(side_x + 0.25, y0 + 6.3, 0), _rot(0, 0, 90),
+            features.append(gear("hood pinion", 12, _at(side_x + 0.25, y0 + head_y + 1.8, 0), _rot(0, 0, 90),
                                  dp=20, face=0.3, bore=0.375))
         # Two side plates joined by nothing but the shafts that are supposed to spin in them
         # is a mechanism that racks the moment it is loaded. Standoffs are how the pair
@@ -1694,7 +1758,7 @@ def _shooter(spec: dict[str, Any], lane_x: float, c: Choices,
                                   rot=_rot(0, 0, 90), mat="aluminium-dark",
                                   note="ties the two side plates into one frame"))
         for sx in (-1, 1):
-            features.append(tube("shooter post", TUBE_2X1, 4.4, _at(sx * side_x, y0 + 2.2, 0),
+            features.append(tube("shooter post", TUBE_2X1, 4.4 + rise, _at(sx * side_x, y0 + (4.4 + rise) / 2, 0),
                                  _rot(90, 0, 0), bolts=2.0,
                                  note="stands under the side plate it carries"))
             features.append(gusset(f"shooter post gusset {'left' if sx < 0 else 'right'}",
@@ -2025,7 +2089,9 @@ def _arm(spec: dict[str, Any], lane_x: float, c: Choices,
                                _rot(0, 0, 90)))
         features.append(belt("shoulder belt run", _at(2.2, shoulder_y - 4.0, 0),
                              _at(2.2, shoulder_y, 0), 0.6, kind="HTD 5 mm 25 mm belt"))
-    features.append(hardstop("shoulder hard stop", _at(0, shoulder_y - 1.6, -1.6)))
+    # The shoulder hard stop is emitted once the stow angle is known, below — it has to be
+    # under the beam the arm actually rests on, and a fixed position was only ever under the
+    # one pose the arm used to take.
 
     # Segments hinge off each other; each is a real 2x1 beam with a bolt column and pockets.
     #
@@ -2034,19 +2100,59 @@ def _arm(spec: dict[str, Any], lane_x: float, c: Choices,
     # wheel contact plane on a long-reach arm — geometry that cannot exist. Pick the first
     # angle from the natural stow that keeps the whole chain clear of the floor.
     _floor_local = -(2.0 + 1.125) + 0.5      # ground plane in this assembly's frame, + margin
-    def _lowest_for(start_deg: float) -> float:
-        y, ang, low = shoulder_y, start_deg, shoulder_y
+    # ...and the STOWED arm has to be inside the frame perimeter, which is the other half of
+    # the same question. Choosing the angle against the carpet alone let the chain reach
+    # forward out of the frame and into whatever was parked there — on a hopper robot, six
+    # bodies of arm inside the hopper. A robot starts a match folded up inside its own
+    # perimeter, so that is what "stowed" has to mean here.
+    _front_local = -ln / 2 - station_z + 1.0
+    _back_local = ln / 2 - station_z - 1.0
+    # ...and under the height limit, which is the constraint folding it up runs into. A
+    # stowed arm has three walls, a floor and a ceiling, and picking the pose against any
+    # one of them alone just moves the violation somewhere else: against the floor it
+    # reached out of the frame, and against the frame it stood up through R107.
+    _limits = (spec.get("season") or {}).get("limits") or (spec.get("season") or {}).get("rules") or {}
+    _ceiling_local = float(_limits.get("max_height_in") or 30.0) - 2.0 - 1.0
+
+    def _chain(start_deg: float) -> tuple[float, float, float, float]:
+        """(lowest y, highest y, furthest forward z, furthest back z) of the stowed chain."""
+        y, z, ang = shoulder_y, 0.0, start_deg
+        low, high, front, back = shoulder_y, shoulder_y, 0.0, 0.0
         for seg in lens:
             y += math.sin(math.radians(ang)) * seg
-            low = min(low, y)
+            z -= math.cos(math.radians(ang)) * seg
+            low, high = min(low, y), max(high, y)
+            front, back = min(front, z), max(back, z)
             ang += 52.0
-        return low - 1.4                      # jaw + gripper wheels hang below the last node
+        return low - 1.4, high + 1.4, front - 1.0, back + 1.0   # the jaw hangs past the node
 
-    angle = -32.0
-    for _candidate in (-32.0, -24.0, -16.0, -8.0, 0.0, 8.0, 16.0, 24.0, 32.0):
-        angle = _candidate
-        if _lowest_for(_candidate) >= _floor_local:
-            break
+    _CANDIDATES = (-32.0, -24.0, -16.0, -8.0, 0.0, 8.0, 16.0, 24.0, 32.0, 44.0, 56.0, 68.0, 80.0)
+
+    def _fits_vertically(a: float) -> bool:
+        low, high, _f, _b = _chain(a)
+        return low >= _floor_local and high <= _ceiling_local
+
+    def _frame_miss(a: float) -> float:
+        _l, _h, front, back = _chain(a)
+        return max(0.0, _front_local - front) + max(0.0, back - _back_local)
+
+    # Floor and ceiling are hard: below one the jaw is through the carpet, above the other
+    # the robot fails R107 before it has moved. Reaching outside the frame is the one to
+    # trade away when a long arm on a small frame cannot satisfy everything — so choose among
+    # the poses that fit vertically, and take the least excursion of those.
+    _vertical = [a for a in _CANDIDATES if _fits_vertically(a)]
+    if _vertical:
+        angle = min(_vertical, key=lambda a: (_frame_miss(a), abs(a)))
+    else:
+        angle = max(_CANDIDATES, key=lambda a: _chain(a)[0])
+    # The stop lands under the first beam, a short way out from the pivot: it is what the arm
+    # comes to rest ON, so it follows the pose rather than sitting at a fixed point that only
+    # matched one of them.
+    _stop_rad = math.radians(angle)
+    features.append(hardstop("shoulder hard stop",
+                             _at(0.0,
+                                 shoulder_y + math.sin(_stop_rad) * 1.6 - 0.85,
+                                 -math.cos(_stop_rad) * 1.6)))
     node = [0.0, shoulder_y, 0.0]
     for i, seg_len in enumerate(lens):
         rad = math.radians(angle)

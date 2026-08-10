@@ -804,7 +804,14 @@ def build_robot_spec(prompt: str, *, use_model: bool = True, season: str = "") -
         # A tank drivebase has no modules at all, describing one would be a lie in the BOM.
         wheel_in = parsed["wheel_in"] or 6.0
         ratio = _number(p, r"(\d+(?:\.\d+)?)\s*:\s*1", 0) or rng.choice([8.45, 10.71, 12.75])
-        motor_count = 6 if wheel_in >= 5 else 4
+        # R502 caps PROPULSION motors, and on a tank drive every drive motor is one. Six
+        # across two gearboxes was the old six-CIM drivebase and it has been illegal since
+        # the limit came down to four; the rule report has been saying so on every
+        # west-coast design while the geometry went on building six. Two per side.
+        # (Swerve is untouched: its steering motors are explicitly not propulsion, so four
+        # drive plus four steer is eight motors and four against this limit.)
+        limit = int((season_data.get("rules") or {}).get("propulsion_motors", 4))
+        motor_count = min(6 if wheel_in >= 5 else 4, limit)
         wheel_rpm = drive_motor["free_rpm"] / ratio
         drivetrain = {
             "type": "west-coast", "modules_included": False, "module_count": 0,
