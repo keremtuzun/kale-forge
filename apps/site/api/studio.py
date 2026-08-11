@@ -16,7 +16,7 @@ wildcard CORS header.
 The synthesis is the repo's own stdlib modules (frc_parts / frc_season /
 frc_robot_knowledge / robot_spec), bundled under ./app so this deploys as one function. It
 always runs the deterministic path (use_model=False): no external AI, no network. Every
-generated design carries its own 3D drivetrain + power-system viewer, built from that
+generated design carries its own 3D viewer, built from that
 design's real spec.
 
 `season` picks the game the robot is designed for and is the highest-authority input after
@@ -83,8 +83,15 @@ def _name(spec: dict) -> str:
     return f"{module} {lead} robot" + (f" | {season}" if season else "")
 
 
-def make_spec(prompt: str, season: str = "", *, use_model: bool = False) -> dict:
-    """Build one design.
+def make_spec(prompt: str, season: str = "", *, use_model: bool = False,
+              design_type: str = "auto") -> dict:
+    """Build one design, of whatever kind was asked for.
+
+    This used to call the robot compiler directly, which is why every prompt came back as a
+    robot. It now goes through the router: the request is classified, an engineering spec is
+    resolved, and the matching engine runs. A robot request reaches exactly the same compiler
+    it always did — `design_router` wraps it rather than replacing it — so nothing about
+    robot generation changes.
 
     `use_model` is opt-in per call rather than global on purpose. The model is only ever asked
     on the signed-in JSON path: `?fs=1` is public and unauthenticated, so letting it reach the
@@ -92,10 +99,16 @@ def make_spec(prompt: str, season: str = "", *, use_model: bool = False) -> dict
     either way — the model only chooses architecture, and `build_robot_spec` falls back to
     deterministic synthesis whenever the service is slow, asleep or unset.
     """
+    from app.services.design_router import route  # noqa: PLC0415
+
     model_wanted = use_model and bool(get_settings().inference_url)
-    spec = build_robot_spec(prompt, use_model=model_wanted, season=season)
-    spec["viewer"] = _viewer_model(spec)
-    spec["name"] = _name(spec)
+    spec = route(prompt, requested_type=design_type, season=season, use_model=model_wanted)
+    # The viewer and the display name are only meaningful for artifacts that produced
+    # geometry; a PCB has neither and must not be given an empty robot's.
+    if spec.get("cad"):
+        spec["viewer"] = _viewer_model(spec)
+    if spec.get("engine") == "robot":
+        spec["name"] = _name(spec)
     return spec
 
 
@@ -457,7 +470,7 @@ class handler(BaseHTTPRequestHandler):
         prompt = (body.get("prompt") or "").strip()
         if len(prompt) < 4:
             self._fail(422, "PROMPT_TOO_SHORT",
-                       "Describe the robot in a few more words.", rid)
+                       "Describe what you want to engineer in a few more words.", rid)
             return None
         if len(prompt) > MAX_PROMPT_CHARS:
             self._fail(422, "PROMPT_TOO_LONG",
@@ -465,15 +478,29 @@ class handler(BaseHTTPRequestHandler):
             return None
         return prompt
 
-    def _spec_or_error(self, prompt: str, season: str, rid: str, *, use_model: bool):
+    def _spec_or_error(self, prompt: str, season: str, rid: str, *, use_model: bool,
+                       design_type: str = "auto"):
         """Build a design, converting a refusal into the right HTTP answer.
 
         A request the gate refuses is NOT a 500: it is a 422 carrying the questions or the
-        rule that was broken, so the UI can ask instead of pretending to have built it.
+        rule that was broken, so the UI can ask instead of pretending to have built it. The
+        same is true of a mechanical request naming a part this library does not generate —
+        it comes back as an UNSUPPORTED_REQUEST listing what IS generated, which is a far
+        more useful answer than a robot nobody asked for.
         """
+        from app.services.design_router import DesignNotSupported  # noqa: PLC0415
         from app.services.robot_spec import DesignNotBuildable  # noqa: PLC0415
         try:
-            return make_spec(prompt, season, use_model=use_model), None
+            return make_spec(prompt, season, use_model=use_model,
+                             design_type=design_type), None
+        except DesignNotSupported as exc:
+            payload = exc.payload
+            self._fail(422, "UNSUPPORTED_REQUEST", payload.get("message", "Not supported."),
+                       rid, state="unsupported", designType=payload.get("designType"),
+                       supported=payload.get("supported", []),
+                       questions=payload.get("questions", []))
+            _log("design.unsupported", requestId=rid, designType=payload.get("designType"))
+            return None, True
         except DesignNotBuildable as exc:
             g = exc.gate
             code = {"rejected": "DESIGN_RULE_VIOLATION",
@@ -630,11 +657,19 @@ class handler(BaseHTTPRequestHandler):
         season = (body.get("season") or "").strip()
         if season not in SELECTABLE:
             season = ""
+        # The studio's type selector. "auto" means classify it; anything else is the user
+        # telling us directly and is honoured. An unknown value falls back to auto rather
+        # than erroring, because a stale client should still be able to generate.
+        from app.services.design_intent import DESIGN_TYPES  # noqa: PLC0415
+        design_type = (body.get("designType") or "auto").strip().lower()
+        if design_type not in DESIGN_TYPES and design_type != "auto":
+            design_type = "auto"
         # Exports never write: strip revision/restore/persist intents so an export
         # can only ever read the exact stored chain (pinned by baseRevision).
         if path != "/api/studio/designs":
             body = {k: body.get(k) for k in ("designId", "baseRevision", "prompt", "onshape",
-                                             "access_key", "secret_key", "base_url", "name")}
+                                             "access_key", "secret_key", "base_url", "name",
+                                             "designType")}
         prompt, commit = self._resolve_design(body, season, rid)
         if prompt is None:
             return
@@ -643,7 +678,8 @@ class handler(BaseHTTPRequestHandler):
         started = time.time()
 
         if path == "/api/studio/designs":
-            spec, failed = self._spec_or_error(prompt, season, rid, use_model=True)
+            spec, failed = self._spec_or_error(prompt, season, rid, use_model=True,
+                                               design_type=design_type)
             if failed:
                 return
             if commit is not None:
@@ -663,7 +699,8 @@ class handler(BaseHTTPRequestHandler):
             return
 
         # ── exports ──────────────────────────────────────────────────────────
-        spec, failed = self._spec_or_error(prompt, season, rid, use_model=False)
+        spec, failed = self._spec_or_error(prompt, season, rid, use_model=False,
+                                           design_type=design_type)
         if failed:
             return
         report = spec.get("rule_report") or {}
@@ -745,7 +782,7 @@ class handler(BaseHTTPRequestHandler):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# The page. Prompt in; the engineered design and its own 3D drivetrain/power viewer out.
+# The page. Prompt in; the engineered design and its own 3D viewer out.
 # ─────────────────────────────────────────────────────────────────────────────
 PAGE = r"""<!doctype html>
 <html lang="en" data-theme="light">
@@ -753,7 +790,7 @@ PAGE = r"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Design Studio | Kale Forge</title>
-<meta name="description" content="Describe an FRC robot; get an engineered design with its own one-to-one 3D drivetrain and power-system viewer.">
+<meta name="description" content="Describe hardware at any scale — a bearing block, a subsystem, a PCB or a complete FRC robot — and get an engineered design with a one-to-one 3D model.">
 <style>
   :root{
     --bg:#f6f3ea;--surface:#fbf9f2;--surface-2:#eeeadf;--ink:#171a18;--muted:#606761;
@@ -861,7 +898,21 @@ PAGE = r"""<!doctype html>
   /* 44px minimum touch target, per WCAG 2.5.8, without changing the visual size */
   .btn-small{font-size:11px;padding:4px 10px;min-height:44px;min-width:44px}
   .revision-examples{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.revision-examples button{appearance:none;border:1px solid var(--line);background:var(--bg);color:var(--muted);border-radius:999px;padding:5px 8px;font:600 10px var(--sans);cursor:pointer}.revision-examples button:hover{border-color:var(--brand);color:var(--brand)}
-  @media (max-width:820px){.stage{grid-template-columns:1fr;grid-template-rows:44% 1fr}.stage.closed{grid-template-rows:0 1fr}.stage:not(.closed) .dtoggle{left:0}.dossier{border-right:0;border-bottom:1px solid var(--line)}.ctrls{width:150px}.dock-head>span{display:none}.composer{flex-direction:column;align-items:stretch}.composer-side{flex-direction:row}.composer-side select{flex:1}.revision-examples{display:none}}
+  /* The design-type selector. Same segmented language as the dock tabs, so the studio still
+     reads as one tool rather than a settings panel bolted to a prompt box. */
+  .kinds{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
+  .kinds button{appearance:none;border:1px solid var(--line);background:var(--bg);color:var(--muted);border-radius:7px;padding:5px 10px;font:700 10px var(--sans);letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
+  .kinds button:hover{border-color:var(--brand);color:var(--brand)}
+  .kinds button.on{background:var(--brand);border-color:var(--brand);color:var(--bg)}
+  /* Provenance chips. Deliberately quiet: they must be readable on every row without
+     turning the dossier into a traffic light. */
+  .prov{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:0 5px;font:700 9px var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);vertical-align:1px}
+  .prov.ok{border-color:color-mix(in srgb,var(--brand) 45%,var(--line));color:var(--brand)}
+  .prov.warn{border-color:color-mix(in srgb,#b8860b 45%,var(--line));color:#8a6508}
+  .prov.bad{border-color:color-mix(in srgb,#b3261e 45%,var(--line));color:#b3261e}
+  .list{margin:6px 0 0;padding-left:16px;color:var(--muted);font-size:12px;line-height:1.6}
+  .list b{color:var(--ink);font-weight:700}
+  @media (max-width:820px){.stage{grid-template-columns:1fr;grid-template-rows:44% 1fr}.stage.closed{grid-template-rows:0 1fr}.stage:not(.closed) .dtoggle{left:0}.dossier{border-right:0;border-bottom:1px solid var(--line)}.ctrls{width:150px}.dock-head>span{display:none}.composer{flex-direction:column;align-items:stretch}.composer-side{flex-direction:row}.composer-side select{flex:1}.revision-examples{display:none}.kinds button{padding:5px 7px}}
   #gate{position:fixed;inset:0;z-index:40;display:grid;place-items:center;background:color-mix(in srgb,var(--bg) 86%,transparent);backdrop-filter:blur(10px)}
   #gate[hidden]{display:none}
   #onshape-modal{position:fixed;inset:0;z-index:30;display:grid;place-items:center;background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(8px)}
@@ -894,11 +945,11 @@ PAGE = r"""<!doctype html>
   <div class="stage closed" id="stage">
     <button class="dtoggle" id="dtoggle" type="button" aria-expanded="false" title="Show design details">›</button>
     <div class="dossier" id="dossier">
-      <div class="empty" id="dossier-empty">Describe a robot and press Generate.<br>Each design comes with its own 3D drivetrain and power system.</div>
+      <div class="empty" id="dossier-empty">What do you want to engineer?<br>A robot, a subsystem, a single part, or a PCB.</div>
     </div>
     <div class="view">
       <div class="viewport">
-        <canvas id="scene" role="img" aria-label="Interactive 3D preview of the generated robot. The design dossier panel lists every assembly and part as text."></canvas>
+        <canvas id="scene" role="img" aria-label="Interactive 3D preview of the generated design. The dossier panel lists every assembly and part as text."></canvas>
         <div class="ctrls" id="ctrls" style="display:none">
           <div class="panel">
             <div class="row"><button class="btn" data-view="iso">Iso</button><button class="btn" data-view="top">Top</button><button class="btn" data-view="front">Front</button><button class="btn" data-view="side">Side</button></div>
@@ -916,7 +967,7 @@ PAGE = r"""<!doctype html>
              tabbing back through the whole page to discover what happened. -->
         <!-- The message lives in its own span: writing to the wrapper would delete the
              spinner element that sits beside it. -->
-        <div class="empty" id="view-empty" role="status" aria-live="polite" aria-atomic="true"><div><div class="spin" style="display:none" id="spin"></div><span id="view-msg">The 3D drivetrain for your design appears here.</span></div></div>
+        <div class="empty" id="view-empty" role="status" aria-live="polite" aria-atomic="true"><div><div class="spin" style="display:none" id="spin"></div><span id="view-msg">Your generated model appears here.</span></div></div>
         <div class="hint" id="hint" style="display:none">drag to orbit · scroll to zoom · click a part</div>
       </div>
       <div class="dock" id="dock" data-mode="new">
@@ -928,9 +979,16 @@ PAGE = r"""<!doctype html>
           <span id="revision-state"></span>
         </div>
         <form class="prompt" id="form">
+          <div class="kinds" role="radiogroup" aria-label="What kind of design">
+            <button type="button" data-kind="auto" class="on" aria-checked="true" role="radio" title="Kale works out what you are asking for">Auto</button>
+            <button type="button" data-kind="robot" aria-checked="false" role="radio" title="A complete FRC robot">Robot</button>
+            <button type="button" data-kind="subsystem" aria-checked="false" role="radio" title="One mechanism: elevator, intake, shooter, arm">Subsystem</button>
+            <button type="button" data-kind="mechanical_part" aria-checked="false" role="radio" title="A single part: bearing block, shaft, plate, gusset">Part</button>
+            <button type="button" data-kind="pcb" aria-checked="false" role="radio" title="A circuit board from a requirement">PCB</button>
+          </div>
           <div class="composer">
-            <label class="sr-only" for="q">Describe the robot to design</label>
-            <textarea id="q" rows="1" autocomplete="off" placeholder="Describe a robot, for example: 'MK5i swerve on Krakens at R2 with a fast over-bumper intake and a climber'"></textarea>
+            <label class="sr-only" for="q">What do you want to engineer?</label>
+            <textarea id="q" rows="1" autocomplete="off" placeholder="Design a bearing block for a 1/2 in hex shaft using two 1.125 in OD bearings..."></textarea>
             <div class="composer-side">
               <label class="sr-only" for="season">Game season</label>
               <select id="season" title="The game this robot is designed for. It sets the gamepiece, the goal height, the climb reach and the frame perimeter budget"></select>
@@ -938,24 +996,27 @@ PAGE = r"""<!doctype html>
               <button class="btn" type="button" id="cancel" hidden>Cancel</button>
             </div>
           </div>
-          <p class="revision-note">Enter generates the design. Shift + Enter starts a new line.</p>
+          <p class="revision-note">Describe a robot, subsystem, mechanical part, PCB or custom assembly. Enter generates. Shift + Enter starts a new line.</p>
+          <div class="revision-examples" aria-label="Example designs">
+            <button type="button" data-example="Design a bearing block for a 1/2 in hex shaft.">Bearing block</button>
+            <button type="button" data-example="Create a two-Kraken gearbox plate.">Two-Kraken gearbox</button>
+            <button type="button" data-example="Design a 4 in compliant-wheel intake roller.">Intake roller</button>
+            <button type="button" data-example="Build a 4-layer PCB for CAN sensors with 12V input.">CAN sensor board</button>
+            <button type="button" data-example="Design a NEO motor mounting plate.">Motor plate</button>
+            <button type="button" data-example="Build a complete FRC robot with swerve, an intake and a shooter.">Complete robot</button>
+          </div>
         </form>
         <form class="revision" id="revision-form">
           <div class="composer">
             <label class="sr-only" for="revision-q">Describe the edit to apply</label>
-            <textarea id="revision-q" rows="1" autocomplete="off" placeholder="Make the frame 26 in wide, remove the turret, use a 3-stage elevator..."></textarea>
+            <textarea id="revision-q" rows="1" autocomplete="off" placeholder="Make it 3.5 in wide, use a slip fit, add a 5 V rail..."></textarea>
             <div class="composer-side">
               <button class="btn primary" id="revision-apply" type="submit">Apply edit</button>
             </div>
           </div>
           <p class="revision-note" id="revision-note">Each edit rebuilds the validated specification and every editable part.</p>
           <div class="history" id="history" style="display:none"></div>
-          <div class="revision-examples" aria-label="Example design edits">
-            <button type="button" data-revision-example="Make the frame 26 inches wide">26 inch frame</button>
-            <button type="button" data-revision-example="Remove the turret">Remove turret</button>
-            <button type="button" data-revision-example="Use a 3-stage elevator">3-stage elevator</button>
-            <button type="button" data-revision-example="Change the drive ratio to L2">Use L2 ratio</button>
-          </div>
+          <div class="revision-examples" id="revision-examples" aria-label="Example design edits"></div>
         </form>
       </div>
     </div>
@@ -1109,7 +1170,7 @@ function apiMessage(r){
     RATE_LIMITED: 'Too many requests. Wait a moment and try again.',
     CLARIFICATION_REQUIRED: e.message || 'A few more details are needed.',
     DESIGN_RULE_VIOLATION: e.message || 'That design breaks a season rule.',
-    PROMPT_TOO_SHORT: 'Describe the robot in a few more words.',
+    PROMPT_TOO_SHORT: 'Describe what you want to engineer in a few more words.',
     PROMPT_TOO_LONG: 'That description is too long.',
     GEOMETRY_SERVER_OFFLINE: 'The geometry server is offline right now.',
     EXPORT_FAILED: 'The export did not complete. Try again shortly.',
@@ -1242,14 +1303,66 @@ const SEASON_EXAMPLES = {
 const FALLBACK = SEASON_EXAMPLES['2026-rebuilt'];
 // The box starts EMPTY: pre-filling a full robot spec let a new user generate
 // without describing anything, and hid whether vague prompts really get questions.
-q.placeholder = 'Describe a robot, for example: ' + FALLBACK;
+const PART_PLACEHOLDER = 'Design a bearing block for a 1/2 in hex shaft using two 1.125 in OD bearings...';
+q.placeholder = PART_PLACEHOLDER;
 grow(q);
 
+// ── design type ────────────────────────────────────────────────────────────
+// AUTO is the default and means "work out what I am asking for". The selector exists for
+// the times the words are ambiguous and the user already knows — "make a gearbox" is a
+// reasonable request for either an assembly or the plate that carries it.
+let designKind = 'auto';
+const kindButtons = Array.from(document.querySelectorAll('[data-kind]'));
+kindButtons.forEach(btn => btn.addEventListener('click', () => {
+  designKind = btn.dataset.kind;
+  kindButtons.forEach(b => {
+    const on = b === btn;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+  syncSeasonVisibility();
+  applySeasonExample();
+}));
+
+// A game season only means something for a complete robot or for a subsystem that handles
+// the game piece. Asking someone to pick REEFSCAPE before they can have a bearing housing
+// was the clearest sign this tool thought it only made robots. The client mirrors the
+// server's rule in `design_intent.season_is_relevant`; the server decides, this only hides.
+const GAME_WORDS = /(20\d\d|reefscape|rebuilt|crescendo|charged\s*up|rapid\s*react|season|game manual|field|match)/i;
+const GAME_PIECE = /(intake|hopper|indexer|spindexer|shooter|flywheel|launcher|climb\w*|hang\w*|end\s*effector|gripper)/i;
+const ROBOT_WORDS = /(robot|drivebase|drive\s*base|chassis|drivetrain|swerve|west\s*coast|tank\s*drive)/i;
+function seasonMatters(){
+  if (designKind === 'robot') return true;
+  if (designKind === 'mechanical_part' || designKind === 'pcb') return false;
+  const text = q.value || '';
+  if (GAME_WORDS.test(text)) return true;
+  if (designKind === 'subsystem') return GAME_PIECE.test(text);
+  return ROBOT_WORDS.test(text);
+}
+function syncSeasonVisibility(){
+  const show = seasonMatters();
+  seasonSel.style.display = show ? '' : 'none';
+  seasonSel.disabled = !show;
+}
+q.addEventListener('input', syncSeasonVisibility);
+
 let seasonInfo = {};
+const KIND_PLACEHOLDER = {
+  auto: PART_PLACEHOLDER,
+  mechanical_part: PART_PLACEHOLDER,
+  pcb: 'Design a PCB that takes 12V input and provides protected 5V 3A and 3.3V 1A outputs...',
+  subsystem: 'Design a two-stage cascade elevator reaching 48 in, rope-rigged on two Krakens...',
+};
 function applySeasonExample(){
+  // Only ever replaces the PLACEHOLDER, so a prompt the user typed always survives.
+  if (q.value.trim()) { grow(q); return; }
+  if (designKind !== 'robot' && KIND_PLACEHOLDER[designKind]) {
+    q.placeholder = KIND_PLACEHOLDER[designKind];
+    grow(q);
+    return;
+  }
   const next = SEASON_EXAMPLES[seasonSel.value];
-  // Only replace an untouched example, so a prompt the user typed always survives.
-  if (next && !q.value.trim()) q.placeholder = 'Describe a robot, for example: ' + next;
+  if (next) q.placeholder = 'Describe a robot, for example: ' + next;
   const s = seasonInfo[seasonSel.value];
   if (s) q.placeholder = `Describe a ${s.label} robot. Gamepiece: ${s.gamepiece}. Frame perimeter budget: ${s.perimeter_in} in`;
   grow(q);
@@ -1358,7 +1471,7 @@ form.addEventListener('submit', async (e) => {
     // A too-short prompt must say so, not silently swallow Enter. The live region
     // announces the message for screen-reader users too.
     $('#view-empty').style.display='grid';
-    setViewMessage('Describe the robot in a few more words, then generate.');
+    setViewMessage('Describe what you want to engineer in a few more words, then generate.');
     return;
   }
   if (window.__seasonsFailed && seasonSel.value !== 'offseason'){
@@ -1377,8 +1490,9 @@ form.addEventListener('submit', async (e) => {
     // to abort, and a rejected edit never enters the history.
     const request = (isRevision && designId)
       ? { designId: designId, revision: prompt, baseRevision: revisionNumber,
-          season: seasonSel.value || '' }
-      : { prompt: prompt, season: seasonSel.value || '', persist: true };
+          season: seasonSel.value || '', designType: designKind }
+      : { prompt: prompt, season: seasonSel.value || '', persist: true,
+          designType: designKind };
     const r = await apiPost('/api/studio/designs', request);
     if (r.aborted || r.stale) return;          // a newer request owns the UI now
     if (r.status === 401) { window.__requireSignIn && window.__requireSignIn();
@@ -1403,6 +1517,7 @@ form.addEventListener('submit', async (e) => {
     setGenState('succeeded');
     renderHistory();
     renderDossier(spec);
+    syncEditExamples(spec.designType || 'robot');
     if (!scene3d) {
       scene3d = buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, RoomEnvironment, canvas: $('#scene') });
       // Exposed so the viewer can be driven from the console or a screenshot script, and so
@@ -1520,7 +1635,7 @@ async function restoreTo(revision){
   $('#view-empty').style.display='grid'; setGenState('generating');
   const r = await apiPost('/api/studio/designs',
     { designId: designId, restoreTo: revision, baseRevision: revisionNumber,
-      season: seasonSel.value || '' });
+      season: seasonSel.value || '', designType: designKind });
   setGenState(r.ok ? 'succeeded' : 'failed');
   if (!r.ok){ note.textContent = 'Could not restore: ' + apiMessage(r); return; }
   const savedDesign = r.data.design || {};
@@ -1533,13 +1648,52 @@ async function restoreTo(revision){
   renderHistory();
 }
 
-document.querySelectorAll('[data-revision-example]').forEach(button => {
+document.querySelectorAll('[data-example]').forEach(button => {
   button.addEventListener('click', () => {
-    revisionQ.value = button.dataset.revisionExample;
-    grow(revisionQ);
-    revisionQ.focus();
+    q.value = button.dataset.example;
+    grow(q); syncSeasonVisibility(); q.focus();
   });
 });
+// Edit suggestions follow the artifact. Offering "remove the turret" on a bearing block
+// taught users that the edit box only understood robots, which was never true.
+const EDIT_EXAMPLES = {
+  robot: [['26 inch frame', 'Make the frame 26 inches wide'],
+          ['Remove turret', 'Remove the turret'],
+          ['3-stage elevator', 'Use a 3-stage elevator'],
+          ['Use L2 ratio', 'Change the drive ratio to L2']],
+  subsystem: [['Add a stage', 'Add another stage'],
+              ['Slower, stronger', 'Change the reduction to 1:20'],
+              ['Lighter', 'Lighten the plates'],
+              ['Different motor', 'Use a NEO Vortex instead']],
+  mechanical_part: [['Wider block', 'Make it 3.5 inches wide'],
+                    ['Slip fit', 'Use a slip fit instead of a press fit'],
+                    ['1/4-20 screws', 'Use 1/4-20 mounting screws'],
+                    ['Thicker', 'Make it 0.5 in thick'],
+                    ['Steel', 'Make it from steel']],
+  pcb: [['Add a connector', 'Add a fifth CAN connector'],
+        ['5 V rail', 'Add a 5 V rail rated for 2 A'],
+        ['Four layers', 'Use a four layer stackup'],
+        ['Reverse protection', 'Add reverse polarity protection on the input']],
+};
+EDIT_EXAMPLES.mechanical_assembly = EDIT_EXAMPLES.mechanical_part;
+EDIT_EXAMPLES.enclosure = EDIT_EXAMPLES.mechanical_part;
+EDIT_EXAMPLES.other = EDIT_EXAMPLES.mechanical_part;
+EDIT_EXAMPLES.electronics = EDIT_EXAMPLES.pcb;
+
+const editExamples = $('#revision-examples');
+function syncEditExamples(designType){
+  const list = EDIT_EXAMPLES[designType] || EDIT_EXAMPLES.robot;
+  editExamples.replaceChildren(...list.map(([label, text]) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = label;
+    button.addEventListener('click', () => {
+      revisionQ.value = text; grow(revisionQ); revisionQ.focus();
+    });
+    return button;
+  }));
+}
+syncEditExamples('robot');
 
 // ── untrusted-value handling ────────────────────────────────────────────────
 // Everything below that ends up inside a template literal came from a prompt, a model, a
@@ -1579,9 +1733,186 @@ function escapeDeep(value, depth){
   return value;   // numbers and booleans cannot carry markup
 }
 function row(dt, dd){ return `<dt>${dt}</dt><dd>${dd}</dd>`; }
+
+// A provenance chip. Every generated number says where it came from, because the difference
+// between "you told me 1.125" and "I assumed 1.125" is the difference between a part that
+// fits and one that does not.
+function src(source){
+  if (!source) return '';
+  const tone = {VERIFIED:'ok', USER_PROVIDED:'ok', CALCULATED:'ok',
+                INFERRED:'warn', ASSUMED:'warn', UNRESOLVED:'bad'}[source] || '';
+  return ' <span class="prov ' + tone + '">' + String(source).replace('_',' ').toLowerCase() + '</span>';
+}
+function dimRows(list){
+  return (list||[]).map(function(d){
+    return row(d.label, d.value + (d.unit ? ' ' + d.unit : '') + src(d.source)
+      + (d.note ? '<br><span class="note">' + d.note + '</span>' : ''));
+  }).join('');
+}
+function provRows(list){
+  return (list||[]).map(function(r){
+    return row(r.label, r.value + (r.unit ? ' ' + r.unit : '') + src(r.source)
+      + (r.note ? '<br><span class="note">' + r.note + '</span>' : ''));
+  }).join('');
+}
+
+// ── mechanical dossier ─────────────────────────────────────────────────────
+// A part shows what a part has. It does NOT show a drivetrain, a power system or a season,
+// because a bearing block has none of those, and printing empty robot sections was the most
+// visible way this tool told users it only really made robots.
+function renderPartDossier(spec){
+  const out = [];
+  const sub = (spec.designTypeLabel||'')
+    + (spec.partType ? ' · ' + String(spec.partType).replace(/_/g,' ') : '')
+    + (spec.intent && spec.intent.confidence != null ? ' · confidence ' + spec.intent.confidence : '');
+  out.push('<p class="name">' + (spec.name||'Part') + '</p><p class="sub">' + sub + '</p>');
+  if (spec.intent && spec.intent.why){
+    out.push('<p class="note">Read as a ' + String(spec.designType).replace(/_/g,' ')
+      + ': ' + spec.intent.why + '.</p>');
+  }
+  if (spec.dimensions && spec.dimensions.length){
+    out.push('<details open><summary>Dimensions · ' + spec.dimensions.length
+      + '</summary><dl class="kv">' + dimRows(spec.dimensions) + '</dl></details>');
+  }
+  const mat = spec.material||{}, proc = spec.process||{}, mass = spec.mass||{};
+  out.push('<details open><summary>Material and fabrication</summary><dl class="kv">'
+    + row('Material', (mat.name||'—') + src(mat.source))
+    + row('Process', (proc.name||'—') + src(proc.source))
+    + (mass.value != null
+        ? row('Mass', mass.value + ' lb' + src(mass.source)
+            + '<br><span class="note">' + (mass.covers || '')
+            + (mass.excludes ? ', excluding ' + mass.excludes : '') + '</span>')
+        : row('Mass', 'not calculated' + src('UNRESOLVED')))
+    + '</dl></details>');
+  if (spec.interfaces && spec.interfaces.length){
+    out.push('<details><summary>Interfaces · ' + spec.interfaces.length + '</summary><dl class="kv">'
+      + spec.interfaces.map(function(i){ return row(i.name, i.detail + src(i.source)); }).join('')
+      + '</dl></details>');
+  }
+  const calcRows = (spec.provenance||[]).filter(function(r){ return r.source === 'CALCULATED'; });
+  if (calcRows.length){
+    out.push('<details><summary>Calculations · ' + calcRows.length + '</summary><dl class="kv">'
+      + provRows(calcRows) + '</dl></details>');
+  }
+  const assumed = (spec.provenance||[]).filter(function(r){
+    return r.source === 'ASSUMED' || r.source === 'INFERRED'; });
+  if (assumed.length){
+    out.push('<details open><summary>Assumptions · ' + assumed.length + '</summary>'
+      + '<p class="note">Kale chose these because nothing in the request set them. '
+      + 'Edit the design to change any of them.</p><dl class="kv">'
+      + provRows(assumed) + '</dl></details>');
+  }
+  const gaps = (spec.provenance||[]).filter(function(r){ return r.source === 'UNRESOLVED'; });
+  if (gaps.length){
+    out.push('<details open><summary>Unresolved · ' + gaps.length + '</summary>'
+      + '<p class="note">Needed, not known, and not safe to invent.</p><ul class="list">'
+      + gaps.map(function(r){ return '<li>' + r.label + ' — ' + (r.note||'') + '</li>'; }).join('')
+      + '</ul></details>');
+  }
+  if (spec.hardware && spec.hardware.length){
+    out.push('<details><summary>Hardware · ' + spec.hardware.length + '</summary><dl class="kv">'
+      + spec.hardware.map(function(h){
+          return row((h.qty||1) + ' x ' + h.name,
+            (h.verified ? 'catalog part' : 'requirement') + src(h.source)
+            + (h.note ? '<br><span class="note">' + h.note + '</span>' : ''));
+        }).join('') + '</dl></details>');
+  }
+  if (spec.risks && spec.risks.length){
+    out.push('<details><summary>Risks and checks · ' + spec.risks.length + '</summary><ul class="list">'
+      + spec.risks.map(function(r){ return '<li><b>' + r.severity + '</b> — ' + r.detail + '</li>'; }).join('')
+      + '</ul></details>');
+  }
+  if (spec.parameters){
+    const keys = Object.keys(spec.parameters);
+    out.push('<details><summary>Parametric variables · ' + keys.length + '</summary>'
+      + '<p class="note">The named dimensions the CAD is driven by. The FeatureScript export '
+      + 'exposes each one, so the model stays editable.</p><dl class="kv">'
+      + keys.map(function(k){ return row(k, spec.parameters[k]); }).join('') + '</dl></details>');
+  }
+  return out.join('');
+}
+
+// ── PCB dossier ────────────────────────────────────────────────────────────
+function renderBoardDossier(spec){
+  const out = [];
+  const comp = spec.completion||{}, board = spec.board||{}, el = spec.electronics||{};
+  out.push('<p class="name">' + (spec.name||'Board') + '</p><p class="sub">'
+    + (spec.designTypeLabel||'PCB') + ' · reached '
+    + String(comp.reached||'NONE').replace(/_/g,' ').toLowerCase() + '</p>');
+  // The completion ladder goes first and is never collapsed. Nobody should have to open a
+  // section to discover that the board they are looking at is not routed.
+  out.push('<details open><summary>Completion state</summary><p class="note">'
+    + (comp.summary||'') + '</p><dl class="kv">'
+    + (comp.stages||[]).map(function(st){
+        return row(String(st.stage).replace(/_/g,' ').toLowerCase(),
+          (st.done ? 'complete' : 'not implemented')
+          + '<br><span class="note">' + st.detail + '</span>');
+      }).join('') + '</dl></details>');
+  out.push('<details open><summary>Board</summary><dl class="kv">'
+    + row('Layers', board.layers || '—')
+    + row('Size', board.size_mm ? board.size_mm[0] + ' x ' + board.size_mm[1] + ' mm' + src(board.size_source) : '—')
+    + row('Input', (el.input && el.input.voltage != null) ? el.input.voltage + ' V' + src(el.input.source) : '—')
+    + row('Mounting', (board.mounting_holes||0) + ' holes<br><span class="note">'
+        + (board.mounting_note||'') + '</span>')
+    + '</dl></details>');
+  if (spec.power && spec.power.rails && spec.power.rails.length){
+    out.push('<details open><summary>Power · ' + spec.power.total_w + ' W</summary><dl class="kv">'
+      + spec.power.rails.map(function(r){
+          return row(r.name, r.current_a + ' A · ' + r.power_w + ' W'); }).join('')
+      + '</dl></details>');
+  }
+  if (spec.components && spec.components.length){
+    const unresolved = spec.components.filter(function(c){ return !c.verified; }).length;
+    out.push('<details><summary>Components · ' + spec.components.length + '</summary>'
+      + '<p class="note">' + unresolved + ' of ' + spec.components.length
+      + ' are stated as requirements rather than exact parts. Kale does not invent '
+      + 'manufacturer part numbers.</p><dl class="kv">'
+      + spec.components.map(function(c){
+          return row(c.reference + ' ' + (c.value||''),
+            (c.mpn ? c.mpn : (c.requirement || c.category)) + src(c.source));
+        }).join('') + '</dl></details>');
+  }
+  if (spec.nets && spec.nets.length){
+    out.push('<details><summary>Nets · ' + spec.nets.length + '</summary><dl class="kv">'
+      + spec.nets.map(function(n){
+          return row(n.name, n.node_count + ' pins<br><span class="note">' + (n.note||'') + '</span>');
+        }).join('') + '</dl></details>');
+  }
+  if (spec.checks && spec.checks.length){
+    const bad = spec.checks.filter(function(c){ return !c.ok; }).length;
+    out.push('<details ' + (bad ? 'open' : '') + '><summary>Checks · '
+      + (spec.checks.length - bad) + ' passed, ' + bad + ' to review</summary><ul class="list">'
+      + spec.checks.map(function(c){
+          return '<li><b>' + (c.ok ? 'ok' : 'review') + '</b> — ' + c.check + ': ' + c.detail + '</li>';
+        }).join('') + '</ul></details>');
+  }
+  if ((el.assumptions||[]).length){
+    out.push('<details open><summary>Assumptions · ' + el.assumptions.length + '</summary><ul class="list">'
+      + el.assumptions.map(function(a){ return '<li>' + a + '</li>'; }).join('') + '</ul></details>');
+  }
+  const ex = spec.exports||{};
+  out.push('<details><summary>Export</summary><p class="note">' + (ex.note||'') + '</p><dl class="kv">'
+    + row('BOM', ex.bom_csv ? 'available' : 'not available')
+    + row('KiCad source', ex.kicad_sch ? 'available' : 'not generated')
+    + row('Gerbers', ex.gerbers ? 'available' : 'not generated')
+    + '</dl></details>');
+  return out.join('');
+}
+
 function renderDossier(rawSpec){
   // One escape pass at the boundary; nothing downstream re-inserts raw values.
   const spec = escapeDeep(rawSpec);
+  // The dossier follows the artifact. Anything that is not a robot gets the dossier for what
+  // it actually is, and never a drivetrain section it does not have.
+  const kind = spec.designType || 'robot';
+  if (kind === 'pcb' || kind === 'electronics'){
+    dossier.innerHTML = renderBoardDossier(spec);
+    return;
+  }
+  if (spec.engine === 'mechanical'){
+    dossier.innerHTML = renderPartDossier(spec);
+    return;
+  }
   const d = spec.drivetrain||{}, e = spec.electrical||{}, f = spec.frame||{};
   const inc = (spec.subsystems||[]);
   const partHtml = [];
@@ -1840,8 +2171,9 @@ function wireControls(){
   // raw prompt is only for a design that was never saved. Sending currentPrompt
   // after a revision used to export a robot built from just the edit text.
   const fsBody=()=> designId
-    ? {designId: designId, baseRevision: revisionNumber, season: seasonSel.value||''}
-    : {prompt: currentPrompt, season: seasonSel.value||''};
+    ? {designId: designId, baseRevision: revisionNumber, season: seasonSel.value||'',
+       designType: designKind}
+    : {prompt: currentPrompt, season: seasonSel.value||'', designType: designKind};
   // STEP download: fetched rather than a bare link so a sleeping geometry server
   // surfaces as a sentence, not a broken download.
   $('#os-download').addEventListener('click', async ()=>{

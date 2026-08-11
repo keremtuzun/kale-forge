@@ -170,7 +170,27 @@ def solid(f):
         return outer.cut(inner)
     if t == "plate" or t in BOX_DEFAULTS:
         size = f.get("size") or list(BOX_DEFAULTS.get(t, (1.0, 0.09, 1.0)))
-        return _box(_num(size[0], 1.0), _num(size[1], 0.09), _num(size[2], 1.0))
+        body = _box(_num(size[0], 1.0), _num(size[1], 0.09), _num(size[2], 1.0))
+        # Named bores are cut, not drawn. A blind bore keeps its floor; a through bore is
+        # overshot on both faces so the cut cannot leave a skin behind at the boundary.
+        thickness = _num(size[1], 0.09)
+        for hole in (f.get("bores") or []):
+            dia = _num(hole.get("d"), 0.0)
+            if dia <= 0:
+                continue
+            depth = _num(hole.get("depth"), 0.0)
+            cut_h = (depth if depth > 0 else thickness) * 1.05 + 0.02
+            # Blind bores are cut from the top face down; through bores straddle the plate.
+            offset = ((thickness / 2 - cut_h / 2 + 0.01) if depth > 0 else 0.0) * IN
+            if (hole.get("form") or "round") == "hex":
+                across = dia / math.cos(math.pi / 6)
+                tool = (cq.Workplane("XZ").polygon(6, across * IN)
+                        .extrude(cut_h * IN / 2.0, both=True))
+            else:
+                tool = cq.Workplane("XZ").circle(dia * IN / 2).extrude(cut_h * IN / 2.0, both=True)
+            body = body.cut(tool.translate((_num(hole.get("x"), 0.0) * IN, offset,
+                                            _num(hole.get("z"), 0.0) * IN)))
+        return body
     if t == "fabric":
         size = f.get("size") or [27.0, 5.06, 3.31]
         length, h, d = (_num(v, 1.0) for v in size[:3])

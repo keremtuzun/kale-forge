@@ -154,18 +154,61 @@ def tube(name: str, section: tuple[float, float], length: float, at: list[float]
                  note=note or None)
 
 
+def bore(dia: float, x: float = 0.0, z: float = 0.0, *, depth: float = 0.0,
+         form: str = "round", note: str = "",
+         expr: dict[str, str] | None = None) -> dict[str, Any]:
+    """One hole through or into a plate, in the plate's own XZ.
+
+    `depth` 0 means through. `form` "hex" cuts across the flats, which is what a spacer or a
+    hub on a hex shaft actually has. These are REAL material removal in every consumer —
+    the viewer extrudes the profile with holes, the STEP worker cuts solids, FeatureScript
+    sketches and removes — because a bearing block whose pocket is only a number in the
+    dossier is not a bearing block.
+
+    `expr` maps any of d/x/z/depth to the FeatureScript expression that produced the number,
+    so the export carries the relationship ("half the block, less the inset") and not just
+    the answer. Geometry is unaffected; only the exported source reads differently.
+    """
+    out: dict[str, Any] = {"d": round(dia, 4), "x": round(x, 4), "z": round(z, 4)}
+    if depth:
+        out["depth"] = round(depth, 4)
+    if form != "round":
+        out["form"] = form
+    if note:
+        out["note"] = note
+    if expr:
+        out["expr"] = dict(expr)
+    return out
+
+
 def plate(name: str, size: tuple[float, float, float], at: list[float],
           rot: list[float] | None = None, *, mat: str = "aluminium",
-          pockets: int = 0, note: str = "") -> dict[str, Any]:
-    """A flat plate.  ``size`` is (width, thickness, depth) in its own frame."""
-    return _feat("plate", name, at, size=[round(v, 3) for v in size], rot=rot, mat=mat,
-                 pockets=pockets or None, note=note or None)
+          pockets: int = 0, bores: list[dict[str, Any]] | None = None,
+          fillet: float = 0.0, note: str = "",
+          expr: dict[str, str] | None = None) -> dict[str, Any]:
+    """A flat plate.  ``size`` is (width, thickness, depth) in its own frame.
+
+    ``bores`` are holes cut in it — bearing pockets, mounting holes, shaft clearance. They
+    are what turns this primitive from a block into a part.
+
+    ``expr`` names the driving variable behind sx/sy/sz for the FeatureScript export.
+    """
+    feature = _feat("plate", name, at, size=[round(v, 3) for v in size], rot=rot, mat=mat,
+                    pockets=pockets or None, note=note or None)
+    if bores:
+        feature["bores"] = list(bores)
+    if fillet:
+        feature["fillet"] = round(fillet, 4)
+    if expr:
+        feature["expr"] = dict(expr)
+    return feature
 
 
 def shaft(name: str, dia: float, length: float, at: list[float],
           rot: list[float] | None = None, *, form: str = "hex",
-          mat: str = "steel") -> dict[str, Any]:
-    return _feat("shaft", name, at, dia=dia, len=round(length, 3), rot=rot, form=form, mat=mat)
+          mat: str = "steel", note: str = "") -> dict[str, Any]:
+    return _feat("shaft", name, at, dia=dia, len=round(length, 3), rot=rot, form=form,
+                 mat=mat, note=note or None)
 
 
 def bearing(name: str, at: list[float], rot: list[float] | None = None, *,

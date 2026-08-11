@@ -108,10 +108,31 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
   // dark inset geometry laid over the face — a visual read, not removed material; the
   // exported STEP/FeatureScript carry the true cut bores. The dossier's fidelity
   // section is the honest statement of which is which.
-  function makePlate(w, t, d, m, pockets) {
+  function makePlate(w, t, d, m, pockets, bores) {
     const r = Math.min(0.35, w * 0.12, d * 0.12);
     const shape = new THREE.Shape();
     const hw = w / 2, hd = d / 2;
+    // Named bores are real holes in the extruded profile, not a texture: a bearing pocket
+    // that is only a number in the dossier is not a bearing pocket, and the same profile
+    // feeds the STEP body and the FeatureScript sketch.
+    const drill = (bores || []).map(b => {
+      const path = new THREE.Path();
+      const rad = (b.d || 0) / 2;
+      if (rad <= 0) return null;
+      if (b.form === 'hex') {
+        // Hex bores are given across the FLATS, which is how hex stock is specified; the
+        // circumscribed radius is what the profile needs.
+        const across = rad / Math.cos(Math.PI / 6);
+        for (let i = 0; i <= 6; i++) {
+          const a = Math.PI / 6 + i * Math.PI / 3;
+          const px = (b.x || 0) + Math.cos(a) * across, pz = (b.z || 0) + Math.sin(a) * across;
+          if (i === 0) path.moveTo(px, pz); else path.lineTo(px, pz);
+        }
+      } else {
+        path.absarc(b.x || 0, b.z || 0, rad, 0, Math.PI * 2, false);
+      }
+      return path;
+    }).filter(Boolean);
     shape.moveTo(-hw + r, -hd);
     shape.lineTo(hw - r, -hd); shape.quadraticCurveTo(hw, -hd, hw, -hd + r);
     shape.lineTo(hw, hd - r); shape.quadraticCurveTo(hw, hd, hw - r, hd);
@@ -164,6 +185,8 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
         }
       }
     }
+    // Named bores go on last so they survive whichever lightening pattern ran above.
+    for (const path of drill) shape.holes.push(path);
     const geo = new THREE.ExtrudeGeometry(shape, { depth: t, bevelEnabled: false, steps: 1 });
     geo.rotateX(-Math.PI / 2); geo.translate(0, t / 2, 0); geo.center();
     return new THREE.Mesh(geo, m);
@@ -392,7 +415,7 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
         return g;
       }
       case 'plate':
-        return makePlate(f.size[0], f.size[1], f.size[2], m, f.pockets || 0);
+        return makePlate(f.size[0], f.size[1], f.size[2], m, f.pockets || 0, f.bores);
       case 'gusset': {
         const g = new THREE.Group();
         const th = f.th || 0.09;

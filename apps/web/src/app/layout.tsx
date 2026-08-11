@@ -7,19 +7,19 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
-  title: "Kale Forge — Robots, resolved.",
+  title: "Kale Forge — Engineering, resolved.",
   description:
-    "Describe a robot; get an engineered, fully editable design. Parametric CAD, real part numbers, and Onshape publishing from a self-hosted model.",
+    "Describe a part, a mechanism, a board or a whole robot; get an engineered, fully editable design. Parametric CAD, real part numbers, and Onshape publishing from a self-hosted model.",
   icons: { icon: "/brand/kale-forge-mark.svg", apple: "/brand/kale-forge-mark.svg" },
   openGraph: {
-    title: "Kale Forge — Robots, resolved.",
-    description: "Engineering-grounded robot synthesis with editable parametric Onshape source.",
+    title: "Kale Forge — Engineering, resolved.",
+    description: "Engineering-grounded design synthesis with editable parametric Onshape source.",
     images: [{ url: "/og.png", width: 1734, height: 907, alt: "Kale Forge parametric robot design" }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Kale Forge — Robots, resolved.",
-    description: "Engineering-grounded robot synthesis with editable parametric Onshape source.",
+    title: "Kale Forge — Engineering, resolved.",
+    description: "Engineering-grounded design synthesis with editable parametric Onshape source.",
     images: ["/og.png"],
   },
 };

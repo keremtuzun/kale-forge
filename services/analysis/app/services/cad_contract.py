@@ -92,6 +92,30 @@ def _floats(value: Any, count: int) -> list[float] | None:
     return out
 
 
+_EXPR_OK = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_ .+-*/()")
+
+
+def _expr_errors(expr: Any, path: str) -> list[str]:
+    """`expr` values are pasted verbatim into exported FeatureScript.
+
+    Only our own generators write them today, but a design document round-trips through the
+    store and through the model on a revision, so the charset is checked rather than trusted:
+    an expression is arithmetic over named variables, and nothing else belongs in one.
+    """
+    if expr is None:
+        return []
+    if not isinstance(expr, dict):
+        return [f"{path}.expr: object required"]
+    out: list[str] = []
+    for key, text in expr.items():
+        if not isinstance(key, str) or not isinstance(text, str):
+            out.append(f"{path}.expr: names and expressions must be strings")
+            break
+        if not text or len(text) > 120 or set(text) - _EXPR_OK:
+            out.append(f"{path}.expr.{key}: not a plain arithmetic expression")
+    return out
+
+
 def _canonical_section(sec: Any) -> tuple[float, float] | None:
     """Stock is a physical extrusion, so 1x2 and 2x1 are the same tube rotated.
 
@@ -235,8 +259,11 @@ def validate_cad(cad: dict[str, Any]) -> list[str]:
             at = feature.get("at")
             if not isinstance(at, list) or len(at) != 3:
                 errors.append(f"{fp}.at: exactly three coordinates required")
+            # `bores` carry positions in the plate's own frame, which are signed — a hole
+            # left of centre has a negative x. They are validated on their own terms below
+            # rather than by the all-dimensions-are-positive sweep.
             for number in _numbers({k: v for k, v in feature.items()
-                                    if k not in {"rot", "at", "to", "rep"}}):
+                                    if k not in {"rot", "at", "to", "rep", "bores", "expr"}}):
                 if not math.isfinite(number):
                     errors.append(f"{fp}: dimensions must be finite")
                     break
@@ -254,6 +281,31 @@ def validate_cad(cad: dict[str, Any]) -> list[str]:
                 if (isinstance(length, bool) or not isinstance(length, (int, float))
                         or not math.isfinite(float(length)) or float(length) <= 0):
                     errors.append(f"{fp}.len: tube length must be positive")
+            bores = feature.get("bores")
+            if bores is not None:
+                size = _floats(feature.get("size"), 3)
+                if not isinstance(bores, list):
+                    errors.append(f"{fp}.bores: array required")
+                elif len(bores) > 64:
+                    errors.append(f"{fp}.bores: bounded to 64 holes")
+                else:
+                    for bi, hole in enumerate(bores):
+                        bp = f"{fp}.bores[{bi}]"
+                        if not isinstance(hole, dict):
+                            errors.append(f"{bp}: object required")
+                            continue
+                        dia = hole.get("d")
+                        if (isinstance(dia, bool) or not isinstance(dia, (int, float))
+                                or not math.isfinite(float(dia)) or float(dia) <= 0):
+                            errors.append(f"{bp}.d: hole diameter must be positive")
+                            continue
+                        # A hole bigger than the plate is not a hole, it is the absence of a
+                        # plate — and it is the shape of mistake a generator makes when a
+                        # bearing OD is read in the wrong unit.
+                        if size and (float(dia) >= size[0] or float(dia) >= size[2]):
+                            errors.append(f"{bp}.d: hole is wider than the plate it is in")
+                        errors += _expr_errors(hole.get("expr"), bp)
+            errors += _expr_errors(feature.get("expr"), fp)
             if kind == "pulley" and feature.get("pitch_mm") != 5.0:
                 errors.append(f"{fp}.pitch_mm: only HTD 5 mm is allowed")
             pitch_error = _toothed_pitch_error(feature)

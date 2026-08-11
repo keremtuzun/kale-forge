@@ -26,9 +26,10 @@ from __future__ import annotations
 
 import math
 import os
+import re
 from typing import Any
 
-FS_VERSION = "kale-fs-1.2"
+FS_VERSION = "kale-fs-1.3"
 
 # The FeatureScript language/std-library version the generated source declares.
 #
@@ -100,10 +101,20 @@ def _g(value: Any) -> str:
     return f"{round(_num(value), 4):g}"
 
 
-def _dims(fid: str, pairs: list[tuple[str, Any]]) -> tuple[str, dict[str, str]]:
-    """One `var` line naming every dimensional measure of a part."""
+def _dims(fid: str, pairs: list[tuple[str, Any]],
+          expr: dict[str, str] | None = None) -> tuple[str, dict[str, str]]:
+    """One `var` line naming every dimensional measure of a part.
+
+    Where the generator supplied the expression behind a number, the expression is emitted
+    instead of the number — so the exported source carries the design intent ("the block is
+    the pocket plus two walls") and editing the driving parameter rebuilds the part, rather
+    than leaving the user to find every literal that has to change with it.
+    """
     names = {key: f"{fid}_{key}" for key, _ in pairs}
-    decl = " ".join(f"var {names[key]} = {_g(value)};" for key, value in pairs)
+    expr = expr or {}
+    decl = " ".join(
+        f"var {names[key]} = {expr[key] if key in expr else _g(value)};"
+        for key, value in pairs)
     return f"    {decl}", names
 
 
@@ -163,11 +174,35 @@ def _tube(fid: str, f: dict[str, Any]) -> list[str]:
 
 def _plate(fid: str, f: dict[str, Any]) -> list[str]:
     sx, sy, sz = (_num(v) for v in (f.get("size") or [1, 0.09, 1])[:3])
-    dims, v = _dims(fid, [("sx", sx), ("sy", sy), ("sz", sz)])
+    dims, v = _dims(fid, [("sx", sx), ("sy", sy), ("sz", sz)], f.get("expr"))
     pos, at = _pos(fid, f)
-    return [f'    // {f.get("n", "plate")}', dims, pos,
-            f'    kaleBox(context, id + "{fid}", {v["sx"]}, {v["sy"]}, {v["sz"]}, '
-            f'{at}, {_rot(f.get("rot"))});']
+    bores = f.get("bores") or []
+    if not bores:
+        return [f'    // {f.get("n", "plate")}', dims, pos,
+                f'    kaleBox(context, id + "{fid}", {v["sx"]}, {v["sy"]}, {v["sz"]}, '
+                f'{at}, {_rot(f.get("rot"))});']
+    # Every hole gets its own named diameter, position and depth. That is the difference
+    # between an export you can edit and an export you can only look at: moving a bolt hole
+    # in Onshape is changing one number here.
+    lines = [f'    // {f.get("n", "plate")} — {len(bores)} hole'
+             f'{"s" if len(bores) != 1 else ""}', dims, pos]
+    entries = []
+    for i, b in enumerate(bores):
+        hid = f"{fid}_h{i + 1}"
+        be = b.get("expr") or {}
+        val = lambda k, d: be[k] if k in be else _g(b.get(k, d))  # noqa: E731
+        decl = (f'    var {hid}_d = {val("d", 0.25)}; var {hid}_x = {val("x", 0)}; '
+                f'var {hid}_z = {val("z", 0)}; var {hid}_depth = {val("depth", 0)};')
+        note = b.get("note")
+        lines.append(f"    // {note}" if note else decl)
+        if note:
+            lines.append(decl)
+        entries.append(f'{{ "d" : {hid}_d, "x" : {hid}_x, "z" : {hid}_z, '
+                       f'"depth" : {hid}_depth, "form" : "{b.get("form", "round")}" }}')
+    lines.append(f'    var {fid}_holes = [{", ".join(entries)}];')
+    lines.append(f'    kalePlate(context, id + "{fid}", {v["sx"]}, {v["sy"]}, {v["sz"]}, '
+                 f'{fid}_holes, {at}, {_rot(f.get("rot"))});')
+    return lines
 
 
 def _shaft(fid: str, f: dict[str, Any]) -> list[str]:
@@ -468,6 +503,62 @@ function kaleBox(context is Context, id is Id, sx is number, sy is number, sz is
     kaleMove(context, id, qCreatedBy(id + "solid", EntityType.BODY), at, rot);
 }
 
+// A plate with holes in it. Each bore is a real cut, not an annotation: `depth` 0 goes through,
+// anything else is a blind pocket measured down from the top face, and "hex" cuts across the
+// flats so a hub on a hex shaft is the shape it has to be. The x/z of each hole stay editable,
+// so moving a hole in Onshape is moving a number rather than re-cutting a mesh.
+function kalePlate(context is Context, id is Id, sx is number, sy is number, sz is number,
+                   bores is array, at is Vector, rot is Vector)
+{
+    fCuboid(context, id + "solid", {
+            "corner1" : vector(-sx / 2, -sy / 2, -sz / 2) * inch,
+            "corner2" : vector(sx / 2, sy / 2, sz / 2) * inch
+    });
+    for (var i = 0; i < size(bores); i += 1)
+    {
+        var b = bores[i];
+        var bid = id + ("hole" ~ i);
+        var blind = b.depth > 0;
+        // Through holes overshoot both faces so the cut is unambiguous; a blind pocket starts
+        // at the top face and stops at its stated depth, which is how a machinist reads it.
+        var top = sy / 2 + 0.1;
+        var bottom = blind ? sy / 2 - b.depth : -sy / 2 - 0.1;
+        if (b.form == "hex")
+        {
+            var sketch = newSketchOnPlane(context, bid + "sk", {
+                    "sketchPlane" : plane(vector(b.x, top, b.z) * inch, vector(0, 1, 0))
+            });
+            // A hex bore is specified across the flats; the sketch wants a vertex radius.
+            skRegularPolygon(sketch, "hex", {
+                    "center" : vector(0, 0) * inch,
+                    "firstVertex" : vector(b.d / 2 / cos(30 * degree), 0) * inch,
+                    "sides" : 6
+            });
+            skSolve(sketch);
+            opExtrude(context, bid + "cut", {
+                    "entities" : qSketchRegion(bid + "sk"),
+                    "direction" : vector(0, -1, 0),
+                    "endBound" : BoundingType.BLIND,
+                    "endDepth" : (top - bottom) * inch
+            });
+        }
+        else
+        {
+            fCylinder(context, bid + "cut", {
+                    "topCenter" : vector(b.x, top, b.z) * inch,
+                    "bottomCenter" : vector(b.x, bottom, b.z) * inch,
+                    "radius" : (b.d / 2) * inch
+            });
+        }
+        opBoolean(context, bid + "sub", {
+                "tools" : qCreatedBy(bid + "cut", EntityType.BODY),
+                "targets" : qCreatedBy(id + "solid", EntityType.BODY),
+                "operationType" : BooleanOperationType.SUBTRACTION
+        });
+    }
+    kaleMove(context, id, qCreatedBy(id + "solid", EntityType.BODY), at, rot);
+}
+
 // A tube is the outer section minus the inner section: the wall is a dimension you can edit,
 // which is the entire difference between this and an imported mesh.
 function kaleTube(context is Context, id is Id, w is number, h is number, len is number,
@@ -765,11 +856,140 @@ def _gamepiece_note(season: dict[str, Any]) -> str:
     return f" · gamepiece {piece}" if piece else ""
 
 
+_PART_TYPES = {"mechanical_part", "mechanical_assembly", "enclosure", "other"}
+_TOKEN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _driving_parameters(assemblies: list[dict[str, Any]],
+                        parameters: dict[str, Any]) -> list[tuple[str, float]]:
+    """The parameters that actually drive geometry, in declaration order.
+
+    A dialog field that changes nothing is worse than no dialog at all, so a parameter only
+    earns a place here if some feature's expression names it.
+    """
+    referenced: set[str] = set()
+    for asm in assemblies:
+        for f in asm.get("features") or []:
+            for text in list((f.get("expr") or {}).values()):
+                referenced.update(_TOKEN.findall(text))
+            for hole in f.get("bores") or []:
+                for text in list((hole.get("expr") or {}).values()):
+                    referenced.update(_TOKEN.findall(text))
+    out: list[tuple[str, float]] = []
+    for key, value in parameters.items():
+        if key in referenced and isinstance(value, (int, float)) and not isinstance(value, bool):
+            out.append((key, float(value)))
+    return out
+
+
+def _part_featurescript(spec: dict[str, Any], name: str, cad: dict[str, Any]) -> str:
+    """A single part (or a small assembly of them) as its own parametric feature.
+
+    Deliberately not the robot emitter with the robot bits switched off: a bearing block has
+    no frame, no subsystem gates and no season, and a dialog offering those would be a lie
+    about what the model is.
+    """
+    assemblies = cad.get("assemblies") or []
+    parameters = spec.get("parameters") or {}
+    driving = _driving_parameters(assemblies, parameters)
+    part_type = str(spec.get("partType") or "part").replace("_", " ")
+    feature_name = name or "Kale Part"
+    ident = "kale" + "".join(w.capitalize() for w in _TOKEN.findall(feature_name))[:40] or "kalePart"
+
+    out: list[str] = [
+        f"FeatureScript {_FS_STD};",
+        f'import(path : "onshape/std/common.fs", version : "{_FS_STD}.0");',
+        "",
+        f"// {feature_name}",
+        f"// Generated by Kale Forge ({FS_VERSION}) — {part_type}.",
+        f"// {cad.get('feature_total', 0)} bodies. Units are inches.",
+        "//",
+        "// The dimensions below are named variables, and the ones the design is actually",
+        "// driven by are exposed in the feature dialog. Change one and the part rebuilds:",
+        "// the relationships between them are expressions here, not baked-in numbers.",
+        "//",
+        "// Dimensioned concept geometry. Fits, wall thicknesses and hole positions are",
+        "// consistent with each other and with the parts catalog; none has been checked",
+        "// against a vendor drawing or a load case.",
+        "",
+        _HELPERS,
+        "",
+        f'annotation {{ "Feature Type Name" : "{feature_name}" }}',
+        f"export const {ident} = defineFeature(function(context is Context, id is Id, "
+        "definition is map)",
+        "    precondition",
+        "    {",
+    ]
+    if driving:
+        for key, value in driving:
+            lo = max(0.01, round(value * 0.2, 4))
+            hi = max(round(value * 5, 4), value + 1)
+            label = re.sub(r"(?<!^)(?=[A-Z])", " ", key).capitalize()
+            out.append(f'        annotation {{ "Name" : "{label}" }} '
+                       f'isLength(definition.{key}, {{ (inch) : [{lo:g}, {value:g}, {hi:g}] }} '
+                       "as LengthBoundSpec);")
+    else:
+        # Honest empty dialog rather than fields that drive nothing.
+        out.append('        annotation { "Name" : "Build this part", "Default" : true } '
+                   "definition.doBuild is boolean;")
+    out += [
+        "    }",
+        "    {",
+    ]
+    if driving:
+        out.append("        // Driving dimensions, straight from the dialog.")
+        for key, _ in driving:
+            out.append(f"        var {key} = definition.{key} / inch;")
+    for key, value in parameters.items():
+        if any(key == k for k, _ in driving):
+            continue
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            out.append(f"        var {key} = {_g(value)};   // reference dimension")
+    out += [
+        "        // A part has no frame to stretch; these keep the emitter on one code path.",
+        "        var scaleX = 1; var scaleZ = 1;",
+        "",
+    ]
+    if not driving:
+        out.append("        if (definition.doBuild)")
+        out.append("        {")
+    used: dict[str, int] = {}
+    from app.services.cad_contract import expand_mirrors  # noqa: PLC0415
+    for asm in assemblies:
+        origin = asm.get("origin") or [0, 0, 0]
+        out.append(f"        // ── {asm.get('name', 'part')} "
+                   f"({len(asm.get('features') or [])} bodies) ──")
+        for f in expand_mirrors(asm.get("features") or []):
+            if "at" not in f:
+                continue
+            placed = dict(f)
+            placed["at"] = [_num(f["at"][i]) + _num(origin[i]) for i in range(3)]
+            if placed.get("to"):
+                placed["to"] = [_num(placed["to"][i]) + _num(origin[i]) for i in range(3)]
+            out += ["    " + line for line in _feature_lines(placed, used)]
+        out.append("")
+    if not driving:
+        out.append("        }")
+    out += ["    }, {"]
+    if driving:
+        out.append(",\n".join(f"        {key} : {value:g} * inch" for key, value in driving))
+    else:
+        out.append("        doBuild : true")
+    out += ["    });", ""]
+    return "\n".join(out) + "\n"
+
+
 def build_featurescript(spec: dict[str, Any], name: str = "Kale FRC Robot") -> str:
-    """Emit the whole robot as one parametric Feature Studio source file."""
+    """Emit the design as one parametric Feature Studio source file.
+
+    Two shapes, one entry point: a robot gets the frame-driven robot feature, and anything
+    the mechanical engine made gets a part feature driven by its own dimensions.
+    """
     from app.services.cad_contract import require_valid_cad
     cad = spec.get("cad") or {}
     require_valid_cad(cad)
+    if spec.get("engine") == "mechanical" or spec.get("designType") in _PART_TYPES:
+        return _part_featurescript(spec, name or str(spec.get("name") or "Kale Part"), cad)
     assemblies = cad.get("assemblies") or []
     frame = spec.get("frame") or {}
     season = spec.get("season") or {}
