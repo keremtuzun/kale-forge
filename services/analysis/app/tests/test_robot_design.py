@@ -478,15 +478,16 @@ def test_mechanisms_are_not_packaged_inside_each_other():
     # Bounds are the counts this suite's season actually produces, with a little headroom.
     # They came down from 37, 35 and 20 respectively; the point of the bound is that they
     # never climb back, not that these particular numbers are good.
-    # The packed design's bound went back UP, from 9 to 18, when the elevator moved to the
-    # back rail where it belongs. That is a deliberate trade and not a regression: a turret's
-    # swept circle, a hopper and a tower do not fit in 27 inches, and with the tower anchored
-    # at the back the shooter is the one displaced into the hopper. Putting the tower in the
-    # middle of the robot to keep this number down would be optimising the metric.
+    # These bounds have gone UP twice, and both times deliberately. Once when the elevator
+    # moved to the back rail where it belongs, and once when everything but the intake was
+    # required to stay inside the frame. A turret's swept circle, a hopper and a tower do not
+    # fit in 27 inches; with the tower anchored at the back and nothing allowed to hang off
+    # the side, the crowding has nowhere left to go and shows up here. Loosening either of
+    # those to keep this number down would be optimising the metric, not the robot.
     worst = {
-        _PACKED: 18,
+        _PACKED: 36,
         "Experienced team, 27 inch swerve, turreted dual flywheel hooded shooter, "
-        "circular spindexer and an active floor sweeper with indexer.": 15,
+        "circular spindexer and an active floor sweeper with indexer.": 26,
         "26x26 robot with a horizontal series-roller intake and a four-bar linkage arm.": 2,
         "27x27 west-coast drivebase on Krakens. Defence bot, nothing else.": 0,
         "no mechanisms, only a 27 inch chassis": 0,
@@ -496,6 +497,47 @@ def test_mechanisms_are_not_packaged_inside_each_other():
         assert report["clash_count"] <= bound, (
             f"{prompt[:40]}: {report['clash_count']} interfering bodies, was under {bound}; "
             f"worst {report['worst_in']} in on {report['clashes'][:1]}")
+
+
+@pytest.mark.parametrize("prompt", [
+    _PACKED,
+    "26x26 robot with a horizontal series-roller intake and a four-bar linkage arm.",
+    "27x27 swerve robot with a dual-roller over-bumper intake and a shooter",
+    "26x29 robot with a staged accelerator-and-flywheel shooter, a twin-lane belt hopper "
+    "and dual telescoping winch hooks.",
+    "27x27 west-coast drivebase on Krakens. Defence bot, nothing else.",
+    "27x27 REEFSCAPE robot, three-stage cascade elevator, wristed carriage arm, no shooter.",
+])
+def test_nothing_but_the_intake_hangs_outside_the_frame(prompt):
+    """Only the intake may be out past the frame line, at any height.
+
+    Out there a part is past the BUMPER, which makes it the first thing another robot hits.
+    An over-bumper intake is supposed to be there and is exempt; so is the chassis, because
+    the bumper IS the thing outside the frame. Everything else — a shooter head, an end
+    effector, a swerve module's bolt row, a west-coast axle — has to be on the robot.
+
+    Checked at every height, not just below the bumper: the earlier version of this only
+    looked under 5 in, and the flywheel motors that prompted it were sitting just above.
+    """
+    from app.services.cad_contract import _floats, _world_box, expand_mirrors
+
+    spec = _spec(prompt)
+    half_w = spec["frame"]["width_in"] / 2
+    half_l = spec["frame"]["length_in"] / 2
+    offenders = []
+    for assembly in spec["cad"]["assemblies"]:
+        if assembly["id"] in ("intake", "chassis"):
+            continue
+        origin = _floats(assembly["origin"], 3) or [0.0, 0.0, 0.0]
+        for feature in expand_mirrors(assembly["features"]):
+            box = _world_box(feature, origin)
+            if not box:
+                continue
+            out = max(-half_w - box[0][0], box[1][0] - half_w,
+                      -half_l - box[0][2], box[1][2] - half_l)
+            if out > 0.05:
+                offenders.append(f"{assembly['id']}/{feature['n']} {out:.2f} in out")
+    assert not offenders, offenders
 
 
 @pytest.mark.parametrize("prompt", [

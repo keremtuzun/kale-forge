@@ -1008,11 +1008,16 @@ def _swerve_module(dt: dict[str, Any], index: int, at: list[float],
     if c.module_mount == "corner-plate":
         # A corner plate spreads the module's load into both rails instead of relying on the
         # bolts through one rail wall.
-        features.append(plate("module corner plate", (p + 1.4, 0.190, p + 1.4),
+        # Sized to the corner it sits in: p + 1.4 overhung the frame by a sixteenth on a
+        # tight module, and a spreader plate poking out past the bumper spreads nothing.
+        spread = min(p + 1.4, 2 * (rail_off + 0.5) - 0.4)
+        features.append(plate("module corner plate", (spread, 0.190, spread),
                               _at(0, top_y + 0.19, 0), pockets=2,
                               note="spreads the module load across both rails"))
     else:
-        features.append(fastener_row("module through-bolts", _at(-p / 2 + 0.6, top_y + 0.1, 0),
+        # Centred on the module. Offset to one side it was mirrored nowhere, so on the two
+        # left-hand corners the row marched an inch and a half out past the frame.
+        features.append(fastener_row("module through-bolts", _at(0, top_y + 0.1, 0),
                                      4, [p / 3, 0, 0]))
     if detailed:
         # Pitch radius = teeth / dp / 2. Meshing centres are placed at exactly the
@@ -1072,7 +1077,10 @@ def _drivetrain(spec: dict[str, Any], c: Choices) -> list[dict[str, Any]]:
                 z = (i - (per_side - 1) / 2) * ((ln - 8) / max(1, per_side - 1))
                 centre = abs(i - (per_side - 1) / 2) < 0.25
                 drop = 0.125 if centre else 0.0
-                features.append(shaft(f"axle {i + 1}", _HEX_BORE, tie_w + 1.4,
+                # Long enough to carry both bearings, short enough to stay on the robot:
+                # tie_w + 1.4 ran the hex out through the frame rail and into the bumper.
+                axle_len = min(tie_w + 1.4, 2 * (w / 2 - 0.3 - axle_x))
+                features.append(shaft(f"axle {i + 1}", _HEX_BORE, axle_len,
                                       _at(sx * axle_x, axle_y - drop, z), _rot(0, 0, 90),
                                       form="hex"))
                 features.append(wheel("drive wheel", wheel_d, 1.4,
@@ -1373,8 +1381,10 @@ def _hopper(spec: dict[str, Any], lane_x: float, c: Choices,
         side_reserved = 2.6 + 1.6 + 1.6 + 0.4
     else:
         # A swerve module's wheel and motors own its corner, and the hopper sits forward in
-        # the front modules' band, so it has to stop short of them and not just of the rails.
-        side_reserved = max(rail_w + 1.0, _module_inset(spec) + 1.2)
+        # the front modules' band, so it has to stop short of the WHEEL — not of the module
+        # centre, and not just of the rails. 1.2 cleared the centre and left the corner posts
+        # a quarter inch inside the tread.
+        side_reserved = max(rail_w + 1.0, _module_inset(spec) + 1.6)
     max_width = w - 2 * side_reserved
     max_depth = ln - 2 * (rail_w + 0.4)
     width = min(hp.get("floor_width_in", 20.0), max_width)
@@ -2760,43 +2770,78 @@ def _separate(spec: dict[str, Any], prints: dict[str, _Box],
         if key in lanes:
             lanes[key] = round(lanes[key] + dx, 3)
 
-    # Greedy, and it may never make a design worse: a shift is committed only if it strictly
-    # reduces the total interference. The first version pushed whichever mechanism was lower
-    # priority by exactly the overlap and hoped, which walked a turret out of an elevator and
-    # straight into the hopper.
-    best = cost(boxes)
-    for _ in range(6):
-        if best <= 0.0:
-            break
-        winner: tuple[float, str, float, float] | None = None
-        # Lowest priority moves first, and moves furthest: the intake is bolted to the front
-        # rail and never moves at all.
-        for key in reversed(order[1:]):
-            x0, x1, y0, y1, z0, z1 = boxes[key]
-            here = key_cost(key, boxes, lows, shifts)
-            if here <= 1e-9:
-                continue                       # already clear; no move can improve on it
-            for dx, dz in [(0.0, s * d) for d in (1.0, 2.0, 3.5, 5.0, 7.5) for s in (1, -1)] \
-                        + [(s * d, 0.0) for d in (1.0, 2.0, 3.5, 5.0, 7.5) for s in (1, -1)]:
-                moved_box = (x0 + dx, x1 + dx, y0, y1, z0 + dz, z1 + dz)
-                if not inside(moved_box):
-                    continue
-                trial = dict(boxes)
-                trial[key] = moved_box
-                trial_low = dict(lows)
-                if key in trial_low:
-                    a0, a1, b0, b1, c0, c1 = trial_low[key]
-                    trial_low[key] = (a0 + dx, a1 + dx, b0, b1, c0 + dz, c1 + dz)
-                trial_shift = dict(shifts)
-                sx0, sz0 = trial_shift.get(key, (0.0, 0.0))
-                trial_shift[key] = (sx0 + dx, sz0 + dz)
-                value = best + key_cost(key, trial, trial_low, trial_shift) - here
-                if value < best - 1e-6 and (winner is None or value < winner[0]):
-                    winner = (value, key, dx, dz)
-        if winner is None:
-            break
-        best, key, dx, dz = winner
-        move(key, dx, dz)
+    # Once the clamp below has run, no move may put a mechanism back outside the frame.
+    # As an up-front constraint this deadlocked — a design that starts outside has no move
+    # that does not look equally bad — but once the state is already feasible it is just a
+    # bound, and the optimiser goes on working inside it.
+    keep_in = {"on": False}
+
+    def stays_in(key: str, box: _Box) -> bool:
+        if not keep_in["on"] or key == "intake":
+            return True
+        return (box[0] >= -half_w - 1e-6 and box[1] <= half_w + 1e-6
+                and box[4] >= -half_l - 1e-6 and box[5] <= half_l + 1e-6)
+
+    def optimise() -> None:
+        """Greedy, and it may never make a design worse: a shift is committed only if it
+        strictly reduces the total interference. The first version pushed whichever mechanism
+        was lower priority by exactly the overlap and hoped, which walked a turret out of an
+        elevator and straight into the hopper."""
+        best = cost(boxes)
+        for _ in range(6):
+            if best <= 0.0:
+                return
+            winner: tuple[float, str, float, float] | None = None
+            # Lowest priority moves first, and moves furthest: the intake is bolted to the
+            # front rail and never moves at all.
+            for key in reversed(order[1:]):
+                x0, x1, y0, y1, z0, z1 = boxes[key]
+                here = key_cost(key, boxes, lows, shifts)
+                if here <= 1e-9:
+                    continue                   # already clear; no move can improve on it
+                for dx, dz in [(0.0, sg * d) for d in (1.0, 2.0, 3.5, 5.0, 7.5) for sg in (1, -1)]                             + [(sg * d, 0.0) for d in (1.0, 2.0, 3.5, 5.0, 7.5) for sg in (1, -1)]:
+                    moved_box = (x0 + dx, x1 + dx, y0, y1, z0 + dz, z1 + dz)
+                    if not inside(moved_box) or not stays_in(key, moved_box):
+                        continue
+                    trial = dict(boxes)
+                    trial[key] = moved_box
+                    trial_low = dict(lows)
+                    if key in trial_low:
+                        a0, a1, b0, b1, c0, c1 = trial_low[key]
+                        trial_low[key] = (a0 + dx, a1 + dx, b0, b1, c0 + dz, c1 + dz)
+                    trial_shift = dict(shifts)
+                    sx0, sz0 = trial_shift.get(key, (0.0, 0.0))
+                    trial_shift[key] = (sx0 + dx, sz0 + dz)
+                    value = best + key_cost(key, trial, trial_low, trial_shift) - here
+                    if value < best - 1e-6 and (winner is None or value < winner[0]):
+                        winner = (value, key, dx, dz)
+            if winner is None:
+                return
+            best, key, dx, dz = winner
+            move(key, dx, dz)
+
+    optimise()
+
+    # Last word: nothing but the intake may finish outside the frame. The intake is an
+    # over-bumper mechanism and is supposed to be out there; everything else has to be on the
+    # robot, and a mechanism hanging past the frame line is hanging past the BUMPER, which
+    # makes it the first thing another robot hits.
+    #
+    # This runs after the interference pass rather than as a constraint on it, and that
+    # ordering is deliberate. As a constraint it deadlocked: a design that starts outside has
+    # no move that does not look equally bad, so nothing moved at all and the interference
+    # stayed too. As a final clamp it costs some interference on packed robots and says so.
+    for key in order:
+        if key == "intake":
+            continue
+        x0, x1, _y0, _y1, z0, z1 = boxes[key]
+        dx = min(0.0, half_w - x1) + max(0.0, -half_w - x0)
+        dz = min(0.0, half_l - z1) + max(0.0, -half_l - z0)
+        if abs(dx) > 1e-6 or abs(dz) > 1e-6:
+            move(key, dx, dz)
+    keep_in["on"] = True
+
+    optimise()
 
     # Whatever is left is a real answer about this robot, not a licence to overlap quietly.
     unresolved: list[str] = []
