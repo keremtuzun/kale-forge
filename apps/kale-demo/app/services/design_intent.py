@@ -107,6 +107,66 @@ def parse_number(text: str) -> float | None:
         return None
 
 
+# Dimensions spelled out. Imperial shop language is full of them and none of it is digits:
+# "three quarters of an inch", "a half inch", "one and a half inches".
+_WORD_INT = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+             "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
+             "fifteen": 15, "sixteen": 16, "twenty": 20, "twentyfour": 24}
+_WORD_DEN = {"half": 2, "halves": 2, "third": 3, "thirds": 3, "quarter": 4, "quarters": 4,
+             "fourth": 4, "fourths": 4, "eighth": 8, "eighths": 8,
+             "sixteenth": 16, "sixteenths": 16, "thirtysecond": 32, "thirtyseconds": 32}
+# Longest alternative first: with "inch" ahead of "inches", the match ended two characters
+# short of the word and the role window then read from the middle of it.
+_WORD_UNIT = r"(?:inches|inch|in\b|millimet(?:ers|res|er|re)|mm)"
+
+# [two and] [a|three] quarters [of an] inch
+_WORD_FRACTION = re.compile(
+    r"\b(?:(" + "|".join(k for k in _WORD_INT if k not in ("a", "an")) + r"|\d+)\s+and\s+)?"
+    r"(?:(" + "|".join(_WORD_INT) + r"|\d+)[\s-]+)?"
+    r"(" + "|".join(_WORD_DEN) + r")"
+    r"(?:\s+of)?(?:\s+an?)?\s*(" + _WORD_UNIT + r")",
+    re.I)
+# plain "two inches", with no fraction attached
+_WORD_WHOLE = re.compile(
+    r"\b(" + "|".join(k for k in _WORD_INT if k not in ("a", "an")) + r")\s+(" + _WORD_UNIT
+    + r")", re.I)
+
+
+def _word_dimensions(text: str) -> list[dict[str, Any]]:
+    """Spelled-out dimensions, in the same shape as the digit ones so callers cannot tell."""
+    out: list[dict[str, Any]] = []
+    taken: list[tuple[int, int]] = []
+
+    def add(match: re.Match[str], value: float, unit: str) -> None:
+        if any(s < match.end() and match.start() < e for s, e in taken):
+            return
+        factor = _TO_IN.get(unit.lower().rstrip(".").strip())
+        if factor is None or value <= 0:
+            return
+        taken.append((match.start(), match.end()))
+        out.append({"inches": round(value * factor, 5), "raw": match.group(0).strip(),
+                    "unit": unit.lower(), "start": match.start(), "end": match.end(),
+                    "metric": unit.lower().startswith(("mm", "milli")), "spelled": True})
+
+    for m in _WORD_FRACTION.finditer(text):
+        whole, numerator, denominator, unit = m.groups()
+        den = _WORD_DEN[denominator.lower().replace(" ", "").replace("-", "")]
+        num = 1
+        if numerator:
+            key = numerator.lower()
+            num = int(key) if key.isdigit() else _WORD_INT[key]
+        base = 0
+        if whole:
+            key = whole.lower()
+            base = int(key) if key.isdigit() else _WORD_INT[key]
+        add(m, base + num / den, unit.strip())
+
+    for m in _WORD_WHOLE.finditer(text):
+        add(m, float(_WORD_INT[m.group(1).lower()]), m.group(2).strip())
+
+    return out
+
+
 def dimensions_in(text: str) -> list[dict[str, Any]]:
     """Every dimension in the text, converted to inches, with the span it came from.
 
@@ -125,6 +185,13 @@ def dimensions_in(text: str) -> list[dict[str, Any]]:
                     "unit": unit, "start": m.start(), "end": m.end(),
                     "metric": unit in ("mm", "cm", "m", "millimeter", "millimetre",
                                        "centimeter", "centimetre", "meter", "metre")})
+    # Spelled-out dimensions, merged in reading order and never overlapping a digit one, so
+    # "1/2 in" inside "one and 1/2 inches" cannot be counted twice.
+    digits = [(d["start"], d["end"]) for d in out]
+    for word in _word_dimensions(text):
+        if not any(a < word["end"] and word["start"] < b for a, b in digits):
+            out.append(word)
+    out.sort(key=lambda d: d["start"])
     return out
 
 

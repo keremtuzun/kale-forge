@@ -408,7 +408,7 @@ MM = 1 / 25.4
 
 
 def board_assembly(name: str, layout: dict[str, Any], parts: list[dict[str, Any]],
-                   layers: int) -> dict[str, Any]:
+                   layers: int, routing: dict[str, Any] | None = None) -> dict[str, Any]:
     """The placed board as `frc_cad` features, so a PCB gets the 3D viewer and STEP for free.
 
     Same trick the mechanical library uses: emit the existing closed vocabulary and every
@@ -445,9 +445,19 @@ def board_assembly(name: str, layout: dict[str, Any], parts: list[dict[str, Any]
             mat="polycarb" if part.get("category") == "connector" else "steel",
             note=entry["why"]))
 
-    return _asm("board", name, "part", features,
-                note=f"{len(layout['placements'])} placed components on a "
-                     f"{w_mm:g} x {h_mm:g} mm outline",
+    dropped = 0
+    if routing and routing.get("traces"):
+        from app.services import pcb_route  # noqa: PLC0415
+        copper, dropped = pcb_route.copper_features(routing, [w_mm, h_mm], thickness)
+        features += copper
+
+    note = (f"{len(layout['placements'])} placed components on a {w_mm:g} x {h_mm:g} mm "
+            f"outline")
+    if routing and routing.get("traces"):
+        note += f", {len(routing['traces'])} trace runs and {len(routing['vias'])} vias"
+    if dropped:
+        note += f" ({dropped} further trace segments not drawn, to keep the viewer usable)"
+    return _asm("board", name, "part", features, note=note,
                 mates=["mounts on four M3 screws through the corner holes"])
 
 

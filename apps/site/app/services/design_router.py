@@ -90,6 +90,41 @@ def _provenance_rows(spec: EngineeringSpec) -> list[dict[str, Any]]:
     return rows
 
 
+def _span_x(features: list[dict[str, Any]]) -> float:
+    """How wide one copy of this part is, so copies of it can be laid out without touching."""
+    widest = 0.0
+    for feature in features:
+        size = feature.get("size") or []
+        widest = max(widest, float(size[0]) if size else 0.0,
+                     float(feature.get("dia") or 0.0), float(feature.get("od") or 0.0))
+    return widest or 1.0
+
+
+def _multiply(assembly: dict[str, Any], count: int) -> dict[str, Any]:
+    """`count` copies of one part, laid out in a row.
+
+    Names are suffixed rather than repeated: the CAD contract keys parts by name, so three
+    bodies all called "spacer" is a duplicate-id error, and more importantly a user opening
+    the tree cannot tell them apart.
+    """
+    pitch = _span_x(assembly["features"]) * 1.35
+    origin = -pitch * (count - 1) / 2
+    features: list[dict[str, Any]] = []
+    for i in range(count):
+        for feature in assembly["features"]:
+            copy = dict(feature)
+            copy["n"] = f"{feature['n']} {i + 1}"
+            at = list(feature.get("at") or [0, 0, 0])
+            at[0] = round(at[0] + origin + pitch * i, 4)
+            copy["at"] = at
+            features.append(copy)
+    out = dict(assembly)
+    out["features"] = features
+    out["name"] = f"{assembly['name']} x{count}"
+    out["note"] = f"{count} off, laid out {pitch:.2f} in apart; " + str(assembly.get("note") or "")
+    return out
+
+
 # ── mechanical engine ────────────────────────────────────────────────────────
 def _mechanical(prompt: str, intent: dict[str, Any], **_: Any) -> dict[str, Any]:
     """One part, or a small assembly of parts. Never a robot."""
@@ -115,6 +150,9 @@ def _mechanical(prompt: str, intent: dict[str, Any], **_: Any) -> dict[str, Any]
         })
 
     assembly = built["assembly"]
+    quantity = int(spec.get("quantity") or 1)
+    if quantity > 1:
+        assembly = _multiply(assembly, quantity)
     cad = require_valid_cad(normalize_cad(_cad_envelope([assembly])))
 
     # Mass from the geometry that was actually emitted, not from the nominal block: a plate

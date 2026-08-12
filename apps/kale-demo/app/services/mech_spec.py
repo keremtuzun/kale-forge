@@ -53,30 +53,32 @@ def _count(raw: str, default: int = 1) -> int:
 # Ordered: the first match wins, so compound names are listed before the nouns they contain.
 # "gearbox plate" must be tested before "plate" and before "gearbox".
 _PART_PATTERNS: list[tuple[re.Pattern[str], str]] = [
-    (_p(r"\bbearing\s*(?:block|housing|holder|carrier|mount|pocket)\b"), "bearing_block"),
+    # Plurals throughout: "four 2x1 gussets" names a gusset, and \bgussets?\b does not match
+    # "gussets", so a quantity request refused outright.
+    (_p(r"\bbearing\s*(?:block|housing|holder|carrier|mount|pocket)s?\b"), "bearing_block"),
     # A dead axle rides in bearings and the block is what holds them, so it is a bearing
     # block by another name. Both of these used to fall through to the shaft pattern and
     # come back as a length of hex, which is a different part entirely.
-    (_p(r"\b(?:dead[- ]?axle|live[- ]?axle|axle)\s*(?:block|mount|housing|holder)\b"),
+    (_p(r"\b(?:dead[- ]?axle|live[- ]?axle|axle)\s*(?:block|mount|housing|holder)s?\b"),
      "bearing_block"),
     # `.` and not `[^.]`: a decimal point is a dot, so "a mount that holds two 1.125 in
     # bearings" fell outside a dot-excluding window and came back as a plain shaft.
     (_p(r"\b(?:mount|block|holder|carrier)\b(?=.{0,44}\bbearings?\b)"), "bearing_block"),
-    (_p(r"\bgearbox\s*plate\b"), "gearbox_plate"),
-    (_p(r"\b(?:motor|neo|kraken|falcon|cim)\s*(?:mount(?:ing)?\s*)?plate\b"), "motor_plate"),
-    (_p(r"\bmount(?:ing)?\s*plate\b"), "motor_plate"),
-    (_p(r"\bgusset\b"), "gusset"),
-    (_p(r"\b(?:l[- ]?bracket|bracket|angle)\b"), "bracket"),
-    (_p(r"\bspacer\b|\bshim\b"), "spacer"),
-    (_p(r"\bstandoff\b"), "spacer"),
+    (_p(r"\bgearbox\s*plates?\b"), "gearbox_plate"),
+    (_p(r"\b(?:motor|neo|kraken|falcon|cim)\s*(?:mount(?:ing)?\s*)?plates?\b"), "motor_plate"),
+    (_p(r"\bmount(?:ing)?\s*plates?\b"), "motor_plate"),
+    (_p(r"\bgussets?\b"), "gusset"),
+    (_p(r"\b(?:l[- ]?brackets?|brackets?|angles?)\b"), "bracket"),
+    (_p(r"\bspacers?\b|\bshims?\b"), "spacer"),
+    (_p(r"\bstandoffs?\b"), "spacer"),
     # A roller or a pulley is almost always described by the shaft it runs on, so both have
     # to be tested before the shaft patterns, or "a roller on a 1/2 in hex shaft" is a shaft.
-    (_p(r"\broller\b"), "roller"),
-    (_p(r"\bpulley\b|\bsprocket\b"), "pulley"),
-    (_p(r"\bhex\s*shaft\b"), "hex_shaft"),
-    (_p(r"\bshaft\b|\baxle\b"), "shaft"),
-    (_p(r"\b(?:plate|panel)\b"), "plate"),
-    (_p(r"\bbearing\b"), "bearing_block"),
+    (_p(r"\brollers?\b"), "roller"),
+    (_p(r"\bpulleys?\b|\bsprockets?\b"), "pulley"),
+    (_p(r"\bhex\s*shafts?\b"), "hex_shaft"),
+    (_p(r"\bshafts?\b|\baxles?\b"), "shaft"),
+    (_p(r"\b(?:plates?|panels?)\b"), "plate"),
+    (_p(r"\bbearings?\b"), "bearing_block"),
 ]
 
 
@@ -113,6 +115,20 @@ _MATERIAL_AFTER = _p(r"(?:thick\s+)?(?:6061|5052|7075|2024|aluminium|aluminum|al
                      r"plate\b)")
 
 _WINDOW = 28        # characters either side of a dimension to look for its role
+
+# A hole the request names outright, as opposed to the hole patterns a generator adds itself.
+# Deliberately requires the word: "a 25 mm hole" is a feature, "25 mm" on its own is not.
+_CALLED_OUT_HOLE = _p(r"(?:with|and|plus|containing)\s+(?:an?\s+)?"
+                      r"[\d./\s-]{1,12}(?:mm|in\b|inch(?:es)?)\s*"
+                      r"(?:dia(?:meter)?\s*)?(?:clearance\s+|through\s+|thru\s+)?"
+                      r"(?:hole|bore|cutout|opening)")
+
+# A count of the part itself, as opposed to a count of motors or of grooves. The plural noun
+# is what makes it a quantity: "three spacers" is three, "a 3 in spacer" is one.
+_QUANTITY = _p(r"\b(two|three|four|five|six|eight|ten|twelve|\d{1,2})\s+"
+               r"(?:[\w./-]+\s+){0,3}?"
+               r"(?:spacers|standoffs|plates|gussets|brackets|blocks|shafts|axles|"
+               r"pulleys|sprockets|rollers|housings|shims)\b")
 
 # Belt and chain pitches. Named profiles, so they can be recognised rather than guessed.
 _BELT_PITCH = _p(r"\b(?:htd\s*)?(\d+(?:\.\d+)?)\s*mm\s*(?:htd|gt2|gt3|belt|pitch|pulley)\b"
@@ -261,7 +277,21 @@ def resolve(prompt: str, design_type: str = "mechanical_part") -> EngineeringSpe
     # tooth profile, and letting it fall through to the positional pass bored the pulley
     # 5 mm and gave the 1/2 in hex to the face width.
     consumed = {(m.start(), m.end()) for m in _BELT_PITCH.finditer(text)}
-    dims = [d for d in dimensions_in(text)
+
+    # A hole the user called out by name is a feature of the part, not a dimension of it.
+    # "a plate 100 mm by 60 mm, 4 mm thick, with a 25 mm hole in the middle" was ignoring the
+    # 25 entirely: no role word claimed it, the positional slots were full, and the hole the
+    # user actually asked for never appeared in the geometry.
+    all_dims = dimensions_in(text)
+    for hole in _CALLED_OUT_HOLE.finditer(text):
+        inside = [d for d in all_dims if hole.start() <= d["start"] < hole.end()]
+        if not inside:
+            continue
+        spec.require("center_hole_in", inside[0]["inches"], "in",
+                     f"asked for: {hole.group(0).strip()}")
+        consumed.add((inside[0]["start"], inside[0]["end"]))
+
+    dims = [d for d in all_dims
             if not any(s <= d["start"] < e for s, e in consumed)]
     used: set[str] = set()
     unbound: list[dict[str, Any]] = []
@@ -365,6 +395,17 @@ def resolve(prompt: str, design_type: str = "mechanical_part") -> EngineeringSpe
         elif spec.part_type in ("plate", "motor_plate", "gearbox_plate"):
             spec.require("width_in", a, "in", f"stated as {pair.group(0)}")
             spec.require("depth_in", b, "in", f"stated as {pair.group(0)}")
+
+    # How many of them. "three 0.5 in spacers" used to make one spacer, which is a quietly
+    # wrong answer to a question the user asked precisely.
+    qty = _QUANTITY.search(low)
+    if qty:
+        n = _count(qty.group(1), 1)
+        if 2 <= n <= 24:
+            spec.require("quantity", n, "", f"asked for {qty.group(0).strip()}")
+        elif n > 24:
+            spec.unknown("quantity", f"{n} of a part is a production run, not a design; "
+                                     "generating one")
 
     # Retaining-ring grooves.
     grooves = _p(r"\b(?:retaining|snap)\s*[- ]?ring|circlip|groove").search(low)

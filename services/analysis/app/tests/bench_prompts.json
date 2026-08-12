@@ -1,6 +1,6 @@
 {
  "version": "kale-bench-1",
- "note": "Graded benchmark for the design pipeline. Unlike the pass/fail tests, this scores partial credit so a regression shows up as a number moving rather than a suite going red. Every expectation here is something a user would notice being wrong. The hard-* cases are deliberately at or beyond the edge of what the pipeline handles; the score is meant to sit below 1.0.",
+ "note": "Graded benchmark for the design pipeline. Unlike the pass/fail tests, this scores partial credit so a regression shows up as a number moving rather than a suite going red. Every expectation here is something a user would notice being wrong. The hard-* cases are deliberately at or beyond the edge of what the pipeline handles; the score is meant to sit below 1.0. pcb-crowded is the routing frontier: it is expected to fall short and its score is the measure of how far.",
  "cases": [
   {
    "id": "bearing-hex-half",
@@ -334,7 +334,8 @@
    "type": "pcb",
    "season": false,
    "placed": true,
-   "min_nets": 4
+   "min_nets": 4,
+   "routed": true
   },
   {
    "id": "pcb-power",
@@ -342,7 +343,8 @@
    "type": "pcb",
    "season": false,
    "placed": true,
-   "min_nets": 3
+   "min_nets": 3,
+   "routed": true
   },
   {
    "id": "pcb-i2c",
@@ -350,7 +352,8 @@
    "type": "pcb",
    "season": false,
    "placed": true,
-   "min_nets": 2
+   "min_nets": 2,
+   "routed": true
   },
   {
    "id": "pcb-spi",
@@ -358,7 +361,8 @@
    "type": "pcb",
    "season": false,
    "placed": true,
-   "min_nets": 2
+   "min_nets": 2,
+   "routed": true
   },
   {
    "id": "pcb-dual-rail",
@@ -366,7 +370,8 @@
    "type": "pcb",
    "season": false,
    "placed": true,
-   "min_nets": 4
+   "min_nets": 4,
+   "routed": true
   },
   {
    "id": "pcb-led",
@@ -374,7 +379,8 @@
    "type": "pcb",
    "season": false,
    "placed": true,
-   "min_nets": 3
+   "min_nets": 3,
+   "routed": true
   },
   {
    "id": "refuse-linkage",
@@ -476,6 +482,15 @@
     "shaftDiameter": 0.375
    },
    "min_bodies": 3
+  },
+  {
+   "id": "pcb-crowded",
+   "prompt": "Design a 12V to 5V and 3.3V and 24V regulator board with 12 sensor ports, CAN, I2C, SPI and UART.",
+   "type": "pcb",
+   "season": false,
+   "placed": true,
+   "routed": true,
+   "min_nets": 5
   }
  ]
 }

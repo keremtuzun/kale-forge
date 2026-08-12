@@ -119,6 +119,17 @@ def _score_case(case: dict) -> dict:
         if bad:
             score *= 0.6
             notes.append("placement fails: " + ", ".join(bad[:2]))
+    if case.get("routed"):
+        routing = out.get("routing") or {}
+        drc = out.get("drc") or []
+        got["traces"] = len(routing.get("traces") or [])
+        bad = [c["check"] for c in drc if not c["ok"]]
+        if not routing.get("complete"):
+            score *= 0.6
+            notes.append("did not route: " + ", ".join(routing.get("unrouted", [])[:2]))
+        elif bad:
+            score *= 0.8
+            notes.append("DRC: " + ", ".join(bad[:2]))
     if case.get("min_bores"):
         # A hole the user asked for and did not get is a wrong part, and it is invisible in
         # the parameter table — so the check has to look at the geometry.

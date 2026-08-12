@@ -83,6 +83,26 @@ def _bolt_pattern(width: float, depth: float, inset: float, dia: float, *,
             for sx in (-1, 1) for sz in (-1, 1)]
 
 
+def _called_out_hole(spec: EngineeringSpec, width: float, depth: float) -> list[dict[str, Any]]:
+    """The hole the request asked for by name, centred, if it fits.
+
+    A hole a user typed and did not get is a wrong part, and it is invisible in the dimension
+    table, so it has to be cut rather than noted. One that does not fit is refused out loud
+    instead of silently shrunk.
+    """
+    dia = spec.get("center_hole_in")
+    if not dia:
+        return []
+    dia = float(dia)
+    if dia >= min(width, depth) * 0.9:
+        spec.unknown("center_hole_in",
+                     f"the {dia:g} in hole asked for does not leave material in a "
+                     f"{width:g} x {depth:g} in plate")
+        return []
+    return [bore(dia, 0.0, 0.0, note="hole called out in the request",
+                 expr={"d": "centreHoleDiameter"})]
+
+
 def _single(assembly: dict[str, Any], parameters: dict[str, float],
             dimensions: list[dict[str, Any]],
             hardware: list[dict[str, Any]] | None = None) -> dict[str, Any]:
@@ -293,13 +313,16 @@ def rect_plate(spec: EngineeringSpec) -> dict[str, Any]:
     bores = _bolt_pattern(w, d, inset, bolt["clearance_in"], width_var="plateWidth",
                           depth_var="plateDepth", inset_var="holeInset",
                           dia_var="mountHoleDiameter")
+    bores += _called_out_hole(spec, w, d)
     body = plate("plate", (w, t, d), _at(0, t / 2, 0), mat="aluminium", bores=bores,
                  pockets=int(spec.get("lightening") or 0),
                  expr={"sx": "plateWidth", "sy": "plateThickness", "sz": "plateDepth"})
     return _single(
         _asm("part", "Plate", "part", [body], note="flat stock, cut and drilled"),
         {"plateWidth": w, "plateDepth": d, "plateThickness": t,
-         "mountHoleDiameter": bolt["clearance_in"], "holeInset": inset},
+         "mountHoleDiameter": bolt["clearance_in"], "holeInset": inset,
+         **({"centreHoleDiameter": float(spec.get("center_hole_in"))}
+            if spec.get("center_hole_in") else {})},
         [_dim("Width", w, spec.source_of("width_in")),
          _dim("Depth", d, spec.source_of("depth_in")),
          _dim("Thickness", t, spec.source_of("thickness_in")),

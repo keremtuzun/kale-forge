@@ -325,11 +325,23 @@ def test_a_generated_board_states_how_far_it_actually_got():
     stages = {s["stage"]: s["done"] for s in out["completion"]["stages"]}
     assert stages["SCHEMATIC_COMPLETE"] is True
     assert stages["PLACEMENT_COMPLETE"] is True
-    # Everything past placement is not implemented, and has to say so.
-    assert stages["ROUTING_COMPLETE"] is False
-    assert stages["RULE_CHECK_COMPLETE"] is False
+    assert stages["ROUTING_COMPLETE"] is True
+    assert stages["RULE_CHECK_COMPLETE"] is True
+    # And there it stops. No gerbers exist, so the last rung stays false and the summary
+    # says what is missing rather than rounding up to "done".
     assert stages["MANUFACTURING_READY"] is False
     assert not out["exports"]["gerbers"]
+    assert not out["exports"]["kicad_pcb"]
+    assert "not manufacturing ready" in out["completion"]["summary"].lower()
+
+
+def test_a_stage_cannot_be_reached_over_a_failed_one():
+    """The ladder is walked in order. Routing without placement is not a thing."""
+    from app.services.pcb_design import completion
+
+    out = completion(placed=False, routed=True, checked=True)
+    assert out["reached"] == "SCHEMATIC_COMPLETE"
+    assert {s["stage"]: s["done"] for s in out["stages"]}["ROUTING_COMPLETE"] is False
 
 
 # ── placement ────────────────────────────────────────────────────────────────
@@ -370,6 +382,76 @@ def test_decoupling_sits_against_the_part_it_decouples():
         assert distance <= 5.0, f"{cap} is {distance:.1f} mm from {owner}"
 
 
+# ── routing and DRC ──────────────────────────────────────────────────────────
+@pytest.mark.parametrize("prompt", _BOARDS)
+def test_every_board_routes_and_passes_its_own_drc(prompt):
+    """ROUTING_COMPLETE and RULE_CHECK_COMPLETE are claims, so they are earned per board."""
+    out = route(prompt)
+    routing = out["routing"]
+    assert routing["complete"], f"unrouted: {routing['unrouted']}"
+    assert routing["traces"], "a routed board has copper on it"
+    assert not routing["unknown_pins"], routing["unknown_pins"]
+    failed = [c for c in out["drc"] if not c["ok"]]
+    assert not failed, f"{prompt!r} fails DRC: {failed}"
+    stages = {s["stage"]: s["done"] for s in out["completion"]["stages"]}
+    assert stages["ROUTING_COMPLETE"] is True
+    assert stages["RULE_CHECK_COMPLETE"] is True
+    assert stages["MANUFACTURING_READY"] is False, "no gerbers exist, so this stays false"
+
+
+@pytest.mark.parametrize("prompt", _BOARDS)
+def test_copper_clearance_recomputed_from_the_geometry(prompt):
+    """Independent of the DRC in the module: the same rule, measured here from the output."""
+    from app.services.pcb_route import CLEARANCE_MM, _segment_gap
+
+    routing = route(prompt)["routing"]
+    segments = [(t["net"], t["layer"], (a[0], a[1]), (b[0], b[1]), t["width_mm"])
+                for t in routing["traces"] for a, b in zip(t["points"], t["points"][1:])]
+    for i, (net_a, layer_a, a1, a2, w_a) in enumerate(segments):
+        for net_b, layer_b, b1, b2, w_b in segments[i + 1:]:
+            if net_a == net_b or layer_a != layer_b:
+                continue
+            gap = _segment_gap(a1, a2, b1, b2) - (w_a + w_b) / 2
+            assert gap >= CLEARANCE_MM - 1e-6, f"{net_a} and {net_b} are {gap:.3f} mm apart"
+
+
+def test_a_power_rail_is_wider_than_a_signal():
+    """Trace width comes from the current, not from a default."""
+    out = route("Design a 12V to 5V power distribution board with 6 outputs.")
+    widths = {t["net"]: t["width_mm"] for t in out["routing"]["traces"]}
+    power = [w for net, w in widths.items() if net.startswith(("VIN", "+"))]
+    assert power, "the board should have a power net in copper"
+    assert max(power) > 0.25, "a 1 A rail cannot be a minimum-width signal trace"
+
+
+def test_ground_is_a_pour_and_the_pour_is_one_piece():
+    out = route("Design a CAN sensor PCB with 4 CAN connectors and 12V input.")
+    pour = out["routing"]["ground"]
+    assert pour["kind"] == "pour" and pour["layer"] == "bottom"
+    assert pour["stitching_vias"], "every ground pad needs a via down to the pour"
+    assert not pour["orphans"], f"stranded ground pads: {pour['orphans']}"
+    assert pour["coverage"] >= 0.55
+
+
+def test_an_unroutable_board_does_not_claim_routing():
+    """The ladder has to stop where the tool stops, on a board it genuinely cannot finish."""
+    out = route("Design a 12V to 5V and 3.3V and 24V regulator board with 12 sensor "
+                "ports, CAN, I2C, SPI and UART.")
+    stages = {s["stage"]: s["done"] for s in out["completion"]["stages"]}
+    if not out["routing"]["complete"]:
+        assert stages["ROUTING_COMPLETE"] is False
+        assert stages["RULE_CHECK_COMPLETE"] is False
+        assert out["routing"]["unrouted"], "a failed route has to name what it could not do"
+
+
+def test_routed_copper_is_in_the_3d_model():
+    out = route("Design a CAN sensor PCB with 4 CAN connectors and 12V input.")
+    bodies = out["cad"]["assemblies"][0]["features"]
+    copper = [f for f in bodies if "trace" in str(f.get("note") or "")]
+    assert copper, "the traces should be visible bodies, not just numbers"
+    assert len(bodies) > len(out["layout"]["placements"]) + 1
+
+
 def test_a_placed_board_appears_in_the_3d_viewer():
     """The board goes through the same CAD document as a robot, so it draws for free."""
     out = route("Design a CAN sensor PCB with 4 CAN connectors and 12V input.")
@@ -377,8 +459,8 @@ def test_a_placed_board_appears_in_the_3d_viewer():
     features = cad["assemblies"][0]["features"]
     assert features[0]["t"] == "plate", "the substrate is a body in the scene"
     assert len(features[0]["bores"]) == 4, "four M3 mounting holes, bored"
-    # One body per placed component, plus the substrate.
-    assert len(features) == len(out["layout"]["placements"]) + 1
+    # One body per placed component, plus the substrate, plus copper.
+    assert len(features) >= len(out["layout"]["placements"]) + 1
 
 
 # ── the acceptance test the whole change exists for ──────────────────────────

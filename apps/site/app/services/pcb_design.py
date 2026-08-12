@@ -35,7 +35,7 @@ import re
 from typing import Any
 
 from app.services import engineering_calc as calc
-from app.services import pcb_layout
+from app.services import pcb_layout, pcb_route
 from app.services.design_intent import (
     ASSUMED, CALCULATED, INFERRED, UNRESOLVED, USER_PROVIDED, VERIFIED)
 
@@ -59,38 +59,64 @@ STAGE_STATUS: dict[str, dict[str, Any]] = {
                   "keepout, courtyard overlap, mounting-hole clearance and decoupling "
                   "distance — this board did not pass those checks"},
     "ROUTING_COMPLETE": {
+        # Implemented. Per board, like placement: the flag below is the default and
+        # `completion()` overrides it with whether THIS board actually routed.
         "done": False,
-        "detail": "no autorouter is wired up; nets exist as connectivity, not as copper"},
+        "detail": "a grid maze router traces every net and pours ground, checked for "
+                  "continuity and for the pour being one piece — this board did not route"},
     "RULE_CHECK_COMPLETE": {
         "done": False,
-        "detail": "the deterministic electrical checks below run on the generated design; "
-                  "geometric DRC needs a routed board first"},
+        "detail": "clearance, trace width and connectivity are re-derived from the finished "
+                  "copper independently of the router — this board did not pass"},
     "MANUFACTURING_READY": {
         "done": False,
         "detail": "no gerbers, no drill file, no pick-and-place"},
 }
 
 
-def completion(placed: bool = False, placed_detail: str = "") -> dict[str, Any]:
+def completion(placed: bool = False, placed_detail: str = "",
+               routed: bool = False, routed_detail: str = "",
+               checked: bool = False, checked_detail: str = "") -> dict[str, Any]:
     """Where THIS board actually got to.
 
-    `placed` is not a claim this module makes about itself — it is the result of running the
-    placement checks on this specific board. A generator that could place a simple board and
-    could not place a crowded one has to say so per board, or the ladder is decoration.
+    None of these is a claim the module makes about itself. Each is the result of running
+    that stage's checks on this specific board, so a generator that can route a simple board
+    and cannot route a crowded one says so per board instead of averaging the two into a
+    claim that is false half the time.
+
+    A stage also cannot be reached over the top of a failed one: routing without placement is
+    not a thing, so the ladder is walked in order and stops at the first gap.
     """
     status = {s: dict(STAGE_STATUS[s]) for s in STAGES}
     if placed:
         status["PLACEMENT_COMPLETE"] = {
             "done": True,
-            "detail": placed_detail or ("every component has a checked position on the "
-                                        "board outline")}
-    reached = [s for s in STAGES if status[s]["done"]]
-    top = reached[-1] if reached else "NONE"
-    summary = ("Schematic-level design. This board is a connectivity and component plan, "
-               "not a manufacturable layout.")
-    if top == "PLACEMENT_COMPLETE":
-        summary = ("Schematic and placement. Every part has a checked position on a real "
-                   "outline; no copper is routed, so this is not manufacturable yet.")
+            "detail": placed_detail or "every component has a checked position"}
+    if placed and routed:
+        status["ROUTING_COMPLETE"] = {
+            "done": True, "detail": routed_detail or "every net is copper"}
+    if placed and routed and checked:
+        status["RULE_CHECK_COMPLETE"] = {
+            "done": True, "detail": checked_detail or "the finished copper passes DRC"}
+
+    top = "NONE"
+    for stage in STAGES:
+        if not status[stage]["done"]:
+            break
+        top = stage
+    summary = {
+        "NONE": "Nothing generated.",
+        "SCHEMATIC_COMPLETE": ("Schematic-level design. This board is a connectivity and "
+                               "component plan, not a manufacturable layout."),
+        "PLACEMENT_COMPLETE": ("Schematic and placement. Every part has a checked position "
+                               "on a real outline; no copper is routed."),
+        "ROUTING_COMPLETE": ("Schematic, placement and copper. Every net is routed and "
+                             "ground is poured, but the geometry has not passed DRC."),
+        "RULE_CHECK_COMPLETE": ("Routed and rule-checked. Clearance, trace width and "
+                                "connectivity were re-derived from the finished copper and "
+                                "hold. Still not manufacturing ready: no gerbers, no drill "
+                                "file, no pick-and-place, and no vendor has quoted it."),
+    }[top]
     return {"stages": [{"stage": s, **status[s]} for s in STAGES],
             "reached": top, "summary": summary}
 
@@ -399,7 +425,10 @@ def build_netlist(spec: dict[str, Any], parts: list[dict[str, Any]]) -> list[dic
     protection = [p for p in parts if p["category"] == "protection"]
     regulators = [p for p in parts if p["category"] == "regulator"]
 
-    chain = [f"{p['reference']}.1" for p in inputs]
+    # The input connector's positive pin is "V+", not "1". Nothing noticed until the router
+    # went looking for the pad and there wasn't one: a netlist can name a pin that does not
+    # exist and still look perfectly well formed.
+    chain = [f"{p['reference']}.V+" for p in inputs]
     chain += [f"{p['reference']}.1" for p in protection]
     net(f"VIN_{v_in:g}V", chain + [f"{r['reference']}.VIN" for r in regulators],
         "protected input rail feeding every regulator")
@@ -523,13 +552,21 @@ def generate_board(prompt: str) -> dict[str, Any]:
 
     layout = pcb_layout.place(spec, parts, size)
     size = layout["board_mm"]
+    routed = pcb_route.route(layout, parts, nets, spec, layers) if layout["complete"] else {
+        "traces": [], "vias": [], "complete": False, "checks": [],
+        "unrouted": [n["name"] for n in nets], "ground": None, "copper_mm": 0,
+        "version": pcb_route.ROUTE_VERSION,
+        "note": "not attempted: the placement did not pass, and routing an illegal placement "
+                "would produce copper nobody can build"}
+    rules = (pcb_route.drc(routed, layout, parts, nets, spec)
+             if routed["complete"] else [])
     if not stated:
         # Stated after placement, because the outline is a RESULT of the parts fitting on it
         # rather than a guess made before anyone tried.
         spec["assumptions"].append(
             f"board sized at {size[0]:g} x {size[1]:g} mm — the smallest outline the placer "
             "could fit these parts on with its keepouts; no size was given")
-    checks = checks + layout["checks"]
+    checks = checks + layout["checks"] + routed.get("checks", []) + rules
 
     bom: list[dict[str, Any]] = []
     for part in parts:
@@ -548,10 +585,13 @@ def generate_board(prompt: str) -> dict[str, Any]:
         "checks": checks,
         "bom": bom,
         "layout": layout,
+        "routing": routed,
+        "drc": rules,
         # The placed board as geometry, in the same CAD document a robot or a bearing block
         # produces — which is what puts a PCB in the 3D viewer and the STEP export without
         # either of them learning what a PCB is.
-        "cad_assembly": pcb_layout.board_assembly(name, layout, parts, layers),
+        "cad_assembly": pcb_layout.board_assembly(name, layout, parts, layers,
+                                                  routing=routed),
         "board": {"layers": layers, "size_mm": size,
                   "size_source": stated["source"] if stated else ASSUMED,
                   "mounting_holes": len(layout["mounting_holes"]),
@@ -565,11 +605,18 @@ def generate_board(prompt: str) -> dict[str, Any]:
             layout["complete"],
             f"{len(layout['placements'])} components placed on a "
             f"{layout['board_mm'][0]:g} x {layout['board_mm'][1]:g} mm outline; edge keepout, "
-            f"courtyard overlap, mounting-hole clearance and decoupling distance all check out"),
+            f"courtyard overlap, mounting-hole clearance and decoupling distance all check out",
+            routed.get("complete", False),
+            f"{len(routed.get('traces', []))} trace runs, {len(routed.get('vias', []))} vias, "
+            f"{routed.get('copper_mm', 0):g} mm of copper, ground poured on the bottom layer",
+            bool(rules) and all(c["ok"] for c in rules),
+            f"{len(rules)} geometric checks re-derived from the finished copper, all passing"),
         "exports": {"kicad_pro": False, "kicad_sch": False, "kicad_pcb": False,
                     "gerbers": False, "bom_csv": True,
-                    "note": ("KiCad source generation is not implemented. The netlist and BOM "
-                             "below are real and exportable as text; the .kicad_* files are "
+                    "step": bool(routed.get("traces")),
+                    "note": ("KiCad source and gerber generation are not implemented. The "
+                             "netlist, the placement, the copper and the BOM are real and "
+                             "exportable as text or as STEP; the .kicad_* and .gbr files are "
                              "not produced, and this build does not pretend otherwise.")},
     }
 

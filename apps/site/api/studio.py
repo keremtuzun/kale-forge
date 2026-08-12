@@ -1874,6 +1874,35 @@ function renderBoardDossier(spec){
         }).join('')
       + '</dl></details></details>');
   }
+  const rt = spec.routing;
+  if (rt && rt.traces && rt.traces.length){
+    const perLayer = {};
+    rt.traces.forEach(function(t){ perLayer[t.layer] = (perLayer[t.layer]||0) + 1; });
+    out.push('<details open><summary>Copper · ' + rt.traces.length + ' runs</summary>'
+      + '<p class="note">' + rt.copper_mm + ' mm of trace on a ' + rt.grid_mm
+      + ' mm grid, ' + rt.clearance_mm + ' mm clearance. ' + rt.fab_note + '.</p>'
+      + '<dl class="kv">'
+      + row('Top layer', (perLayer.top || 0) + ' runs')
+      + row('Bottom layer', (perLayer.bottom || 0) + ' runs')
+      + row('Vias', (rt.vias || []).length + ' plated through')
+      + (rt.ground ? row('Ground', rt.ground.kind + ' on the ' + rt.ground.layer
+          + '<br><span class="note">' + rt.ground.note + '</span>') : '')
+      + (rt.unrouted && rt.unrouted.length
+          ? row('Unrouted', rt.unrouted.join(', ') + src('UNRESOLVED')) : '')
+      + '</dl></details>');
+  }
+  if (spec.drc && spec.drc.length){
+    const bad = spec.drc.filter(function(c){ return !c.ok; });
+    out.push('<details ' + (bad.length ? 'open' : '') + '><summary>Design rule check · '
+      + (spec.drc.length - bad.length) + ' passed, ' + bad.length + ' to review</summary>'
+      + '<p class="note">Re-derived from the finished copper, not read back from the router, '
+      + 'so a bug in the router shows up here instead of being confirmed by it.</p>'
+      + '<ul class="list">'
+      + spec.drc.map(function(c){
+          return '<li><b>' + (c.ok ? 'pass' : 'review') + '</b> — ' + c.check + ': '
+            + c.detail + '</li>'; }).join('')
+      + '</ul></details>');
+  }
   if (spec.power && spec.power.rails && spec.power.rails.length){
     out.push('<details open><summary>Power · ' + spec.power.total_w + ' W</summary><dl class="kv">'
       + spec.power.rails.map(function(r){
@@ -1914,6 +1943,7 @@ function renderBoardDossier(spec){
     + row('BOM', ex.bom_csv ? 'available' : 'not available')
     + row('KiCad source', ex.kicad_sch ? 'available' : 'not generated')
     + row('Gerbers', ex.gerbers ? 'available' : 'not generated')
+    + row('STEP', ex.step ? 'available — board, parts and copper' : 'not available')
     + '</dl></details>');
   return out.join('');
 }
