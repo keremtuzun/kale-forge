@@ -945,7 +945,7 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
       if (on) {
         if (!origMats.has(o)) origMats.set(o, o.material);
         o.material = o.material.clone();
-        o.material.emissive = new THREE.Color(0x2a7d4f); o.material.emissiveIntensity = 0.34;
+        o.material.emissive = new THREE.Color(0xffd600); o.material.emissiveIntensity = 0.30;
       } else if (origMats.has(o)) {
         // The clone made above is this mesh's own material and nothing else uses it, so it
         // has to be released here. Without this, every part the user clicks leaves a
@@ -1117,7 +1117,7 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
     poseArtics(t) {
       artics.forEach(a => { a.group.rotation.x = (a.deg[0] + (a.deg[1] - a.deg[0]) * t) * D2R; });
     },
-    capture(scale = 1, background = '#f6f3ea', margin = 1.12) {
+    capture(scale = 1, background = '#080800', margin = 1.12) {
       let r = canvas.parentElement.getBoundingClientRect();
       // A hidden pane measures 0×0; capture still has to produce a real image.
       if (r.width < 50 || r.height < 50) r = { width: 1280, height: 800 };

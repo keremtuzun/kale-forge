@@ -1,4 +1,4 @@
-"""Kale Forge Design Studio, self-contained Vercel Python function.
+"""Rams Forge Design Studio, self-contained Vercel Python function.
 
 GET  /                                        → the Design Studio page.
 GET  /studio?seasons=1                        → season metadata (public, no computation).
@@ -112,7 +112,7 @@ def make_spec(prompt: str, season: str = "", *, use_model: bool = False,
     return spec
 
 
-# The studio requires a signed-in Kale Forge account. Sessions are issued by the main app's
+# The studio requires a signed-in Rams Forge account. Sessions are issued by the main app's
 # auth API (proxied at /api on the same domain, so the browser's cookie flows here too); the
 # function verifies the forwarded cookie against that API before generating anything.
 _AUTH_ME_URL = os.environ.get("KALE_AUTH_ME_URL",
@@ -589,6 +589,9 @@ class handler(BaseHTTPRequestHandler):
                     data = resp.read()
                     dispo = resp.headers.get("Content-Disposition",
                                              'attachment; filename="kale-robot.step"')
+                    # Wire header, not branding: the STEP worker on the VM sends
+                    # this name and renaming it here would break the export until that
+                    # service is redeployed to match.
                     parts = resp.headers.get("X-Kale-Parts", "")
                 # STEP is verbose text that gzips ~10x, and a full robot sits right at the
                 # function's response-size ceiling uncompressed. The browser inflates it
@@ -716,7 +719,7 @@ class handler(BaseHTTPRequestHandler):
                  rules=[c.get("rule") for c in report.get("failed", [])])
             return
 
-        name = spec.get("name", "Kale FRC Robot")
+        name = spec.get("name", "Rams FRC Robot")
         if path == "/api/studio/designs/exports/featurescript":
             source = build_featurescript(spec, name)
             _log("export.featurescript", requestId=rid, bytes=len(source),
@@ -789,31 +792,34 @@ PAGE = r"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Design Studio | Kale Forge</title>
+<title>Design Studio | Rams Forge</title>
 <meta name="description" content="Describe hardware at any scale — a bearing block, a subsystem, a PCB or a complete FRC robot — and get an engineered design with a one-to-one 3D model.">
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;900&family=Share+Tech+Mono&display=swap');
   :root{
-    --bg:#f6f3ea;--surface:#fbf9f2;--surface-2:#eeeadf;--ink:#171a18;--muted:#606761;
-    --line:#c7cbc4;--line-strong:#aeb5ad;--brand:#18764a;--brand-hover:#12633d;--brand-soft:#dfeadf;
-    --danger:#a23931;--warning:#765c16;--sans:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-    --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+    --bg:#080800;--surface:#0f0f00;--surface-2:#141400;--ink:#f5f5e8;--muted:#8a8a70;
+    --line:rgba(255,214,0,.18);--line-strong:rgba(255,214,0,.32);--brand:#ffd600;--brand-hover:#fff06a;--brand-soft:rgba(255,214,0,.12);
+    --on-brand:#000;
+    --danger:#ff6b5e;--warning:#ffc247;--sans:Barlow,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
+    --mono:"Share Tech Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
   }
   *{box-sizing:border-box}
   html,body{height:100%;margin:0}
-  body{background-color:var(--bg);background-image:linear-gradient(rgba(80,90,82,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(80,90,82,.07) 1px,transparent 1px);background-size:40px 40px;color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;overflow:hidden}
+  body{background-color:var(--bg);background-image:linear-gradient(rgba(255,214,0,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(255,214,0,.05) 1px,transparent 1px);background-size:40px 40px;color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;overflow:hidden}
   a{color:inherit;text-decoration:none}
   .app{position:fixed;inset:0;display:grid;grid-template-rows:auto 1fr}
   .bar{display:flex;align-items:center;gap:14px;padding:0 18px;min-height:56px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(10px);z-index:8}
-  .brand{font-size:17px;font-weight:720;letter-spacing:-.03em}
+  .brand{display:flex;align-items:center;gap:8px;font:900 19px var(--display);letter-spacing:.02em;text-transform:uppercase;color:var(--ink)}.brand b{color:var(--brand)}
   .brand b{color:var(--brand);font-weight:720}
   .bar-gap{flex:1}
   .prompt select{background:var(--surface);border:1px solid var(--line-strong);border-radius:9px;color:var(--ink);padding:9px 10px;font:600 13px var(--sans);cursor:pointer}
   .prompt select:focus{outline:none;border-color:var(--brand)}
   .btn{appearance:none;border:1px solid var(--line-strong);background:transparent;color:var(--ink);font:680 13px var(--sans);padding:9px 14px;border-radius:9px;cursor:pointer;white-space:nowrap;transition:.14s}
   .btn:hover{border-color:var(--brand);color:var(--brand)}
-  .btn.primary{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .btn.primary{background:var(--brand);color:var(--on-brand);border-color:var(--brand)}
   .btn.primary:hover{background:var(--brand-hover)}
-  .btn.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .btn.on{background:var(--brand);color:var(--on-brand);border-color:var(--brand)}
   .stage{position:relative;min-height:0;display:grid;grid-template-columns:340px 1fr}
   /* Closed by default: the robot is the point, the numbers are there when you want them. */
   .stage.closed{grid-template-columns:0 1fr}
@@ -851,7 +857,7 @@ PAGE = r"""<!doctype html>
   .dossier details[open] summary::after{content:'hide'}
   .dossier details > *:first-child + *{margin-top:8px}
   .verify{color:var(--warning);font-size:11px;border-top:1px solid var(--line);padding-top:8px;margin-top:12px;line-height:1.45}
-  .view{position:relative;min-height:0;display:grid;grid-template-rows:minmax(0,1fr) auto;background:rgba(246,243,234,.62)}
+  .view{position:relative;min-height:0;display:grid;grid-template-rows:minmax(0,1fr) auto;background:rgba(8,8,0,.62)}
   .viewport{position:relative;min-height:0;overflow:hidden}
   #scene{position:absolute;inset:0;display:block}
   .ctrls{position:absolute;left:14px;top:14px;z-index:5;display:flex;flex-direction:column;gap:8px;width:190px}
@@ -903,13 +909,15 @@ PAGE = r"""<!doctype html>
   .kinds{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
   .kinds button{appearance:none;border:1px solid var(--line);background:var(--bg);color:var(--muted);border-radius:7px;padding:5px 10px;font:700 10px var(--sans);letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
   .kinds button:hover{border-color:var(--brand);color:var(--brand)}
-  .kinds button.on{background:var(--brand);border-color:var(--brand);color:var(--bg)}
+  .kinds button.on{background:var(--brand);border-color:var(--brand);color:var(--on-brand)}
   /* Provenance chips. Deliberately quiet: they must be readable on every row without
      turning the dossier into a traffic light. */
   .prov{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:0 5px;font:700 9px var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);vertical-align:1px}
   .prov.ok{border-color:color-mix(in srgb,var(--brand) 45%,var(--line));color:var(--brand)}
-  .prov.warn{border-color:color-mix(in srgb,#b8860b 45%,var(--line));color:#8a6508}
-  .prov.bad{border-color:color-mix(in srgb,#b3261e 45%,var(--line));color:#b3261e}
+  /* Tuned for the near-black: the previous amber and oxblood were picked against a cream
+     background and both sink into this one. */
+  .prov.warn{border-color:color-mix(in srgb,var(--warning) 45%,var(--line));color:var(--warning)}
+  .prov.bad{border-color:color-mix(in srgb,var(--danger) 45%,var(--line));color:var(--danger)}
   .list{margin:6px 0 0;padding-left:16px;color:var(--muted);font-size:12px;line-height:1.6}
   .list b{color:var(--ink);font-weight:700}
   @media (max-width:820px){.stage{grid-template-columns:1fr;grid-template-rows:44% 1fr}.stage.closed{grid-template-rows:0 1fr}.stage:not(.closed) .dtoggle{left:0}.dossier{border-right:0;border-bottom:1px solid var(--line)}.ctrls{width:150px}.dock-head>span{display:none}.composer{flex-direction:column;align-items:stretch}.composer-side{flex-direction:row}.composer-side select{flex:1}.revision-examples{display:none}.kinds button{padding:5px 7px}}
@@ -937,7 +945,7 @@ PAGE = r"""<!doctype html>
 <body>
 <div class="app">
   <div class="bar">
-    <a class="brand" href="https://kaleai.vercel.app">Kale <b>Forge</b></a>
+    <a class="brand" href="/"><img src="/rams-forge-mark.svg" width="22" height="22" alt="" aria-hidden="true">RAMS <b>FORGE</b></a>
     <a class="btn" href="/app" title="Upload a KiCad project, netlist or BOM; 40+ deterministic checks find problems and the review model explains them" style="border:0;padding:9px 6px">PCB review</a>
     <span class="bar-gap"></span>
     <span id="who"><b id="who-name"></b><button id="signout" type="button" title="Sign out" style="min-width:44px;min-height:44px">sign out</button></span>
@@ -980,7 +988,7 @@ PAGE = r"""<!doctype html>
         </div>
         <form class="prompt" id="form">
           <div class="kinds" role="radiogroup" aria-label="What kind of design">
-            <button type="button" data-kind="auto" class="on" aria-checked="true" role="radio" title="Kale works out what you are asking for">Auto</button>
+            <button type="button" data-kind="auto" class="on" aria-checked="true" role="radio" title="Rams Forge works out what you are asking for">Auto</button>
             <button type="button" data-kind="robot" aria-checked="false" role="radio" title="A complete FRC robot">Robot</button>
             <button type="button" data-kind="subsystem" aria-checked="false" role="radio" title="One mechanism: elevator, intake, shooter, arm">Subsystem</button>
             <button type="button" data-kind="mechanical_part" aria-checked="false" role="radio" title="A single part: bearing block, shaft, plate, gusset">Part</button>
@@ -1798,7 +1806,7 @@ function renderPartDossier(spec){
     return r.source === 'ASSUMED' || r.source === 'INFERRED'; });
   if (assumed.length){
     out.push('<details open><summary>Assumptions · ' + assumed.length + '</summary>'
-      + '<p class="note">Kale chose these because nothing in the request set them. '
+      + '<p class="note">Rams Forge chose these because nothing in the request set them. '
       + 'Edit the design to change any of them.</p><dl class="kv">'
       + provRows(assumed) + '</dl></details>');
   }
@@ -1913,7 +1921,7 @@ function renderBoardDossier(spec){
     const unresolved = spec.components.filter(function(c){ return !c.verified; }).length;
     out.push('<details><summary>Components · ' + spec.components.length + '</summary>'
       + '<p class="note">' + unresolved + ' of ' + spec.components.length
-      + ' are stated as requirements rather than exact parts. Kale does not invent '
+      + ' are stated as requirements rather than exact parts. Rams Forge does not invent '
       + 'manufacturer part numbers.</p><dl class="kv">'
       + spec.components.map(function(c){
           return row(c.reference + ' ' + (c.value||''),

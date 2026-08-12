@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"
+     role="img" aria-label="Rams Forge">
+  <title>Rams Forge</title>
+  <!-- A ram drawn the way the tool draws everything else: as lines with a stated geometry.
+       Stroke only, no fill, so it sits on the RAMs near-black without a plate behind it and
+       still reads at 20 px in a browser tab. -->
+  <!-- Nudged up 2: the drawn content sat 18.5 from the top and 14.5 from the bottom, which
+       is visible once it is a 20 px favicon next to other centred marks. -->
+  <g transform="translate(0,-2)" fill="none" stroke="#FFD600" stroke-width="4"
+     stroke-linecap="round" stroke-linejoin="round">
+    <!-- Left horn: out from the brow, down and around, curling back in under itself. -->
+    <path d="M26 22 C16 18 6 22 7 32 C8 42 18 44 20 37 C21.5 32 16 30.5 15 34.5"/>
+    <!-- Right horn, mirrored on x = 32. -->
+    <path d="M38 22 C48 18 58 22 57 32 C56 42 46 44 44 37 C42.5 32 48 30.5 49 34.5"/>
+    <!-- Face: a narrowing wedge, the same shape as a gusset. -->
+    <path d="M25.5 21 H38.5 L36 40 L32 47.5 L28 40 Z"/>
+  </g>
+  <!-- Eyes, filled so they hold at small sizes where a stroke would close up. -->
+  <g fill="#FFD600">
+    <circle cx="29.2" cy="29" r="1.9"/>
+    <circle cx="34.8" cy="29" r="1.9"/>
+  </g>
+</svg>
