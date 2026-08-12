@@ -32,11 +32,36 @@ def _p(pattern: str) -> re.Pattern[str]:
     return re.compile(pattern, re.I)
 
 
+_NUMBER_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+                 "eight": 8, "ten": 10, "twelve": 12}
+
+
+def _count(raw: str, default: int = 1) -> int:
+    """A count written as a digit or as a word.
+
+    Written out because `{"two": 2}.get(raw, int(raw))` evaluates int(raw) eagerly, so a word
+    raised ValueError before the lookup that would have handled it ever ran. That crashed the
+    whole request on "two retaining ring grooves".
+    """
+    text = (raw or "").strip().lower()
+    if text.isdigit():
+        return int(text)
+    return _NUMBER_WORDS.get(text, default)
+
+
 # ── which part ───────────────────────────────────────────────────────────────
 # Ordered: the first match wins, so compound names are listed before the nouns they contain.
 # "gearbox plate" must be tested before "plate" and before "gearbox".
 _PART_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (_p(r"\bbearing\s*(?:block|housing|holder|carrier|mount|pocket)\b"), "bearing_block"),
+    # A dead axle rides in bearings and the block is what holds them, so it is a bearing
+    # block by another name. Both of these used to fall through to the shaft pattern and
+    # come back as a length of hex, which is a different part entirely.
+    (_p(r"\b(?:dead[- ]?axle|live[- ]?axle|axle)\s*(?:block|mount|housing|holder)\b"),
+     "bearing_block"),
+    # `.` and not `[^.]`: a decimal point is a dot, so "a mount that holds two 1.125 in
+    # bearings" fell outside a dot-excluding window and came back as a plain shaft.
+    (_p(r"\b(?:mount|block|holder|carrier)\b(?=.{0,44}\bbearings?\b)"), "bearing_block"),
     (_p(r"\bgearbox\s*plate\b"), "gearbox_plate"),
     (_p(r"\b(?:motor|neo|kraken|falcon|cim)\s*(?:mount(?:ing)?\s*)?plate\b"), "motor_plate"),
     (_p(r"\bmount(?:ing)?\s*plate\b"), "motor_plate"),
@@ -112,16 +137,34 @@ def _alias(part_type: str, role: str) -> str:
     return _ROLE_ALIASES.get(part_type, {}).get(role, role)
 
 
-def _role_for(text: str, dim: dict[str, Any], used: set[str]) -> str:
-    """Which property this dimension dimensions, by the words around it."""
+def _role_for(text: str, dim: dict[str, Any], used: set[str],
+              neighbours: tuple[int, int] = (0, 10 ** 6)) -> str:
+    """Which property this dimension dimensions, by the words around it.
+
+    `neighbours` is where the previous dimension ended and the next one begins. The window is
+    clipped to that, because a word sitting after the NEXT number describes that number:
+    without the clip, "5 x 5 in plate 1/4 in thick" gave the 5 the "thick" that belonged to
+    the 1/4, and produced a plate five inches thick.
+    """
     low = text.lower()
-    before = low[max(0, dim["start"] - _WINDOW):dim["start"]]
-    after = low[dim["end"]:dim["end"] + _WINDOW]
+    prev_end, next_start = neighbours
+    before = low[max(prev_end, dim["start"] - _WINDOW):dim["start"]]
+    after = low[dim["end"]:min(next_start, dim["end"] + _WINDOW)]
     scores: dict[str, int] = {}
+    distance: dict[str, int] = {}
     for role, words in _ROLE_WORDS.items():
         if role in used:
             continue
         for word in words:
+            # How far this word sits from the number. Two roles can both be "in the window",
+            # and then the one touching the number is the one describing it: in "20 mm bore
+            # bearing", "bore" is against the number and "bearing" is behind it, so the 20 is
+            # a bore. Without this the tie broke on table order and produced a bearing block
+            # sized for the shaft.
+            here = after.find(word)
+            gap = here if here >= 0 else (
+                len(before) - before.rfind(word) if word in before else 999)
+            distance[role] = min(distance.get(role, 999), gap)
             # A word directly after the number binds harder than one before it: English puts
             # the noun after the dimension ("1.125 in bearing"), and the adjective before
             # ("bearing OD of 1.125 in") is the weaker, less common form.
@@ -148,7 +191,7 @@ def _role_for(text: str, dim: dict[str, Any], used: set[str]) -> str:
         return "thickness_in"
     if not scores:
         return ""
-    return max(scores, key=lambda r: scores[r])
+    return max(scores, key=lambda r: (scores[r], -distance.get(r, 999)))
 
 
 # Positional fallbacks per part type, used only for dimensions no word claimed. Ordered by
@@ -222,8 +265,10 @@ def resolve(prompt: str, design_type: str = "mechanical_part") -> EngineeringSpe
             if not any(s <= d["start"] < e for s, e in consumed)]
     used: set[str] = set()
     unbound: list[dict[str, Any]] = []
-    for dim in dims:
-        role = _role_for(text, dim, used)
+    for i, dim in enumerate(dims):
+        prev_end = dims[i - 1]["end"] if i else 0
+        next_start = dims[i + 1]["start"] if i + 1 < len(dims) else len(text)
+        role = _role_for(text, dim, used, (prev_end, next_start))
         if role:
             used.add(role)
             spec.require(_alias(spec.part_type, role), dim["inches"], "in",
@@ -324,11 +369,12 @@ def resolve(prompt: str, design_type: str = "mechanical_part") -> EngineeringSpe
     # Retaining-ring grooves.
     grooves = _p(r"\b(?:retaining|snap)\s*[- ]?ring|circlip|groove").search(low)
     if grooves:
-        n = re.search(r"\b(one|two|three|1|2|3)\s+(?:retaining\s*)?(?:ring\s*)?grooves?\b", low)
-        spec.require("groove_count",
-                     {"one": 1, "two": 2, "three": 3}.get(n.group(1), int(n.group(1)))
-                     if n and n.group(1).isdigit() or (n and n.group(1) in ("one", "two", "three"))
-                     else 2)
+        n = re.search(r"\b(one|two|three|four|1|2|3|4)\s+(?:retaining\s*)?(?:ring\s*)?"
+                      r"grooves?\b", low)
+        if n:
+            spec.require("groove_count", _count(n.group(1), 2))
+        else:
+            spec.assume("groove_count", 2, "", "one groove at each end, the usual arrangement")
 
     # Teeth, for a pulley.
     teeth = _p(r"\b(\d{1,3})\s*(?:t\b|teeth|tooth)").search(low)

@@ -1,0 +1,481 @@
+{
+ "version": "kale-bench-1",
+ "note": "Graded benchmark for the design pipeline. Unlike the pass/fail tests, this scores partial credit so a regression shows up as a number moving rather than a suite going red. Every expectation here is something a user would notice being wrong. The hard-* cases are deliberately at or beyond the edge of what the pipeline handles; the score is meant to sit below 1.0.",
+ "cases": [
+  {
+   "id": "bearing-hex-half",
+   "prompt": "Design a bearing block for a 1/2 inch hex shaft.",
+   "type": "mechanical_part",
+   "part": "bearing_block",
+   "season": false,
+   "params": {
+    "shaftDiameter": 0.5,
+    "bearingOD": 1.125
+   }
+  },
+  {
+   "id": "bearing-two-od",
+   "prompt": "Design a bearing block for a 1/2 in hex shaft using two 1.125 in OD bearings.",
+   "type": "mechanical_part",
+   "part": "bearing_block",
+   "season": false,
+   "params": {
+    "shaftDiameter": 0.5,
+    "bearingOD": 1.125
+   }
+  },
+  {
+   "id": "bearing-wide",
+   "prompt": "Design a bearing block for a 1/2 in hex shaft, 3.5 in wide.",
+   "type": "mechanical_part",
+   "part": "bearing_block",
+   "season": false,
+   "params": {
+    "blockWidth": 3.5
+   }
+  },
+  {
+   "id": "bearing-thick",
+   "prompt": "Design a bearing housing 0.75 in thick for a 1.125 in OD bearing.",
+   "type": "mechanical_part",
+   "part": "bearing_block",
+   "season": false,
+   "params": {
+    "blockDepth": 0.75
+   }
+  },
+  {
+   "id": "bearing-slip",
+   "prompt": "Design a bearing block with a slip fit for a 3/8 in round shaft.",
+   "type": "mechanical_part",
+   "part": "bearing_block",
+   "season": false,
+   "params": {
+    "shaftDiameter": 0.375
+   }
+  },
+  {
+   "id": "hex-shaft",
+   "prompt": "Design a 1/2 in hex shaft 8 in long.",
+   "type": "mechanical_part",
+   "part": "hex_shaft",
+   "season": false,
+   "params": {
+    "shaftSize": 0.5,
+    "shaftLength": 8.0
+   }
+  },
+  {
+   "id": "hex-shaft-grooves",
+   "prompt": "Design a 1/2 in hex shaft 10 inches long with two retaining ring grooves.",
+   "type": "mechanical_part",
+   "part": "hex_shaft",
+   "season": false,
+   "params": {
+    "shaftSize": 0.5,
+    "shaftLength": 10.0
+   }
+  },
+  {
+   "id": "round-shaft-metric",
+   "prompt": "Design a 8 mm round shaft 150 mm long.",
+   "type": "mechanical_part",
+   "part": "shaft",
+   "season": false,
+   "params": {
+    "shaftSize": 0.315
+   }
+  },
+  {
+   "id": "spacer",
+   "prompt": "Design a 0.75 in long spacer for a 3/8 in shaft.",
+   "type": "mechanical_part",
+   "part": "spacer",
+   "season": false,
+   "params": {
+    "spacerLength": 0.75,
+    "shaftDiameter": 0.375
+   }
+  },
+  {
+   "id": "spacer-hex",
+   "prompt": "Design a 2 in aluminium spacer for a 1/2 in hex shaft.",
+   "type": "mechanical_part",
+   "part": "spacer",
+   "season": false,
+   "params": {
+    "spacerLength": 2.0,
+    "shaftDiameter": 0.5
+   }
+  },
+  {
+   "id": "plate-4x6",
+   "prompt": "Design a 4 x 6 in aluminium plate 3/16 in thick.",
+   "type": "mechanical_part",
+   "part": "plate",
+   "season": false,
+   "params": {
+    "plateWidth": 4.0,
+    "plateDepth": 6.0,
+    "plateThickness": 0.1875
+   }
+  },
+  {
+   "id": "plate-lightened",
+   "prompt": "Design a 5 x 5 in plate 1/4 in thick with lightening pockets.",
+   "type": "mechanical_part",
+   "part": "plate",
+   "season": false,
+   "params": {
+    "plateWidth": 5.0,
+    "plateDepth": 5.0,
+    "plateThickness": 0.25
+   }
+  },
+  {
+   "id": "gusset-2x1",
+   "prompt": "Design a gusset for 2x1 tube.",
+   "type": "mechanical_part",
+   "part": "gusset",
+   "season": false,
+   "params": {}
+  },
+  {
+   "id": "gusset-pitch",
+   "prompt": "Design a three leg gusset for 2x1 tube on a 0.5 in hole pitch.",
+   "type": "mechanical_part",
+   "part": "gusset",
+   "season": false,
+   "params": {
+    "holePitch": 0.5
+   }
+  },
+  {
+   "id": "motor-plate-two",
+   "prompt": "Design a motor mounting plate for two Kraken X60 motors.",
+   "type": "mechanical_part",
+   "part": "motor_plate",
+   "season": false,
+   "params": {
+    "motorCount": 2
+   }
+  },
+  {
+   "id": "motor-plate-neo",
+   "prompt": "Design a motor plate for a NEO with a 1/4 in thick face.",
+   "type": "mechanical_part",
+   "part": "motor_plate",
+   "season": false,
+   "params": {
+    "plateThickness": 0.25
+   }
+  },
+  {
+   "id": "gearbox-plate",
+   "prompt": "Design a gearbox plate for a 1/2 in hex output shaft.",
+   "type": "mechanical_part",
+   "part": "gearbox_plate",
+   "season": false,
+   "params": {}
+  },
+  {
+   "id": "gearbox-plate-two",
+   "prompt": "Design a gearbox plate for two Kraken X60 motors.",
+   "type": "mechanical_part",
+   "part": "gearbox_plate",
+   "season": false,
+   "params": {}
+  },
+  {
+   "id": "roller",
+   "prompt": "Design a 2 in diameter intake roller 14 in long on a 1/2 in hex shaft.",
+   "type": "mechanical_part",
+   "part": "roller",
+   "season": false,
+   "params": {
+    "rollerDiameter": 2.0,
+    "rollerWidth": 14.0,
+    "shaftDiameter": 0.5
+   }
+  },
+  {
+   "id": "roller-compliant",
+   "prompt": "Design a 4 in compliant wheel roller 10 in wide for an intake.",
+   "type": "mechanical_part",
+   "part": "roller",
+   "season": false,
+   "params": {
+    "rollerDiameter": 4.0
+   }
+  },
+  {
+   "id": "pulley-24t",
+   "prompt": "Design a 24 tooth HTD 5mm pulley for a 1/2 in hex shaft.",
+   "type": "mechanical_part",
+   "part": "pulley",
+   "season": false,
+   "params": {
+    "teeth": 24,
+    "boreDiameter": 0.5
+   }
+  },
+  {
+   "id": "pulley-30t-round",
+   "prompt": "Design a 30 tooth pulley for a 3/8 in round shaft.",
+   "type": "mechanical_part",
+   "part": "pulley",
+   "season": false,
+   "params": {
+    "teeth": 30,
+    "boreDiameter": 0.375
+   }
+  },
+  {
+   "id": "bracket-l",
+   "prompt": "Design an L bracket with 2 in legs in 1/8 in aluminium.",
+   "type": "mechanical_part",
+   "part": "bracket",
+   "season": false,
+   "params": {
+    "legA": 2.0,
+    "bracketThickness": 0.125
+   }
+  },
+  {
+   "id": "bracket-uneven",
+   "prompt": "Design an L bracket with a 3 in first leg and a 1.5 in second leg.",
+   "type": "mechanical_part",
+   "part": "bracket",
+   "season": false,
+   "params": {
+    "legA": 3.0
+   }
+  },
+  {
+   "id": "standoff",
+   "prompt": "Design a 1.5 in standoff for a 10-32 screw.",
+   "type": "mechanical_part",
+   "part": "spacer",
+   "season": false,
+   "params": {
+    "spacerLength": 1.5
+   }
+  },
+  {
+   "id": "robot-swerve-2026",
+   "prompt": "Design a swerve drive robot for the 2026 season with a coral scorer.",
+   "type": "robot",
+   "season": true,
+   "min_parts": 150
+  },
+  {
+   "id": "robot-tank",
+   "prompt": "tank drive robot with a ground intake",
+   "type": "robot",
+   "season": true,
+   "min_parts": 150
+  },
+  {
+   "id": "robot-legacy-terse",
+   "prompt": "coral scorer",
+   "type": "robot",
+   "season": true,
+   "min_parts": 150
+  },
+  {
+   "id": "robot-legacy-bot",
+   "prompt": "an algae processor bot",
+   "type": "robot",
+   "season": true,
+   "min_parts": 150
+  },
+  {
+   "id": "robot-everybot",
+   "prompt": "Everybot style robot for 2025 Reefscape",
+   "type": "robot",
+   "season": true,
+   "min_parts": 150
+  },
+  {
+   "id": "robot-chassis-only",
+   "prompt": "chassis only, no mechanisms",
+   "type": "robot",
+   "season": true,
+   "min_parts": 40
+  },
+  {
+   "id": "robot-four-mech",
+   "prompt": "robot with an elevator, intake, shooter and climber",
+   "type": "robot",
+   "season": true,
+   "min_parts": 200
+  },
+  {
+   "id": "sub-elevator",
+   "prompt": "Design an elevator subsystem with two stages and a 1:12 reduction.",
+   "type": "subsystem",
+   "min_parts": 40
+  },
+  {
+   "id": "sub-intake",
+   "prompt": "Design an over the bumper intake subsystem.",
+   "type": "subsystem",
+   "min_parts": 30
+  },
+  {
+   "id": "sub-shooter",
+   "prompt": "Design a shooter subsystem with a hooded flywheel.",
+   "type": "subsystem",
+   "min_parts": 30
+  },
+  {
+   "id": "pcb-can",
+   "prompt": "Design a CAN sensor PCB with 4 CAN connectors and 12V input.",
+   "type": "pcb",
+   "season": false,
+   "placed": true,
+   "min_nets": 4
+  },
+  {
+   "id": "pcb-power",
+   "prompt": "Design a 12V to 5V power distribution board with 6 outputs.",
+   "type": "pcb",
+   "season": false,
+   "placed": true,
+   "min_nets": 3
+  },
+  {
+   "id": "pcb-i2c",
+   "prompt": "Design an I2C sensor breakout board with a 3.3V regulator.",
+   "type": "pcb",
+   "season": false,
+   "placed": true,
+   "min_nets": 2
+  },
+  {
+   "id": "pcb-spi",
+   "prompt": "Design a two layer encoder breakout with SPI and 5V in.",
+   "type": "pcb",
+   "season": false,
+   "placed": true,
+   "min_nets": 2
+  },
+  {
+   "id": "pcb-dual-rail",
+   "prompt": "Design a 12V to 5V and 3.3V regulator board for a robot.",
+   "type": "pcb",
+   "season": false,
+   "placed": true,
+   "min_nets": 4
+  },
+  {
+   "id": "pcb-led",
+   "prompt": "Design a LED signalling PCB for a robot running from 12V.",
+   "type": "pcb",
+   "season": false,
+   "placed": true,
+   "min_nets": 3
+  },
+  {
+   "id": "refuse-linkage",
+   "prompt": "Design a four bar linkage with a 30 degree throw.",
+   "expect": "refused"
+  },
+  {
+   "id": "refuse-spring",
+   "prompt": "Design a helical compression spring with a 2 in free length.",
+   "expect": "refused"
+  },
+  {
+   "id": "refuse-weldment",
+   "prompt": "Design a welded steel space frame for a go kart.",
+   "expect": "refused"
+  },
+  {
+   "id": "hard-metric-bearing",
+   "prompt": "Design a bearing block for a 20 mm bore bearing, 47 mm OD, in 10 mm aluminium.",
+   "type": "mechanical_part",
+   "part": "bearing_block",
+   "season": false,
+   "params": {
+    "shaftDiameter": 0.787,
+    "bearingOD": 1.85
+   }
+  },
+  {
+   "id": "hard-implicit-mount",
+   "prompt": "I need a mount that holds two 1.125 in bearings 3 in apart on a 1/2 in hex shaft.",
+   "type": "mechanical_part",
+   "part": "bearing_block",
+   "season": false,
+   "params": {
+    "shaftDiameter": 0.5,
+    "bearingOD": 1.125
+   }
+  },
+  {
+   "id": "hard-dead-axle",
+   "prompt": "Design a dead axle block for a 1/2 in hex shaft with a bearing on each side.",
+   "type": "mechanical_part",
+   "part": "bearing_block",
+   "season": false,
+   "params": {
+    "shaftDiameter": 0.5
+   }
+  },
+  {
+   "id": "hard-metric-plate",
+   "prompt": "Make a plate 100 mm by 60 mm, 4 mm thick, with a 25 mm hole in the middle.",
+   "type": "mechanical_part",
+   "part": "plate",
+   "season": false,
+   "params": {
+    "plateWidth": 3.937,
+    "plateDepth": 2.362,
+    "plateThickness": 0.157
+   },
+   "min_bores": 5
+  },
+  {
+   "id": "hard-belt-width",
+   "prompt": "Design a pulley for a 9 mm wide HTD belt, 36 teeth, 1/2 in hex bore.",
+   "type": "mechanical_part",
+   "part": "pulley",
+   "season": false,
+   "params": {
+    "teeth": 36,
+    "boreDiameter": 0.5
+   }
+  },
+  {
+   "id": "hard-spelled-number",
+   "prompt": "Design a bearing block. The shaft is three quarters of an inch hex.",
+   "type": "mechanical_part",
+   "part": "bearing_block",
+   "season": false,
+   "params": {
+    "shaftDiameter": 0.75
+   }
+  },
+  {
+   "id": "hard-two-sections",
+   "prompt": "Design a gusset that bolts a 2x1 tube to a 1x1 tube.",
+   "type": "mechanical_part",
+   "part": "gusset",
+   "season": false,
+   "params": {}
+  },
+  {
+   "id": "hard-count",
+   "prompt": "Design a spacer stack: three 0.5 in spacers for a 3/8 in shaft.",
+   "type": "mechanical_part",
+   "part": "spacer",
+   "season": false,
+   "params": {
+    "spacerLength": 0.5,
+    "shaftDiameter": 0.375
+   },
+   "min_bodies": 3
+  }
+ ]
+}
