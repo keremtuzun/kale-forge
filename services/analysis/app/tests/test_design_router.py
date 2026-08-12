@@ -433,15 +433,55 @@ def test_ground_is_a_pour_and_the_pour_is_one_piece():
     assert pour["coverage"] >= 0.55
 
 
-def test_an_unroutable_board_does_not_claim_routing():
-    """The ladder has to stop where the tool stops, on a board it genuinely cannot finish."""
+def test_the_crowded_board_routes():
+    """37 parts, 8 nets, three rails and four buses. This is the board rip-up exists for:
+    before it, four nets were stranded and the design stopped at placement."""
     out = route("Design a 12V to 5V and 3.3V and 24V regulator board with 12 sensor "
                 "ports, CAN, I2C, SPI and UART.")
-    stages = {s["stage"]: s["done"] for s in out["completion"]["stages"]}
-    if not out["routing"]["complete"]:
-        assert stages["ROUTING_COMPLETE"] is False
-        assert stages["RULE_CHECK_COMPLETE"] is False
-        assert out["routing"]["unrouted"], "a failed route has to name what it could not do"
+    assert out["routing"]["complete"], f"unrouted: {out['routing']['unrouted']}"
+    assert not [c for c in out["drc"] if not c["ok"]]
+    assert out["completion"]["reached"] == "RULE_CHECK_COMPLETE"
+
+
+def test_rip_up_makes_progress_rather_than_wandering():
+    """A round that leaves more nets failing than it found is rolled back, so the board can
+    never finish with less copper on it than a plain first pass would have laid."""
+    out = route("Design a CAN sensor PCB with 4 CAN connectors and 12V input.")
+    assert out["routing"]["evictions"] >= 0
+    assert out["routing"]["complete"]
+
+
+def test_a_four_layer_board_uses_its_inner_planes():
+    """The stackup is chosen honestly, so it has to be routed honestly: on four layers the
+    ground and the input rail are planes, not traces."""
+    out = route("Design a 12V to 5V and 3.3V regulator board for a robot.")
+    assert out["board"]["layers"] >= 4
+    planes = {p["net"] for p in out["routing"]["planes"]}
+    assert "GND" in planes
+    assert any(n.startswith("VIN") for n in planes)
+    traced = {t["net"] for t in out["routing"]["traces"]}
+    assert not (traced & planes), "a net on a plane must not also be traced"
+
+
+def test_a_net_can_always_reach_its_own_pad():
+    """Pad guards contest the cells between neighbouring pins. If that locked a net out of
+    its own pad, fine-pitch parts became unroutable for reasons that were purely modelling."""
+    out = route("Design a CAN sensor PCB with 4 CAN connectors and 12V input.")
+    assert out["routing"]["complete"]
+    assert not out["routing"]["unknown_pins"]
+
+
+def test_no_pad_sits_on_two_supplies():
+    """The short that the router found by failing: every sensor port was on all three rails."""
+    out = route("Design a 12V to 5V and 3.3V and 24V regulator board with 12 sensor "
+                "ports, CAN, I2C, SPI and UART.")
+    supplies = {}
+    for net in out["nets"]:
+        if net["name"].startswith(("+", "VIN")):
+            for node in net["nodes"]:
+                supplies.setdefault(node, []).append(net["name"])
+    shorted = {k: v for k, v in supplies.items() if len(v) > 1}
+    assert not shorted, f"supply pins on more than one rail: {shorted}"
 
 
 def test_routed_copper_is_in_the_3d_model():

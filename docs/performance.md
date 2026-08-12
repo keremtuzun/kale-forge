@@ -8,13 +8,13 @@ Written 12 August 2026. Everything here is measured against `services/analysis/a
 cd services/analysis && python -m app.tests.bench
 ```
 
-52 prompts, graded with partial credit, so an improvement that fixes half a problem is
+55 prompts, graded with partial credit, so an improvement that fixes half a problem is
 visible instead of invisible. Per case: 0.35 for the design type, 0.20 for the part type,
 0.15 for season relevance, 0.30 for dimensions inside 0.02 in. Refusal cases score 1.0 for
 refusing and 0.0 for building something, because a confidently wrong part is worse than no
 part at all.
 
-**Baseline, 12 Aug 2026: 0.993 across 53 cases, 52 perfect, 0 zero. 1 ms median, 2.6 s worst.**
+**Baseline, 12 Aug 2026: 1.000 across 55 cases, 55 perfect, 0 zero. 1 ms median, 2.8 s worst.**
 
 History, so a regression is obvious:
 
@@ -23,10 +23,13 @@ History, so a regression is obvious:
 | 12 Aug, first run | 0.975 | 44 | the instrument existed for the first time |
 | 12 Aug, after fixes | 0.979 | 52 | four defects fixed, hard cases added and tightened |
 | 12 Aug, gaps closed | 0.993 | 53 | spelled-out numbers, quantities, called-out holes, plus routing |
+| 12 Aug, rip-up | 1.000 | 55 | rip-up and reroute; the crowded board routes, two more added |
+
+A score of 1.000 means the benchmark has stopped being an instrument. Add harder cases.
 
 The suite already answers "is anything broken". This answers "is it getting better", which is
 the question that matters once the obvious bugs are gone. It found four real defects within a
-minute of first running, two of which the 470-case pass/fail suite could not see:
+minute of first running, two of which the pass/fail suite could not see:
 
 1. `two retaining ring grooves` raised ValueError and returned a 500. `dict.get()` evaluates
    its default eagerly, so `int("two")` ran before the word lookup that would have handled it.
@@ -42,19 +45,17 @@ All four are fixed. Run the benchmark before and after every change.
 
 ## Known gaps, named rather than hidden
 
-The three parser gaps are closed. "Three quarters of an inch" parses, "three 0.5 in spacers"
-makes three spacers, and "with a 25 mm hole in the middle" cuts the hole (or refuses out loud
-when the hole would not leave any material).
+Every case passes as of 12 Aug 2026, which is a statement about the benchmark rather than
+about the tool. What is still not done is listed under `MANUFACTURING_READY` below, and the
+next honest gaps will come from prompts nobody here thought to write.
 
-One case scores below 1.0 on purpose, and it is the honest edge of the tool.
+Limits worth knowing, all of them stated in the output rather than buried here:
 
-| Case | Score | What is missing |
-| --- | --- | --- |
-| `pcb-crowded` | 0.60 | 37 parts and 8 nets on one board: two rails find no path. The board stops at `PLACEMENT_COMPLETE` and says which nets failed. |
-
-That case is the routing frontier. Fixing it means real rip-up-and-reroute rather than the
-two-ordering retry that is there now, and it should be fixed by making the router better, not
-by removing the case.
+- Pads are modelled at 0.4 mm grid resolution, so escape routing around fine-pitch packages
+  has not been checked against real pad drawings.
+- Package envelopes and pad maps are IPC nominal figures for the generic package, not vendor
+  drawings.
+- Clearance and drill limits are ordinary cheap-fab numbers, not a quote from a board house.
 
 ## Ranked work
 
@@ -81,29 +82,35 @@ Route: <https://www.onshape.com/partners/apply>, then the App Store launch check
 This is also distribution: the Onshape App Store puts the tool in front of every Onshape user
 rather than every person who finds the website.
 
-### 3. Rip-up and reroute, then gerbers
+### 3. Gerbers, and only then MANUFACTURING_READY
 
-`PLACEMENT_COMPLETE`, `ROUTING_COMPLETE` and `RULE_CHECK_COMPLETE` all became true on
-12 Aug 2026, and all three are decided per board by checks rather than declared. Six of the
-seven benchmark boards reach the top rung in under 200 ms.
+Placement, routing and rule check are all true per board, decided by checks. Rip-up and
+reroute landed on 12 Aug 2026 and the crowded board that motivated it now routes in about two
+seconds.
 
-Two things left on this ladder:
+What actually made it converge was not the rip-up. It was congestion history. Tearing up
+whoever is in the way solved three of the four stranded nets immediately, and then CANH and
+CANL sat swapping the same corridor for ever, each evicting the other, because neither had any
+memory of the fight. One byte per cell counting how often copper there had been torn up, added
+to the path cost, ended it in four evictions. That is the PathFinder idea and it is worth
+knowing before writing any router: rip-up without history is a coin toss repeated.
 
-- **Rip-up and reroute.** The router tries two net orderings and keeps the better one. A
-  crowded board (37 parts, 8 nets) still strands two rails. Proper rip-up would take it.
-- **`MANUFACTURING_READY`.** That needs gerbers, a drill file and a pick-and-place, and
-  ideally a fab's own DRC agreeing. Do not flip that flag for anything less.
+Two things the router found by failing, which is the argument for building it at all:
 
-Note what the DRC caught when it was first switched on: the router was reserving corridors
-too narrow for its own clearance rule, and using a circular mask that left the diagonal
-neighbour open. Both were invisible to the router, which believed it had obeyed itself. Keep
-the DRC independent for exactly that reason.
+- Every sensor port was wired to all three supply rails at once. A dead short between 12 V,
+  5 V and 3.3 V, invisible to a connectivity check that only asks whether each net has two
+  pins. There is an ERC rule for it now.
+- A regulator's EN and FB pins are copper whether or not a design connects them. The router
+  could not see unnetted pads at all and ran traces straight across them.
+
+Left on this ladder: `MANUFACTURING_READY`, which needs gerbers, a drill file, a
+pick-and-place, and ideally a fab's own DRC agreeing. Do not flip that flag for anything less.
 
 ### 4. Model in the loop, as a tie-breaker only
 
 The intent classifier is deterministic keyword scoring. That is a feature: it is 0 ms,
-debuggable, and it cannot hallucinate. But it is brittle at the edges, which is what the three
-known gaps are.
+debuggable, and it cannot hallucinate. But it is brittle at the edges, and every gap the
+benchmark has found so far has been at one of them.
 
 The right shape is not to replace it. It is to call the self-hosted model only when the
 deterministic margin is low, validate its answer against the same closed vocabulary, and fall
@@ -112,7 +119,8 @@ and the failure mode stays bounded.
 
 ### 5. Latency where the user actually feels it
 
-The pipeline is fast: 0 ms median, 310 ms worst for a 339-part robot. That is not the number
+The pipeline is fast: 1 ms median, and the worst case is now a dense board routing in
+under three seconds rather than a robot compiling in 300 ms. That is not the number
 a user experiences. Vercel cold start on a serverless Python function is, and it is not
 measured yet. Measure it, then decide whether it is worth keeping a warm path.
 

@@ -1,6 +1,6 @@
 {
  "version": "kale-bench-1",
- "note": "Graded benchmark for the design pipeline. Unlike the pass/fail tests, this scores partial credit so a regression shows up as a number moving rather than a suite going red. Every expectation here is something a user would notice being wrong. The hard-* cases are deliberately at or beyond the edge of what the pipeline handles; the score is meant to sit below 1.0. pcb-crowded is the routing frontier: it is expected to fall short and its score is the measure of how far.",
+ "note": "Graded benchmark for the design pipeline. Unlike the pass/fail tests, this scores partial credit so a regression shows up as a number moving rather than a suite going red. Every expectation here is something a user would notice being wrong. The hard-* cases are deliberately at or beyond the edge of what the pipeline handles; the score is meant to sit below 1.0. pcb-crowded was the routing frontier until rip-up and reroute landed; it now routes, and it stays here as the case that proves it.",
  "cases": [
   {
    "id": "bearing-hex-half",
@@ -491,6 +491,24 @@
    "placed": true,
    "routed": true,
    "min_nets": 5
+  },
+  {
+   "id": "pcb-crowded-4layer",
+   "prompt": "Design a four layer 12V to 5V board with 10 outputs and CAN.",
+   "type": "pcb",
+   "season": false,
+   "placed": true,
+   "routed": true,
+   "min_nets": 3
+  },
+  {
+   "id": "pcb-sensor-hub",
+   "prompt": "Design a CAN breakout with a 5V rail and 8 sensor ports.",
+   "type": "pcb",
+   "season": false,
+   "placed": true,
+   "routed": true,
+   "min_nets": 4
   }
  ]
 }

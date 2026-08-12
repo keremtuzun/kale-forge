@@ -45,12 +45,22 @@ CLEARANCE_MM = 0.2           # copper to copper, the usual cheap-fab minimum
 SIGNAL_WIDTH_MM = 0.25       # a signal carries no current worth widening for
 VIA_DRILL_MM = 0.4
 VIA_PAD_MM = 0.8
-VIA_COST = 12                # in cells; makes the router prefer one layer
+VIA_COST = 24                # in cells; a via is a drill hit, so it should hurt to use one
+BOTTOM_COST = 3              # per step: bottom copper is cut out of the ground pour
+BBOX_MARGINS = (14, 48)      # slack around a connection; wider only if the first fails
+PAD_MODEL_MM = GRID_MM       # a pad is modelled as the one cell it sits on
+PAD_GUARD_CELLS = 2          # how far a foreign net must stay from any pad
 MAX_EXPANSIONS = 120_000     # per connection, so a hopeless net fails fast
-RETRY_BUDGET_S = 1.5         # a second routing attempt runs inside a request
+ROUTE_BUDGET_S = 6.0         # rip-up runs inside a request, so it is on a clock
+MAX_RIPS_PER_NET = 4         # a net torn up this often is left alone, or two nets thrash
+MAX_EVICTIONS = 120          # total, so a genuinely unroutable board still fails quickly
+CROSSING_PENALTY = 90        # cost of crossing another net when asking who is in the way
+HISTORY_WEIGHT = 6           # per previous eviction: contested ground gets dearer each round
 
 FAB_NOTE = (f"{CLEARANCE_MM:g} mm clearance and {VIA_DRILL_MM:g} mm drills are ordinary "
-            "cheap-fab limits, not a quote from a specific board house")
+            "cheap-fab limits, not a quote from a specific board house; pads are modelled at "
+            f"{GRID_MM:g} mm grid resolution, so escape routing around fine-pitch packages "
+            "has not been checked against real pad drawings")
 
 
 # ── pads ─────────────────────────────────────────────────────────────────────
@@ -118,6 +128,12 @@ class _Grid:
         self.h = max(1, int(height / GRID_MM))
         self.layers = layers
         self.cells = [bytearray(self.w * self.h) for _ in range(layers)]
+        # Pad clearance, filled in once the pads are known. Top-side only: the pads are.
+        self.guard = bytearray(self.w * self.h)
+        # Congestion history: how many times copper here has been torn up. Cells that keep
+        # being fought over get more expensive for everyone, which is the only thing that
+        # stops two nets swapping the same corridor back and forth for ever.
+        self.history = [bytearray(self.w * self.h) for _ in range(layers)]
 
     def index(self, x: float, y: float) -> tuple[int, int]:
         return (min(self.w - 1, max(0, int(x / GRID_MM))),
@@ -133,17 +149,23 @@ class _Grid:
         self.cells[layer][gy * self.w + gx] = value
 
     def fill_disc(self, layer: int, gx: int, gy: int, radius_cells: int, value: int,
-                  only_free: bool = False) -> None:
-        self._fill(layer, gx, gy, radius_cells, value, only_free, round_mask=True)
+                  only_free: bool = False) -> list[tuple[int, int, int]]:
+        return self._fill(layer, gx, gy, radius_cells, value, only_free, round_mask=True)
 
     def fill_square(self, layer: int, gx: int, gy: int, radius_cells: int, value: int,
-                    only_free: bool = False) -> None:
+                    only_free: bool = False) -> list[tuple[int, int, int]]:
         """Square, for trace corridors. A circular mask leaves the diagonal neighbour free,
         and the diagonal is the shortest route to a clearance violation."""
-        self._fill(layer, gx, gy, radius_cells, value, only_free, round_mask=False)
+        return self._fill(layer, gx, gy, radius_cells, value, only_free, round_mask=False)
 
     def _fill(self, layer: int, gx: int, gy: int, radius_cells: int, value: int,
-              only_free: bool, round_mask: bool) -> None:
+              only_free: bool, round_mask: bool) -> list[tuple[int, int, int]]:
+        """Returns the cells it actually changed, so the caller can put them back.
+
+        That list is what makes rip-up possible: without it there is no way to remove one
+        net's copper without rebuilding the whole board.
+        """
+        changed: list[tuple[int, int, int]] = []
         for dy in range(-radius_cells, radius_cells + 1):
             for dx in range(-radius_cells, radius_cells + 1):
                 x, y = gx + dx, gy + dy
@@ -153,6 +175,42 @@ class _Grid:
                     continue
                 if not only_free or self.get(layer, x, y) == 0:
                     self.set(layer, x, y, value)
+                    changed.append((layer, x, y))
+        return changed
+
+
+_GUARD_CONTESTED = 254
+
+
+def _pad_guard(grid: "_Grid", node_cells: dict[str, list[tuple[int, int]]],
+               net_ids: dict[str, int],
+               unnetted: list[tuple[int, int]] | None = None) -> bytearray:
+    """Which net, if any, owns the space immediately around each pad.
+
+    Built from every pad together rather than one at a time, which is the difference between
+    a rule and a race: a cell near two different nets' pads is contested and belongs to
+    neither, instead of going to whichever pad was processed first.
+    """
+    guard = bytearray(grid.w * grid.h)
+    radius = PAD_GUARD_CELLS
+    owners = [(net_ids[name], cells) for name, cells in node_cells.items()]
+    # A pad on no net is contested ground: no net may route near it, because it belongs to
+    # none of them and it is still copper.
+    owners.append((_GUARD_CONTESTED, list(unnetted or [])))
+    for nid, cells in owners:
+        for gx, gy in cells:
+            for dy in range(-radius, radius + 1):
+                for dx in range(-radius, radius + 1):
+                    x, y = gx + dx, gy + dy
+                    if not (0 <= x < grid.w and 0 <= y < grid.h):
+                        continue
+                    index = y * grid.w + x
+                    current = guard[index]
+                    if current == 0:
+                        guard[index] = nid
+                    elif current != nid:
+                        guard[index] = _GUARD_CONTESTED
+    return guard
 
 
 def _net_width_mm(net: dict[str, Any], spec: dict[str, Any]) -> float:
@@ -223,14 +281,21 @@ def route(layout: dict[str, Any], parts: list[dict[str, Any]], nets: list[dict[s
         for layer in range(2):
             grid.fill_disc(layer, gx, gy, radius, 255)
 
-    # Ground is a pour, not a tree of traces. Everything else gets a net id.
+    # What is a plane and what is a trace. Ground always; on a four-layer board the input
+    # rail as well, because that is what the second inner layer is for and it is why the
+    # stackup was chosen. A net on a plane is not a routing problem, it is a via per pad.
     ground = next((n for n in nets if n["name"] == "GND"), None)
-    routable = [n for n in nets if n is not ground]
+    planes = [n for n in nets if n is ground]
+    if layers >= 4:
+        planes += [n for n in nets if n["name"].startswith("VIN")]
+    routable = [n for n in nets if n not in planes]
     net_ids = {n["name"]: i + 1 for i, n in enumerate(routable)}
     if len(net_ids) > 250:
         routable = routable[:250]
 
-    # Punch pads open for their own net so the router can enter them.
+    # Punch pads open for their own net so the router can enter them, then let each one claim
+    # its clearance ring. Centres are marked in a first pass so a crowded neighbour can never
+    # take a pad's own cell; rings are grown in a second pass, first come first served.
     node_cells: dict[str, list[tuple[int, int]]] = {}
     missing: list[str] = []
     for net in routable:
@@ -242,37 +307,79 @@ def route(layout: dict[str, Any], parts: list[dict[str, Any]], nets: list[dict[s
                 missing.append(node)
                 continue
             gx, gy = grid.index(*xy)
-            grid.fill_disc(0, gx, gy, 1, nid)
+            grid.set(0, gx, gy, nid)
             cells.append((gx, gy))
         node_cells[net["name"]] = cells
+    # Every pad, not only the ones on a net. A regulator's EN and FB pins are copper whether
+    # or not this design connects them, and the router could not see them at all: it happily
+    # ran traces across pads that were simply absent from the netlist.
+    unnetted: list[tuple[int, int]] = []
+    netted = {node for net in routable for node in net["nodes"]}
+    for node, xy in pads.items():
+        if node in netted:
+            continue
+        gx, gy = grid.index(*xy)
+        if grid.get(0, gx, gy) == 0:
+            grid.set(0, gx, gy, 255)
+        unnetted.append((gx, gy))
+    grid.guard = _pad_guard(grid, node_cells, net_ids, unnetted)
 
-    # The obstacle-only board, kept so a second attempt starts from bare copper.
-    base_cells = [bytearray(layer) for layer in grid.cells]
+    deadline = time.monotonic() + ROUTE_BUDGET_S
+    router = _Router(grid, node_cells, net_ids, spec, deadline,
+                     bottom_cost=1 if layers >= 4 else BOTTOM_COST)
 
-    # Two orderings, hardest first on the retry. A net that fails did so because earlier nets
-    # took the space it needed, and the net with the most pads is the one least able to find
-    # a way round. Real routers rip up and reroute; this is the cheap version of that idea,
-    # bounded to two attempts so a genuinely unroutable board still fails quickly.
-    orders = [routable,
-              sorted(routable, key=lambda n: (-len(n["nodes"]), -_net_width_mm(n, spec)))]
-    best: dict[str, Any] | None = None
-    started = time.monotonic()
-    for attempt, order in enumerate(orders):
-        working = grid if attempt == 0 else _reset(grid, base_cells)
-        result = _route_pass(working, order, node_cells, net_ids, spec)
-        if best is None or len(result["failed"]) < len(best["failed"]):
-            best = result
-        if not result["failed"]:
+    # Hardest first: the net with the most pads has the least freedom to find a way round,
+    # so it should choose its path while the board is still empty.
+    order = sorted(routable, key=lambda n: (-len(n["nodes"]), -_net_width_mm(n, spec)))
+    by_name = {n["name"]: n for n in routable}
+
+    failed = [n["name"] for n in order if not router.route_net(n)]
+    best = router.snapshot(failed)
+    rips: dict[str, int] = {}
+    evictions = 0
+
+    # Rounds, not a queue. Each round tears up whoever is blocking the nets that failed and
+    # reroutes them, and the round is only kept if fewer nets are left failing than before.
+    # Without that, rip-up wandered: it would evict a net, fail to put it back, and finish
+    # with less copper than it started with.
+    while failed and time.monotonic() < deadline and evictions < MAX_EVICTIONS:
+        progressed = False
+        for name in list(failed):
+            blockers = [b for b in router.blockers_for(by_name[name])
+                        if b != name and rips.get(b, 0) < MAX_RIPS_PER_NET]
+            if not blockers:
+                continue
+            for blocked in blockers:
+                rips[blocked] = rips.get(blocked, 0) + 1
+                router.rip(blocked)
+                evictions += 1
+            progressed = True
+            router.route_net(by_name[name])
+            for blocked in sorted(blockers, key=lambda b: -len(by_name[b]["nodes"])):
+                router.route_net(by_name[blocked])
+        if not progressed:
             break
-        # A retry doubles the wall clock, and this runs inside a request. If the first pass
-        # was already slow the board is hard enough that a reorder will not save it.
-        if time.monotonic() - started > RETRY_BUDGET_S:
+        failed = [n["name"] for n in order if not router.is_routed(n["name"])]
+        if len(failed) < len(best["failed"]):
+            best = router.snapshot(failed)
+        elif len(failed) > len(best["failed"]):
+            # This round made it worse. Put the best board back and stop guessing.
+            router.restore(best)
+            failed = list(best["failed"])
             break
-    assert best is not None
-    traces, vias, failed = best["traces"], best["vias"], best["failed"]
-    grid = best["grid"]
+    else:
+        if len(failed) > len(best["failed"]):
+            router.restore(best)
+            failed = list(best["failed"])
 
-    pour = _ground_pour(grid, ground, pads, layout) if ground else None
+    traces, vias = router.all_traces(), router.all_vias()
+    pour = _ground_pour(grid, ground, pads, layout, layers) if ground else None
+    for net in planes:
+        if net is ground:
+            continue
+        vias += [{"net": net["name"], "x": pads[n][0], "y": pads[n][1],
+                  "drill_mm": VIA_DRILL_MM, "pad_mm": VIA_PAD_MM}
+                 for n in net["nodes"] if n in pads]
     checks = _route_checks(traces, vias, failed, missing, pour, layers, ground)
     complete = not failed and not missing and all(c["ok"] for c in checks)
 
@@ -284,63 +391,210 @@ def route(layout: dict[str, Any], parts: list[dict[str, Any]], nets: list[dict[s
         "traces": traces,
         "vias": vias,
         "ground": pour,
+        "planes": [{"net": n["name"],
+                    "layer": "inner 1" if n is ground else "inner 2",
+                    "pads": len([x for x in n["nodes"] if x in pads]),
+                    "note": "solid plane on an inner layer; every pad reaches it with a via"}
+                   for n in planes] if layers >= 4 else [],
         "unrouted": failed,
         "unknown_pins": missing,
         "checks": checks,
         "complete": complete,
         "copper_mm": round(sum(_length(t["points"]) for t in traces), 1),
+        "evictions": evictions,
         "fab_note": FAB_NOTE,
         "source": CALCULATED if complete else ASSUMED,
     }
 
 
-def _reset(grid: "_Grid", cells: list[bytearray]) -> "_Grid":
-    """A fresh board with the obstacles back and the copper gone, for the second attempt."""
-    fresh = _Grid(grid.w * GRID_MM, grid.h * GRID_MM, len(cells))
-    fresh.w, fresh.h = grid.w, grid.h
-    fresh.cells = [bytearray(layer) for layer in cells]
-    return fresh
+class _Router:
+    """One board's copper, with every net's cells recorded so any of it can be torn up.
 
+    The recording is the whole point. Without knowing which cells belong to which net there
+    is no way to remove one net's copper without rebuilding the board from scratch, which is
+    why the previous version could only re-run the whole thing in a different order.
+    """
 
-def _route_pass(grid: "_Grid", order: list[dict[str, Any]],
-                node_cells: dict[str, list[tuple[int, int]]],
-                net_ids: dict[str, int], spec: dict[str, Any]) -> dict[str, Any]:
-    traces: list[dict[str, Any]] = []
-    vias: list[dict[str, Any]] = []
-    failed: list[str] = []
+    def __init__(self, grid: "_Grid", node_cells: dict[str, list[tuple[int, int]]],
+                 net_ids: dict[str, int], spec: dict[str, Any],
+                 deadline: float | None = None, bottom_cost: int = BOTTOM_COST) -> None:
+        self.grid = grid
+        self.deadline = deadline
+        self.bottom_cost = bottom_cost
+        self.node_cells = node_cells
+        self.net_ids = net_ids
+        self.spec = spec
+        self.owned: dict[str, list[tuple[int, int, int]]] = {}
+        self.traces: dict[str, list[dict[str, Any]]] = {}
+        self.vias: dict[str, list[dict[str, Any]]] = {}
+        self._own: dict[str, frozenset[tuple[int, int]]] = {}
 
-    for net in order:
-        nid = net_ids[net["name"]]
-        cells = node_cells[net["name"]]
+    def own_guard(self, name: str) -> frozenset[tuple[int, int]]:
+        """The cells this net may enter despite the guard: its own pads, and only those.
+
+        Exempting the whole guard ring was too generous and let a net run within 0.1 mm of a
+        neighbouring pin on its way into its own pad. Exempting nothing was too strict: on a
+        fine-pitch package every cell including the pad itself is contested by its
+        neighbours, so the net could not reach the pad at all and simply failed.
+
+        The pad, and nothing around it. Escaping a fine-pitch part therefore means dropping
+        a via straight down and routing underneath, which is what a real board does.
+        """
+        if name not in self._own:
+            self._own[name] = frozenset(self.node_cells.get(name) or [])
+        return self._own[name]
+
+    def is_routed(self, name: str) -> bool:
+        return name in self.traces
+
+    def snapshot(self, failed: list[str]) -> dict[str, Any]:
+        """A copy of the whole board, so a round that makes things worse can be undone."""
+        return {"cells": [bytearray(layer) for layer in self.grid.cells],
+                "history": [bytearray(layer) for layer in self.grid.history],
+                "owned": {k: list(v) for k, v in self.owned.items()},
+                "traces": {k: list(v) for k, v in self.traces.items()},
+                "vias": {k: list(v) for k, v in self.vias.items()},
+                "failed": list(failed)}
+
+    def restore(self, state: dict[str, Any]) -> None:
+        self.grid.cells = [bytearray(layer) for layer in state["cells"]]
+        # History is deliberately NOT restored: what the board learned about congestion is
+        # true whichever arrangement of copper is on it.
+        self.owned = {k: list(v) for k, v in state["owned"].items()}
+        self.traces = {k: list(v) for k, v in state["traces"].items()}
+        self.vias = {k: list(v) for k, v in state["vias"].items()}
+
+    def all_traces(self) -> list[dict[str, Any]]:
+        return [t for runs in self.traces.values() for t in runs]
+
+    def all_vias(self) -> list[dict[str, Any]]:
+        return [v for group in self.vias.values() for v in group]
+
+    def rip(self, name: str) -> None:
+        """Remove one net's copper, leaving its pads and everyone else's copper alone.
+
+        Every cell given up remembers that it was contested. Two nets that both want the same
+        corridor will otherwise take it in turns for ever, each evicting the other, which is
+        exactly what a CAN pair did: CANH routed, CANL tore it up, CANH tore that up, and the
+        board never converged.
+        """
+        for layer, gx, gy in self.owned.pop(name, []):
+            self.grid.set(layer, gx, gy, 0)
+            index = gy * self.grid.w + gx
+            if self.grid.history[layer][index] < 255:
+                self.grid.history[layer][index] += 1
+        self.traces.pop(name, None)
+        self.vias.pop(name, None)
+
+    def route_net(self, net: dict[str, Any]) -> bool:
+        name = net["name"]
+        cells = self.node_cells.get(name) or []
         if len(cells) < 2:
-            continue
-        w = _net_width_mm(net, spec)
-        reserve = _corridor_cells(w)
+            self.traces.setdefault(name, [])
+            return True
+        nid = self.net_ids[name]
+        width = _net_width_mm(net, self.spec)
+        reserve = _corridor_cells(width)
+        laid: list[tuple[int, int, int]] = []
+        runs: list[dict[str, Any]] = []
+        vias: list[dict[str, Any]] = []
+
         connected = {(0, cells[0][0], cells[0][1])}
         remaining = list(cells[1:])
-        ok = True
         while remaining:
-            path = _astar(grid, connected, remaining, nid)
+            # A box around the endpoints first. Most connections are short and the box makes
+            # them cheap; the ones that genuinely need to go round the houses fall through to
+            # the whole board.
+            own = self.own_guard(name)
+            # Widening boxes rather than one box and then the whole board. Every net here
+            # routes in milliseconds on its own, so a failure means congestion, and the cure
+            # for congestion is rip-up, not a search of all 72,000 cells. Those exhaustive
+            # searches were spending the entire budget proving what rip-up would have fixed.
+            path = None
+            for margin in BBOX_MARGINS:
+                path = _astar(self.grid, connected, remaining, nid,
+                              bounds=_bbox(connected, remaining, margin),
+                              deadline=self.deadline, bottom_cost=self.bottom_cost, own=own)
+                if path is not None:
+                    break
             if path is None:
-                ok = False
-                break
+                # Undo the half-routed net rather than leave orphan copper behind: a partly
+                # routed net is copper that blocks other nets and connects nothing.
+                for layer, gx, gy in laid:
+                    self.grid.set(layer, gx, gy, 0)
+                return False
             reached = (path[-1][1], path[-1][2])
             remaining = [c for c in remaining if c != reached]
             for layer, gx, gy in path:
                 connected.add((layer, gx, gy))
-                grid.fill_square(layer, gx, gy, reserve, nid, only_free=True)
-                grid.set(layer, gx, gy, nid)
-            traces += _polylines(grid, path, net["name"], w)
-            vias += _vias(grid, path, net["name"])
-        if not ok:
-            failed.append(net["name"])
+                laid += self.grid.fill_square(layer, gx, gy, reserve, nid, only_free=True)
+                if self.grid.get(layer, gx, gy) != nid:
+                    laid.append((layer, gx, gy))
+                self.grid.set(layer, gx, gy, nid)
+            runs += _polylines(self.grid, path, name, width)
+            vias += _vias(self.grid, path, name)
 
-    return {"traces": traces, "vias": vias, "failed": failed, "grid": grid}
+        self.owned[name] = laid
+        self.traces[name] = runs
+        self.vias[name] = vias
+        return True
+
+    def blockers_for(self, net: dict[str, Any]) -> list[str]:
+        """Whose copper stands between this net's pads.
+
+        Walked as straight L-shaped lines between the pads rather than searched properly.
+        Rip-up does not need the optimal set of nets to evict, only a plausible one: it is
+        going to reroute everything it tears up anyway, and the cost of being slightly wrong
+        is one more cycle. Searching for the true answer cost a full A* per pad with every
+        net passable, which is the most expensive search there is, and it was consuming the
+        entire budget to answer a question that did not need answering exactly.
+        """
+        name = net["name"]
+        cells = self.node_cells.get(name) or []
+        if len(cells) < 2:
+            return []
+        nid = self.net_ids[name]
+        by_id = {v: k for k, v in self.net_ids.items()}
+        seen: list[str] = []
+        for (ax, ay), (bx, by) in zip(cells, cells[1:]):
+            for gx, gy in _line_cells(ax, ay, bx, by):
+                for layer in range(2):
+                    owner = self.grid.get(layer, gx, gy)
+                    if owner in (0, nid, 255, _GUARD_CONTESTED):
+                        continue
+                    blocked = by_id.get(owner)
+                    if blocked and blocked not in seen:
+                        seen.append(blocked)
+        return seen
+
+
+def _line_cells(ax: int, ay: int, bx: int, by: int) -> list[tuple[int, int]]:
+    """The cells on an L from a to b: along x, then along y. Not the route a net would take,
+    but a fair sample of what sits between two pads."""
+    out = [(x, ay) for x in range(min(ax, bx), max(ax, bx) + 1)]
+    out += [(bx, y) for y in range(min(ay, by), max(ay, by) + 1)]
+    return out
+
+
+def _bbox(cells, targets, margin: int) -> tuple[int, int, int, int]:
+    xs = [c[1] for c in cells] + [t[0] for t in targets]
+    ys = [c[2] for c in cells] + [t[1] for t in targets]
+    return (min(xs) - margin, min(ys) - margin, max(xs) + margin, max(ys) + margin)
 
 
 def _astar(grid: _Grid, sources: set[tuple[int, int, int]],
-           targets: list[tuple[int, int]], nid: int) -> list[tuple[int, int, int]] | None:
-    """Cheapest path from anywhere already routed to the nearest pad still to reach."""
+           targets: list[tuple[int, int]], nid: int,
+           penalty: int | None = None,
+           bounds: tuple[int, int, int, int] | None = None,
+           deadline: float | None = None,
+           bottom_cost: int = BOTTOM_COST,
+           own: frozenset[tuple[int, int]] = frozenset()
+           ) -> list[tuple[int, int, int]] | None:
+    """Cheapest path from anywhere already routed to the nearest pad still to reach.
+
+    With `penalty` set, another net's copper is a toll rather than a wall, so the search can
+    report who is in the way instead of only that there is no way.
+    """
     goal = set(targets)
 
     def heuristic(gx: int, gy: int) -> int:
@@ -353,29 +607,49 @@ def _astar(grid: _Grid, sources: set[tuple[int, int, int]],
         best[node] = 0
         heapq.heappush(heap, (heuristic(node[1], node[2]), 0, node))
 
+    x0, y0, x1, y1 = bounds or (0, 0, grid.w - 1, grid.h - 1)
     expansions = 0
     while heap and expansions < MAX_EXPANSIONS:
         _, cost, node = heapq.heappop(heap)
         if cost > best.get(node, 1 << 30):
             continue
         expansions += 1
+        if deadline is not None and not expansions % 2048 and time.monotonic() > deadline:
+            return None
         layer, gx, gy = node
         if (gx, gy) in goal:
             path = [node]
             while path[-1] in came:
                 path.append(came[path[-1]])
             return list(reversed(path))
-        moves = [(layer, gx + 1, gy, 1), (layer, gx - 1, gy, 1),
-                 (layer, gx, gy + 1, 1), (layer, gx, gy - 1, 1),
+        # A step on the bottom layer costs more only when the bottom IS the ground pour. On
+        # a four-layer board it is ordinary routing space and should not be penalised.
+        here = 1 if layer == 0 else bottom_cost
+        moves = [(layer, gx + 1, gy, here), (layer, gx - 1, gy, here),
+                 (layer, gx, gy + 1, here), (layer, gx, gy - 1, here),
                  (1 - layer, gx, gy, VIA_COST)]
         for nl, nx, ny, step in moves:
+            if not (x0 <= nx <= x1 and y0 <= ny <= y1):
+                continue
             if not (0 <= nx < grid.w and 0 <= ny < grid.h):
                 continue
             owner = grid.get(nl, nx, ny)
+            toll = 0
             if owner not in (0, nid):
-                continue
+                if penalty is None or owner == 255:
+                    continue
+                toll = penalty
+            # Too close to somebody else's pad, or to two nets' pads at once. A net is always
+            # allowed onto its own pad, which is otherwise unreachable on a fine-pitch part
+            # where every neighbouring pin contests the same cells.
+            if nl == 0:
+                guard = grid.guard[ny * grid.w + nx]
+                if guard and guard != nid and (nx, ny) not in own:
+                    if penalty is None:
+                        continue
+                    toll = max(toll, penalty)
             nxt = (nl, nx, ny)
-            new = cost + step
+            new = cost + step + toll + grid.history[nl][ny * grid.w + nx] * HISTORY_WEIGHT
             if new < best.get(nxt, 1 << 30):
                 best[nxt] = new
                 came[nxt] = node
@@ -426,7 +700,7 @@ def _vias(grid: _Grid, path: list[tuple[int, int, int]], net: str) -> list[dict[
 
 
 def _ground_pour(grid: _Grid, ground: dict[str, Any], pads: dict[str, tuple[float, float]],
-                 layout: dict[str, Any]) -> dict[str, Any]:
+                 layout: dict[str, Any], layers: int = 2) -> dict[str, Any]:
     """Ground as a bottom-side pour, with a via under every ground pad.
 
     Then flood filled, because a pour is only a ground plane if it is one piece. A bottom
@@ -440,6 +714,13 @@ def _ground_pour(grid: _Grid, ground: dict[str, Any], pads: dict[str, tuple[floa
         if xy:
             stitching.append({"net": "GND", "x": xy[0], "y": xy[1],
                               "drill_mm": VIA_DRILL_MM, "pad_mm": VIA_PAD_MM, "node": node})
+
+    if layers >= 4:
+        # An inner plane cannot be cut by signal routing, because no signal is on it.
+        return {"layer": "inner 1", "kind": "plane", "net": "GND",
+                "stitching_vias": stitching, "islands": 1, "coverage": 1.0, "orphans": [],
+                "note": "solid ground plane on an inner layer, reached by a via from every "
+                        "ground pad; nothing routes on it, so nothing can break it"}
 
     seen = bytearray(grid.w * grid.h)
     regions: list[int] = []
@@ -575,6 +856,33 @@ def drc(routed: dict[str, Any], layout: dict[str, Any], parts: list[dict[str, An
           f"{len(reached)} nets verified end to end" if not broken
           else f"not continuous: {', '.join(broken[:4])}")
 
+    # Trace to another net's pad. The router models a pad as the single cell it sits on and
+    # relies on the clearance halo, which is a simplification, so it is checked rather than
+    # assumed.
+    by_ref = {p["reference"]: p for p in parts}
+    foreign = 1e9
+    worst_pad = ""
+    pad_net = {}
+    for net in nets:
+        for node in net["nodes"]:
+            pad_net[node] = net["name"]
+    for seat in layout["placements"]:
+        part = by_ref.get(seat["reference"])
+        if not part:
+            continue
+        for pin, xy in pad_positions(seat, part).items():
+            owner = pad_net.get(f"{seat['reference']}.{pin}")
+            for net_name, layer, a1, a2, width in segments:
+                if layer != "top" or net_name == owner:
+                    continue
+                gap = _segment_gap(xy, xy, a1, a2) - width / 2 - PAD_MODEL_MM / 2
+                if gap < foreign:
+                    foreign = gap
+                    worst_pad = f"{net_name} to {seat['reference']}.{pin}"
+    check("Traces clear other nets' pads", foreign >= CLEARANCE_MM - 1e-6,
+          f"closest approach {foreign:.2f} mm ({worst_pad})" if worst_pad
+          else "no top-layer traces to check")
+
     holes = layout["mounting_holes"]
     fouled = [f"{v['net']} via" for v in routed["vias"]
               for h in holes
@@ -607,9 +915,10 @@ def _connectivity(routed: dict[str, Any], layout: dict[str, Any],
                 return True
         return bool(run) and math.dist(point, (run[0][0], run[0][1])) <= near
 
+    planes = {p["net"] for p in (routed.get("planes") or [])} | {"GND"}
     for net in nets:
-        if net["name"] == "GND":
-            continue                                  # the pour is checked on its own terms
+        if net["name"] in planes:
+            continue         # a plane is checked by its stitching, not by tracing it
         points = [pads[n] for n in net["nodes"] if n in pads]
         if len(points) < 2:
             continue

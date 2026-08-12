@@ -365,8 +365,8 @@ def select_components(spec: dict[str, Any]) -> list[dict[str, Any]]:
             for _ in range(int(conn["count"])):
                 parts.append(component(
                     nref("J"), "connector", value="sensor",
-                    requirement="4-pin JST-PH: 5 V, GND, signal, spare",
-                    source=ASSUMED, pins=["1", "2", "3", "4"]))
+                    requirement="4-pin JST-PH: power, GND, signal, spare",
+                    source=ASSUMED, pins=["V+", "GND", "SIG", "SPARE"]))
         elif conn["kind"] == "output":
             rail = spec["outputs"][0]["voltage"] if spec["outputs"] else (
                 spec["input"].get("voltage") or 12.0)
@@ -379,12 +379,22 @@ def select_components(spec: dict[str, Any]) -> list[dict[str, Any]]:
     # Every regulated rail needs a way off the board. A rail with nothing on it is a
     # regulator wired to nowhere — which the connectivity check correctly rejects, and which
     # the right answer is to fix in the design rather than to report.
+    # Which rail the sensor ports run from has to agree with the netlist, or a rail counts a
+    # load it does not have. That is how the 12 V rail ended up with one pin on it: the
+    # sensors were all on 5 V and 12 V thought they were its.
+    sensor_rail_v = None
+    if spec["outputs"]:
+        sensor_rail_v = float(next(
+            (r for r in spec["outputs"] if float(r["voltage"]) == 5.0),
+            min(spec["outputs"], key=lambda r: float(r["voltage"])))["voltage"])
+
     for rail in spec["outputs"]:
         v_out = float(rail["voltage"])
         tap = f"{v_out:g} V out"
         served = any(p["value"] == tap for p in parts if p["category"] == "connector")
-        served = served or any(p["category"] == "connector" and p["value"] == "sensor"
-                               for p in parts)
+        served = served or (v_out == sensor_rail_v
+                            and any(p["category"] == "connector" and p["value"] == "sensor"
+                                    for p in parts))
         served = served or (v_out == 5.0 and any(p["category"] == "transceiver" for p in parts))
         if not served:
             parts.append(component(
@@ -419,7 +429,11 @@ def build_netlist(spec: dict[str, Any], parts: list[dict[str, Any]]) -> list[dic
     v_in = float(spec["input"].get("voltage") or 12.0)
 
     def net(name: str, nodes: list[str], note: str = "") -> None:
-        nets.append({"name": name, "nodes": nodes, "node_count": len(nodes), "note": note})
+        # Deduplicated: a transceiver matches its own "CAN" value when the connectors are
+        # gathered, so it listed its own pin twice and the router was asked to route a pad
+        # to itself.
+        unique = list(dict.fromkeys(nodes))
+        nets.append({"name": name, "nodes": unique, "node_count": len(unique), "note": note})
 
     inputs = [p for p in parts if p["category"] == "connector" and "input" in p["value"]]
     protection = [p for p in parts if p["category"] == "protection"]
@@ -437,12 +451,23 @@ def build_netlist(spec: dict[str, Any], parts: list[dict[str, Any]]) -> list[dic
         + [f"{p['reference']}.K" for p in parts if p.get("role") == "indicator_led"],
         "single ground; a plane on any board with more than two layers")
 
+    # Which rail the sensor ports run from: 5 V by convention on an FRC robot, otherwise the
+    # lowest regulated rail on the board.
+    sensor_rail = None
+    if spec["outputs"]:
+        sensor_rail = next((r for r in spec["outputs"] if float(r["voltage"]) == 5.0),
+                           min(spec["outputs"], key=lambda r: float(r["voltage"])))
+
     for rail, reg in zip(spec["outputs"], regulators):
         loads = []
         if rail["voltage"] == 5.0:
             loads += [f"{p['reference']}.VCC" for p in parts if p["category"] == "transceiver"]
-        loads += [f"{p['reference']}.1" for p in parts
-                  if p["category"] == "connector" and p["value"] == "sensor"]
+        # Sensors hang off ONE rail, not all of them. Adding every sensor to every rail put
+        # 12 V, 5 V and 3.3 V on the same pad: a short between three supplies that no router
+        # could resolve, because no board could.
+        if rail is sensor_rail:
+            loads += [f"{p['reference']}.V+" for p in parts
+                      if p["category"] == "connector" and p["value"] == "sensor"]
         # Output taps on this rail. A distribution board's whole job is these connectors, and
         # a rail that reaches none of them is a regulator with nowhere to send its current.
         tap = f"{rail['voltage']:g} V out"
@@ -485,6 +510,20 @@ def electrical_checks(spec: dict[str, Any], parts: list[dict[str, Any]],
 
     def check(name: str, ok: bool, detail: str) -> None:
         out.append({"check": name, "ok": bool(ok), "detail": detail})
+
+    # No pad may sit on two different supplies. This is the rule that would have caught the
+    # three shorted rails without needing a router to fail first.
+    supplies: dict[str, list[str]] = {}
+    for net in nets:
+        if not (net["name"].startswith("+") or net["name"].startswith("VIN")):
+            continue
+        for node in net["nodes"]:
+            supplies.setdefault(node, []).append(net["name"])
+    shorted = [f"{node} is on {' and '.join(names)}"
+               for node, names in supplies.items() if len(names) > 1]
+    check("No pad is on two supplies", not shorted,
+          f"{len(supplies)} supply pins, each on exactly one rail" if not shorted
+          else "; ".join(shorted[:3]))
 
     v_in = float(spec["input"].get("voltage") or 12.0)
     total_w = sum(float(r["voltage"]) * float(r["current_a"]) for r in spec["outputs"])
