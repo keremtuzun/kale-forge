@@ -1855,6 +1855,25 @@ function renderBoardDossier(spec){
     + row('Mounting', (board.mounting_holes||0) + ' holes<br><span class="note">'
         + (board.mounting_note||'') + '</span>')
     + '</dl></details>');
+  const lay = spec.layout;
+  if (lay && lay.placements && lay.placements.length){
+    const bad = (lay.checks||[]).filter(function(c){ return !c.ok; });
+    out.push('<details open><summary>Placement · ' + lay.placements.length
+      + ' parts</summary><p class="note">' + lay.board_mm[0] + ' x ' + lay.board_mm[1]
+      + ' mm outline, origin ' + lay.origin + '. ' + lay.package_note + '.</p>'
+      + '<dl class="kv">'
+      + (lay.checks||[]).map(function(c){
+          return row(c.check, (c.ok ? 'pass' : 'review')
+            + '<br><span class="note">' + c.detail + '</span>');
+        }).join('')
+      + '</dl>'
+      + '<details><summary>Every position</summary><dl class="kv">'
+      + lay.placements.map(function(pl){
+          return row(pl.reference, pl.x + ', ' + pl.y + ' mm · ' + pl.package
+            + '<br><span class="note">' + pl.why + '</span>');
+        }).join('')
+      + '</dl></details></details>');
+  }
   if (spec.power && spec.power.rails && spec.power.rails.length){
     out.push('<details open><summary>Power · ' + spec.power.total_w + ' W</summary><dl class="kv">'
       + spec.power.rails.map(function(r){

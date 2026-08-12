@@ -254,6 +254,16 @@ def _pcb(prompt: str, intent: dict[str, Any], **_: Any) -> dict[str, Any]:
     out = generate_board(prompt)
     out["designType"] = intent["design_type"]
     out["engine"] = "pcb"
+
+    # A placed board is geometry, so it goes through the same CAD document and the same
+    # validator as everything else. That is what puts a PCB in the 3D viewer and the STEP
+    # export: neither of them had to learn what a PCB is.
+    assembly = out.pop("cad_assembly", None)
+    if assembly:
+        cad = require_valid_cad(normalize_cad(_cad_envelope([assembly])))
+        out["cad"] = cad
+        out["integrity"] = structural_report(cad)
+        out["editable_manifest"] = editable_manifest(cad)
     return out
 
 

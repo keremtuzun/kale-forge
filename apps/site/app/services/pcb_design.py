@@ -17,13 +17,14 @@ than having no feature at all:
      on the five-stage ladder below. A board with a netlist and no placement says so.
 
         SCHEMATIC_COMPLETE     every net is defined and every pin is accounted for
-        PLACEMENT_COMPLETE     every component has a position on the board
+        PLACEMENT_COMPLETE     every component has a checked position on the board
         ROUTING_COMPLETE       every net is a copper path
         RULE_CHECK_COMPLETE    DRC and ERC have run and passed
         MANUFACTURING_READY    gerbers, drill, netlist and BOM all exist and agree
 
-Where this implementation currently reaches is stated by `STAGE_STATUS` and returned on
-every board. It is not `MANUFACTURING_READY` and does not pretend to be.
+Where this implementation reaches is returned on every board, and it is decided per board
+rather than declared: schematic always, placement when the placement actually passes its own
+geometric checks. It is not `MANUFACTURING_READY` and does not pretend to be.
 
 Stdlib-only.
 """
@@ -34,6 +35,7 @@ import re
 from typing import Any
 
 from app.services import engineering_calc as calc
+from app.services import pcb_layout
 from app.services.design_intent import (
     ASSUMED, CALCULATED, INFERRED, UNRESOLVED, USER_PROVIDED, VERIFIED)
 
@@ -50,9 +52,12 @@ STAGE_STATUS: dict[str, dict[str, Any]] = {
         "done": True,
         "detail": "nets, pins and connectivity are generated and internally consistent"},
     "PLACEMENT_COMPLETE": {
+        # Implemented. Still per-board: the flag below is the default, and `completion()`
+        # overrides it with whether THIS board's placement actually passed its checks.
         "done": False,
-        "detail": "components are grouped into functional blocks with board area budgeted, "
-                  "but no component has an x/y position yet"},
+        "detail": "every component has an x/y position on a real outline, checked for edge "
+                  "keepout, courtyard overlap, mounting-hole clearance and decoupling "
+                  "distance — this board did not pass those checks"},
     "ROUTING_COMPLETE": {
         "done": False,
         "detail": "no autorouter is wired up; nets exist as connectivity, not as copper"},
@@ -66,12 +71,28 @@ STAGE_STATUS: dict[str, dict[str, Any]] = {
 }
 
 
-def completion() -> dict[str, Any]:
-    reached = [s for s in STAGES if STAGE_STATUS[s]["done"]]
-    return {"stages": [{"stage": s, **STAGE_STATUS[s]} for s in STAGES],
-            "reached": reached[-1] if reached else "NONE",
-            "summary": ("Schematic-level design. This board is a connectivity and component "
-                        "plan, not a manufacturable layout.")}
+def completion(placed: bool = False, placed_detail: str = "") -> dict[str, Any]:
+    """Where THIS board actually got to.
+
+    `placed` is not a claim this module makes about itself — it is the result of running the
+    placement checks on this specific board. A generator that could place a simple board and
+    could not place a crowded one has to say so per board, or the ladder is decoration.
+    """
+    status = {s: dict(STAGE_STATUS[s]) for s in STAGES}
+    if placed:
+        status["PLACEMENT_COMPLETE"] = {
+            "done": True,
+            "detail": placed_detail or ("every component has a checked position on the "
+                                        "board outline")}
+    reached = [s for s in STAGES if status[s]["done"]]
+    top = reached[-1] if reached else "NONE"
+    summary = ("Schematic-level design. This board is a connectivity and component plan, "
+               "not a manufacturable layout.")
+    if top == "PLACEMENT_COMPLETE":
+        summary = ("Schematic and placement. Every part has a checked position on a real "
+                   "outline; no copper is routed, so this is not manufacturable yet.")
+    return {"stages": [{"stage": s, **status[s]} for s in STAGES],
+            "reached": top, "summary": summary}
 
 
 # ── component representation ─────────────────────────────────────────────────
@@ -275,8 +296,13 @@ def select_components(spec: dict[str, Any]) -> list[dict[str, Any]]:
             requirement=(f"{v_out:g} V {topology} regulator, >= {amps:g} A out, "
                          f">= {max(v_in * 1.5, 16):g} V input rating"),
             source=UNRESOLVED, pins=["VIN", "GND", "VOUT", "EN", "FB"]))
-        parts.append(passive(nref("C"), "capacitor", "10uF", "0805"))
-        parts.append(passive(nref("C"), "capacitor", "22uF", "0805"))
+        # Tagged with what they decouple, so the placer can put them against it and the
+        # placement checks can measure whether it actually did.
+        reg_ref = parts[-1]["reference"]
+        for value in ("10uF", "22uF"):
+            cap = passive(nref("C"), "capacitor", value, "0805")
+            cap["decouples"] = reg_ref
+            parts.append(cap)
         if topology == "switching":
             parts.append(component(
                 nref("L"), "inductor", value="4.7uH",
@@ -494,9 +520,16 @@ def generate_board(prompt: str) -> dict[str, Any]:
     else:
         side = math.sqrt(area_mm2 * 1.35)
         size = [round(max(25.0, side), 1), round(max(20.0, side * 0.72), 1)]
+
+    layout = pcb_layout.place(spec, parts, size)
+    size = layout["board_mm"]
+    if not stated:
+        # Stated after placement, because the outline is a RESULT of the parts fitting on it
+        # rather than a guess made before anyone tried.
         spec["assumptions"].append(
-            f"board estimated at {size[0]:g} x {size[1]:g} mm from the component count; no "
-            "size was given")
+            f"board sized at {size[0]:g} x {size[1]:g} mm — the smallest outline the placer "
+            "could fit these parts on with its keepouts; no size was given")
+    checks = checks + layout["checks"]
 
     bom: list[dict[str, Any]] = []
     for part in parts:
@@ -505,21 +538,34 @@ def generate_board(prompt: str) -> dict[str, Any]:
                     "mpn": part["mpn"], "requirement": part["requirement"],
                     "verified": part["verified"], "source": part["source"]})
 
+    name = _board_name(spec, prompt)
+    failed = [c["check"] for c in layout["checks"] if not c["ok"]]
     return {
-        "name": _board_name(spec, prompt),
+        "name": name,
         "electronics": spec,
         "components": parts,
         "nets": nets,
         "checks": checks,
         "bom": bom,
+        "layout": layout,
+        # The placed board as geometry, in the same CAD document a robot or a bearing block
+        # produces — which is what puts a PCB in the 3D viewer and the STEP export without
+        # either of them learning what a PCB is.
+        "cad_assembly": pcb_layout.board_assembly(name, layout, parts, layers),
         "board": {"layers": layers, "size_mm": size,
                   "size_source": stated["source"] if stated else ASSUMED,
-                  "mounting_holes": 4,
-                  "mounting_note": "M3 at the corners, 3.5 mm from each edge"},
+                  "mounting_holes": len(layout["mounting_holes"]),
+                  "mounting_note": "M3 at the corners, 3.5 mm from each edge",
+                  "placement": "checked" if layout["complete"] else "; ".join(failed),
+                  "package_note": pcb_layout.PACKAGE_NOTE},
         "power": calc.power_budget([
             {"name": f"{r['voltage']:g} V", "voltage": r["voltage"], "current_a": r["current_a"]}
             for r in spec["outputs"]]),
-        "completion": completion(),
+        "completion": completion(
+            layout["complete"],
+            f"{len(layout['placements'])} components placed on a "
+            f"{layout['board_mm'][0]:g} x {layout['board_mm'][1]:g} mm outline; edge keepout, "
+            f"courtyard overlap, mounting-hole clearance and decoupling distance all check out"),
         "exports": {"kicad_pro": False, "kicad_sch": False, "kicad_pcb": False,
                     "gerbers": False, "bom_csv": True,
                     "note": ("KiCad source generation is not implemented. The netlist and BOM "

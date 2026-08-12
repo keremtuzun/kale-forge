@@ -324,10 +324,61 @@ def test_a_generated_board_states_how_far_it_actually_got():
     out = route("Design a CAN sensor PCB with 4 CAN connectors and 12V input.")
     stages = {s["stage"]: s["done"] for s in out["completion"]["stages"]}
     assert stages["SCHEMATIC_COMPLETE"] is True
-    # Everything past the schematic is not implemented, and has to say so.
+    assert stages["PLACEMENT_COMPLETE"] is True
+    # Everything past placement is not implemented, and has to say so.
     assert stages["ROUTING_COMPLETE"] is False
+    assert stages["RULE_CHECK_COMPLETE"] is False
     assert stages["MANUFACTURING_READY"] is False
     assert not out["exports"]["gerbers"]
+
+
+# ── placement ────────────────────────────────────────────────────────────────
+@pytest.mark.parametrize("prompt", _BOARDS)
+def test_every_board_is_actually_placed(prompt):
+    """PLACEMENT_COMPLETE is a claim, so it has to be earned per board."""
+    out = route(prompt)
+    layout = out["layout"]
+    assert len(layout["placements"]) == len(out["components"]), "a part with no position"
+    failed = [c for c in layout["checks"] if not c["ok"]]
+    assert not failed, f"{prompt!r} placement fails its own checks: {failed}"
+    stages = {s["stage"]: s["done"] for s in out["completion"]["stages"]}
+    assert stages["PLACEMENT_COMPLETE"] is True
+
+
+@pytest.mark.parametrize("prompt", _BOARDS)
+def test_no_two_components_occupy_the_same_space(prompt):
+    """Independent of the module's own overlap check — recomputed here from the output."""
+    placed = route(prompt)["layout"]["placements"]
+    for i, a in enumerate(placed):
+        for b in placed[i + 1:]:
+            dx = abs(a["x"] - b["x"]) * 2
+            dy = abs(a["y"] - b["y"]) * 2
+            apart = (dx >= a["court_mm"][0] + b["court_mm"][0]
+                     or dy >= a["court_mm"][1] + b["court_mm"][1])
+            assert apart, f"{a['reference']} and {b['reference']} overlap"
+
+
+def test_decoupling_sits_against_the_part_it_decouples():
+    out = route("Design a 12V to 5V and 3.3V regulator board for a robot.")
+    seats = {p["reference"]: p for p in out["layout"]["placements"]}
+    pairs = [(c["reference"], c["decouples"]) for c in out["components"]
+             if c.get("decouples")]
+    assert pairs, "the regulators should have decoupling to place"
+    for cap, owner in pairs:
+        a, b = seats[cap], seats[owner]
+        distance = ((a["x"] - b["x"]) ** 2 + (a["y"] - b["y"]) ** 2) ** 0.5
+        assert distance <= 5.0, f"{cap} is {distance:.1f} mm from {owner}"
+
+
+def test_a_placed_board_appears_in_the_3d_viewer():
+    """The board goes through the same CAD document as a robot, so it draws for free."""
+    out = route("Design a CAN sensor PCB with 4 CAN connectors and 12V input.")
+    cad = out["cad"]
+    features = cad["assemblies"][0]["features"]
+    assert features[0]["t"] == "plate", "the substrate is a body in the scene"
+    assert len(features[0]["bores"]) == 4, "four M3 mounting holes, bored"
+    # One body per placed component, plus the substrate.
+    assert len(features) == len(out["layout"]["placements"]) + 1
 
 
 # ── the acceptance test the whole change exists for ──────────────────────────
