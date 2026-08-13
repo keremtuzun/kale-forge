@@ -35,9 +35,9 @@ html.intro-armed,html.intro-armed body{overflow:hidden}
 .intro-count{font:500 clamp(34px,5vw,58px)/1 var(--mono);letter-spacing:-.04em;font-variant-numeric:tabular-nums}
 .intro-count b{font-weight:500}
 .intro-count i{font-style:normal;font-size:.34em;color:var(--muted);margin-left:8px;letter-spacing:.14em}
-#enter{appearance:none;display:inline-flex;align-items:center;justify-content:space-between;gap:28px;min-width:230px;padding:16px 20px;border:0;background:var(--ink);color:var(--bg);font:700 13px var(--sans);cursor:pointer;opacity:0;transform:translateY(10px);pointer-events:none;transition:opacity .45s ease,transform .45s ease,background .16s}
+#enter{appearance:none;display:inline-flex;align-items:center;justify-content:space-between;gap:28px;min-width:230px;padding:15px 20px;border:0;border-radius:2px;background:var(--accent);color:#000;font:700 15px var(--display);letter-spacing:.12em;text-transform:uppercase;cursor:pointer;opacity:0;transform:translateY(10px);pointer-events:none;transition:opacity .45s ease,transform .45s ease,background .16s}
 #enter.ready{opacity:1;transform:none;pointer-events:auto}
-#enter:hover{background:var(--accent)}
+#enter:hover{background:#fff06a}
 .intro-skip{position:absolute;right:0;bottom:-34px;background:none;border:0;padding:6px 0;color:var(--muted);font:700 10px var(--mono);letter-spacing:.16em;cursor:pointer}
 .intro-skip:hover{color:var(--ink)}
 

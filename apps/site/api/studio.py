@@ -793,7 +793,7 @@ PAGE = r"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Design Studio | Rams Forge</title>
-<meta name="description" content="Describe hardware at any scale — a bearing block, a subsystem, a PCB or a complete FRC robot — and get an engineered design with a one-to-one 3D model.">
+<meta name="description" content="Describe hardware at any scale, a bearing block, a subsystem, a PCB or a complete FRC robot, and get an engineered design with a one-to-one 3D model.">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;900&family=Share+Tech+Mono&display=swap');
   :root{
@@ -848,7 +848,7 @@ PAGE = r"""<!doctype html>
   .note{color:var(--muted);font-size:12px;line-height:1.5;margin:6px 0 0}
   /* Reference material the design is derived from, folded away by default. It is kept rather
      than trimmed because every row carries the rule it came from, which is the part worth
-     reading once you care — but it should not be the first thing between you and the robot. */
+     reading once you care, but it should not be the first thing between you and the robot. */
   .dossier details{margin:18px 0 0;border-top:1px solid var(--line);padding-top:8px}
   .dossier details summary{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:10px;align-items:baseline}
   .dossier details summary::-webkit-details-marker{display:none}
@@ -1034,12 +1034,12 @@ PAGE = r"""<!doctype html>
 <div id="onshape-modal" hidden>
   <div class="gate-card" role="dialog" aria-modal="true" aria-labelledby="os-title" style="width:min(92vw,440px)">
     <h1 id="os-title" style="font-size:19px;letter-spacing:-.02em;margin:0">Get this design into CAD</h1>
-    <p style="color:var(--muted);font-size:13px;line-height:1.55;margin:8px 0 0">Download the design as a <b>STEP file</b>. In Onshape, upload it into a document, then <b>right-click the uploaded file's tab → Import… → Import to this document</b> — Onshape stores uploads as plain files until you ask it to translate, so without this step you only see a download card. After the import (a minute or two for a full robot) every part is a separate, named, coloured <b>editable solid</b>; Onshape creates Part Studios and Assemblies as the file's structure needs (or combine into a single Part Studio at import). Fusion, SolidWorks and FreeCAD open the file directly. Structure and gearing carry true dimensions, tooth counts and bores; belts and chains are wrapped loops; motors, gearboxes and electronics are catalog envelopes and their part names say so. Concept geometry to keep engineering — never a frozen mesh, never a claim beyond what was modelled. No account keys, no setup.</p>
+    <p style="color:var(--muted);font-size:13px;line-height:1.55;margin:8px 0 0">Download the design as a <b>STEP file</b>. In Onshape, upload it into a document, then <b>right-click the uploaded file's tab → Import… → Import to this document</b>: Onshape stores uploads as plain files until you ask it to translate, so without this step you only see a download card. After the import (a minute or two for a full robot) every part is a separate, named, coloured <b>editable solid</b>; Onshape creates Part Studios and Assemblies as the file's structure needs (or combine into a single Part Studio at import). Fusion, SolidWorks and FreeCAD open the file directly. Structure and gearing carry true dimensions, tooth counts and bores; belts and chains are wrapped loops; motors, gearboxes and electronics are catalog envelopes and their part names say so. Concept geometry to keep engineering, never a frozen mesh, never a claim beyond what was modelled. No account keys, no setup.</p>
     <button class="btn primary" id="os-download" type="button" style="width:100%;margin-top:14px;padding:11px">Download .step</button>
     <div id="os-result" style="display:none;font-size:12px;line-height:1.5;margin:12px 0 0;border:1px solid var(--line);border-radius:8px;padding:8px 10px"></div>
     <details style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px">
       <summary style="font-size:12px;color:var(--muted);cursor:pointer">Advanced: parametric FeatureScript instead</summary>
-      <p style="color:var(--muted);font-size:12px;line-height:1.5;margin:8px 0 0">The fully parametric source — every dimension a named variable. Copy it into a Feature Studio yourself, or publish straight into your account with <a href="https://cad.onshape.com/appstore/dev-portal" target="_blank" rel="noopener" style="color:var(--brand);text-decoration:underline">Onshape API keys</a> (used once, never stored).</p>
+      <p style="color:var(--muted);font-size:12px;line-height:1.5;margin:8px 0 0">The fully parametric source, every dimension a named variable. Copy it into a Feature Studio yourself, or publish straight into your account with <a href="https://cad.onshape.com/appstore/dev-portal" target="_blank" rel="noopener" style="color:var(--brand);text-decoration:underline">Onshape API keys</a> (used once, never stored).</p>
       <label style="display:block;font:600 11px var(--sans);color:var(--muted);margin:11px 0 5px" for="os-access">Access key</label>
       <input id="os-access" autocomplete="off" style="width:100%;background:var(--bg);border:1px solid var(--line-strong);border-radius:8px;color:var(--ink);padding:9px 11px;font:500 13px var(--mono)">
       <label style="display:block;font:600 11px var(--sans);color:var(--muted);margin:11px 0 5px" for="os-secret">Secret key</label>
@@ -1202,7 +1202,7 @@ $('#cancel') && $('#cancel').addEventListener('click', () => {
   q.focus();
 });
 
-// The details panel starts closed and its arrow must work straight away — before any design
+// The details panel starts closed and its arrow must work straight away, before any design
 // exists. It used to be wired inside wireControls(), which only runs once a scene has been
 // built, so on a fresh page the arrow did nothing.
 //
@@ -1222,7 +1222,7 @@ $('#cancel') && $('#cancel').addEventListener('click', () => {
   });
 })();
 // The CAD export dialog must be closable from the moment the page exists. Its buttons used
-// to be wired only inside wireControls(), which runs after the first design is generated —
+// to be wired only inside wireControls(), which runs after the first design is generated -
 // so if the dialog was ever visible before then, it sat over the whole studio with a Close
 // button that did nothing, and every control underneath was unreachable.
 // Keyboard users must be able to get into a dialog, stay inside it while it is open,
@@ -1317,7 +1317,7 @@ grow(q);
 
 // ── design type ────────────────────────────────────────────────────────────
 // AUTO is the default and means "work out what I am asking for". The selector exists for
-// the times the words are ambiguous and the user already knows — "make a gearbox" is a
+// the times the words are ambiguous and the user already knows, "make a gearbox" is a
 // reasonable request for either an assembly or the plate that carries it.
 let designKind = 'auto';
 const kindButtons = Array.from(document.querySelectorAll('[data-kind]'));
@@ -1404,7 +1404,7 @@ function loadSeasons(){
       return o;
     })());
     setViewMessage('Season rule data did not load. Reload the page to retry, or generate '
-                   + 'as off-season — explicitly without competition rule checks.');
+                   + 'as off-season, explicitly without competition rule checks.');
   });
 }
 loadSeasons();
@@ -1445,7 +1445,7 @@ function setViewMessage(text){
 // already worked out what it needs to know; burying that in one sentence wastes it.
 function showQuestions(err, host){
   // Questions arrive as {question, examples}; violations as {detail}. Both are flattened
-  // to a sentence here, and the examples come along — they are the fastest way for
+  // to a sentence here, and the examples come along, they are the fastest way for
   // someone to answer, and dropping them made a refusal feel like a dead end.
   const items = (err.questions || []).map(q => {
     const text = (q && q.question) || String(q);
@@ -1494,7 +1494,7 @@ form.addEventListener('submit', async (e) => {
   setGenState('generating');
   try {
     // One request does everything: the function validates and builds FIRST, then
-    // commits the revision/creation to the store — so Cancel has exactly one thing
+    // commits the revision/creation to the store, so Cancel has exactly one thing
     // to abort, and a rejected edit never enters the history.
     const request = (isRevision && designId)
       ? { designId: designId, revision: prompt, baseRevision: revisionNumber,
@@ -1583,7 +1583,7 @@ revisionForm.addEventListener('submit', (e) => {
     $('#revision-note').textContent = 'Describe the edit in a few more words, then apply it.';
     return;
   }
-  // With a stored design the edit alone is queued — the chain is composed and
+  // With a stored design the edit alone is queued, the chain is composed and
   // committed server-side, after validation. Only a design that was never saved
   // (store down at creation) still carries its prompt client-side.
   queuedRevisionPrompt = designId
@@ -1600,7 +1600,7 @@ revisionForm.addEventListener('submit', (e) => {
 // the design rebuilt from it, so history and geometry can never disagree.
 // A real history: every step of the chain, each restorable. The list is read
 // straight from the store; a read failure just hides the panel for this render
-// and tries again next time — it never changes how revisions work.
+// and tries again next time, it never changes how revisions work.
 async function renderHistory(){
   const box = $('#history');
   if (!box) return;
@@ -1638,7 +1638,7 @@ async function restoreTo(revision){
   const note = $('#revision-note');
   queuedRevisionPrompt = '';
   // One transactional request: the function rebuilds the truncated chain FIRST and
-  // rewinds the stored history only if that build succeeds — the store can never
+  // rewinds the stored history only if that build succeeds, the store can never
   // sit at a revision the screen is not showing.
   $('#view-empty').style.display='grid'; setGenState('generating');
   const r = await apiPost('/api/studio/designs',
@@ -1710,7 +1710,7 @@ syncEditExamples('robot');
 // escapeDeep() before it can reach innerHTML, so an image/svg/anchor/script payload renders
 // as visible inert text.
 //
-// NB: never write a literal closing script tag in this file, not even inside a comment —
+// NB: never write a literal closing script tag in this file, not even inside a comment -
 // the HTML parser ends the inline script element at the first one it sees, whatever the
 // JavaScript context, and everything after it becomes live markup.
 // Mirrors the server's allowlist: https only, on a known Onshape host, no embedded
@@ -1784,8 +1784,8 @@ function renderPartDossier(spec){
   }
   const mat = spec.material||{}, proc = spec.process||{}, mass = spec.mass||{};
   out.push('<details open><summary>Material and fabrication</summary><dl class="kv">'
-    + row('Material', (mat.name||'—') + src(mat.source))
-    + row('Process', (proc.name||'—') + src(proc.source))
+    + row('Material', (mat.name||'-') + src(mat.source))
+    + row('Process', (proc.name||'-') + src(proc.source))
     + (mass.value != null
         ? row('Mass', mass.value + ' lb' + src(mass.source)
             + '<br><span class="note">' + (mass.covers || '')
@@ -1814,7 +1814,7 @@ function renderPartDossier(spec){
   if (gaps.length){
     out.push('<details open><summary>Unresolved · ' + gaps.length + '</summary>'
       + '<p class="note">Needed, not known, and not safe to invent.</p><ul class="list">'
-      + gaps.map(function(r){ return '<li>' + r.label + ' — ' + (r.note||'') + '</li>'; }).join('')
+      + gaps.map(function(r){ return '<li>' + r.label + ': ' + (r.note||'') + '</li>'; }).join('')
       + '</ul></details>');
   }
   if (spec.hardware && spec.hardware.length){
@@ -1827,7 +1827,7 @@ function renderPartDossier(spec){
   }
   if (spec.risks && spec.risks.length){
     out.push('<details><summary>Risks and checks · ' + spec.risks.length + '</summary><ul class="list">'
-      + spec.risks.map(function(r){ return '<li><b>' + r.severity + '</b> — ' + r.detail + '</li>'; }).join('')
+      + spec.risks.map(function(r){ return '<li><b>' + r.severity + '</b>: ' + r.detail + '</li>'; }).join('')
       + '</ul></details>');
   }
   if (spec.parameters){
@@ -1857,9 +1857,9 @@ function renderBoardDossier(spec){
           + '<br><span class="note">' + st.detail + '</span>');
       }).join('') + '</dl></details>');
   out.push('<details open><summary>Board</summary><dl class="kv">'
-    + row('Layers', board.layers || '—')
-    + row('Size', board.size_mm ? board.size_mm[0] + ' x ' + board.size_mm[1] + ' mm' + src(board.size_source) : '—')
-    + row('Input', (el.input && el.input.voltage != null) ? el.input.voltage + ' V' + src(el.input.source) : '—')
+    + row('Layers', board.layers || '-')
+    + row('Size', board.size_mm ? board.size_mm[0] + ' x ' + board.size_mm[1] + ' mm' + src(board.size_source) : '-')
+    + row('Input', (el.input && el.input.voltage != null) ? el.input.voltage + ' V' + src(el.input.source) : '-')
     + row('Mounting', (board.mounting_holes||0) + ' holes<br><span class="note">'
         + (board.mounting_note||'') + '</span>')
     + '</dl></details>');
@@ -1907,7 +1907,7 @@ function renderBoardDossier(spec){
       + 'so a bug in the router shows up here instead of being confirmed by it.</p>'
       + '<ul class="list">'
       + spec.drc.map(function(c){
-          return '<li><b>' + (c.ok ? 'pass' : 'review') + '</b> — ' + c.check + ': '
+          return '<li><b>' + (c.ok ? 'pass' : 'review') + '</b>: ' + c.check + ': '
             + c.detail + '</li>'; }).join('')
       + '</ul></details>');
   }
@@ -1939,7 +1939,7 @@ function renderBoardDossier(spec){
     out.push('<details ' + (bad ? 'open' : '') + '><summary>Checks · '
       + (spec.checks.length - bad) + ' passed, ' + bad + ' to review</summary><ul class="list">'
       + spec.checks.map(function(c){
-          return '<li><b>' + (c.ok ? 'ok' : 'review') + '</b> — ' + c.check + ': ' + c.detail + '</li>';
+          return '<li><b>' + (c.ok ? 'ok' : 'review') + '</b>: ' + c.check + ': ' + c.detail + '</li>';
         }).join('') + '</ul></details>');
   }
   if ((el.assumptions||[]).length){
@@ -1951,7 +1951,7 @@ function renderBoardDossier(spec){
     + row('BOM', ex.bom_csv ? 'available' : 'not available')
     + row('KiCad source', ex.kicad_sch ? 'available' : 'not generated')
     + row('Gerbers', ex.gerbers ? 'available' : 'not generated')
-    + row('STEP', ex.step ? 'available — board, parts and copper' : 'not available')
+    + row('STEP', ex.step ? 'available, board, parts and copper' : 'not available')
     + '</dl></details>');
   return out.join('');
 }
@@ -1996,7 +1996,7 @@ function renderDossier(rawSpec){
     const rows = `<dl class="kv">
       ${checks.map(c=>row(c.check+' ('+c.rule+')', (c.ok?'pass':'FAILS')+': '+c.detail)).join('')}
     </dl>`;
-    const caveat = `<p class="note">These are the four automatically checked rule-envelope constraints. Many failure modes are not checked — interference, shaft stress, current limits, CG, fatigue — and passing is not an inspection.</p>`;
+    const caveat = `<p class="note">These are the four automatically checked rule-envelope constraints. Many failure modes are not checked, interference, shaft stress, current limits, CG, fatigue, and passing is not an inspection.</p>`;
     if (bad.length){
       // A failing check is the one thing on this page nobody should have to open a fold to see.
       partHtml.push(`<h2>Construction rule check</h2>`+rows);
@@ -2171,7 +2171,7 @@ function renderDossier(rawSpec){
     </dl>`);
     if (integ){
       partHtml.push(integ.ok
-        ? `<p class="note">Every one of the ${integ.bodies} bodies is in contact with structure and every assembly has a mount path back to the chassis — ${integ.contacts} contacts verified at ±${integ.tolerance_in} in. Feet sit on crossmembers, gearboxes on plates, bolts at every joint.</p>`
+        ? `<p class="note">Every one of the ${integ.bodies} bodies is in contact with structure and every assembly has a mount path back to the chassis, ${integ.contacts} contacts verified at ±${integ.tolerance_in} in. Feet sit on crossmembers, gearboxes on plates, bolts at every joint.</p>`
         : `<p class="note"><b>Assembly connectivity flagged:</b> ${(integ.floating||[]).concat(integ.unreached_assemblies||[]).slice(0,6).join(' · ')}</p>`);
     }
     partHtml.push(`<ul class="sslist">`+cad.assemblies.map(a=>
@@ -2256,7 +2256,7 @@ function wireControls(){
         throw new Error(msg);
       }
       const blob=await r.blob();
-      // A proxy error page is HTTP 200 HTML — it must not be saved as a .step file.
+      // A proxy error page is HTTP 200 HTML, it must not be saved as a .step file.
       const head=await blob.slice(0, 32).text();
       if(!head.startsWith('ISO-10303')) throw new Error('The server did not return a STEP file. Try again.');
       const dispo=r.headers.get('Content-Disposition')||'';
@@ -2266,7 +2266,7 @@ function wireControls(){
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(()=>URL.revokeObjectURL(a.href), 60000);
       const parts=r.headers.get('X-Kale-Parts');
-      osResult.textContent='Downloaded ✓ In Onshape: open a document and drag the file in (or Insert → Import) — '+(parts?parts+' ':'')+'named editable solids arrive in a Part Studio.';
+      osResult.textContent='Downloaded ✓ In Onshape: open a document and drag the file in (or Insert → Import), '+(parts?parts+' ':'')+'named editable solids arrive in a Part Studio.';
     } catch(err){ osResult.textContent='Download failed: '+err.message; }
     b.disabled=false; b.textContent='Download .step';
   });
@@ -2293,7 +2293,7 @@ function wireControls(){
     const b=$('#os-create');
     const access=$('#os-access').value.trim(), secret=$('#os-secret').value.trim();
     osResult.style.display='block';
-    if(!access||!secret){ osResult.textContent='Both API keys are needed — create them in the Onshape developer portal.'; return; }
+    if(!access||!secret){ osResult.textContent='Both API keys are needed, create them in the Onshape developer portal.'; return; }
     b.disabled=true; b.textContent='Publishing…'; osResult.textContent='Creating the document and writing the Feature Studio…';
     try {
       const rr=await apiPost('/api/studio/designs/onshape',
@@ -2303,7 +2303,7 @@ function wireControls(){
       // A URL from the backend is untrusted: only an https link on a known Onshape host is
       // ever turned into an anchor, and it is built as an element rather than markup.
       osResult.replaceChildren();
-      osResult.append('Published as editable FeatureScript ✓ — ');
+      osResult.append('Published as editable FeatureScript ✓, ');
       if (safeOnshapeUrl(d.url)) {
         const a=document.createElement('a');
         a.href=d.url; a.target='_blank'; a.rel='noopener noreferrer external';
