@@ -19,6 +19,17 @@ retrieval = ["sentence-transformers>=3.0"]  # heavy (torch); hash-fallback embed
 postgres = ["psycopg[binary]>=3.1"]
 redis = ["redis>=5.0"]
 dev = ["pytest>=8.0", "ruff>=0.5"]
+# Serving path for the v18 design adapter, which is a PEFT LoRA over Qwen3-4B-Instruct-2507
+# rather than an MLX adapter like v15..v17.  lm-format-enforcer is not optional: the
+# Transformers provider refuses to sample a structured request without it rather than emit
+# unconstrained JSON, so leaving it out degrades every design to deterministic synthesis.
+transformers = [
+    "torch>=2.3",
+    "transformers>=4.44",
+    "peft>=0.12",
+    "accelerate>=0.33",
+    "lm-format-enforcer>=0.11,<1",
+]
 
 [build-system]
 requires = ["setuptools>=68"]

@@ -1,0 +1,149 @@
+{
+  "source_lessons": [
+    "3.hafta",
+    "4.hafta"
+  ],
+  "method": [
+    "master pivot and roller datums",
+    "mirrored side plates",
+    "bearing-supported shafts",
+    "outboard drive plate and standoffs",
+    "pitch-derived pulley centre distance",
+    "belt path and tensioner",
+    "tangent indexer handoff",
+    "assembly and interference verification"
+  ],
+  "prompt": "27 x 27 inch 2026 REBUILT robot on MK4i swerve with a dual-roller over-bumper intake, circular spindexer, turreted hooded shooter, and telescoping climber",
+  "design_name": "SDS MK4i Intake robot | 2026 REBUILT",
+  "intake_feature_count": 45,
+  "structural": {
+    "version": "kale-integrity-1.0",
+    "tolerance_in": 0.08,
+    "bodies": 273,
+    "contacts": 1139,
+    "floating": [],
+    "unreached_assemblies": [],
+    "ok": true,
+    "caveat": "AABB contact audit at ±0.08 in against the shared geometry conventions. A pass means every body touches structure and every assembly chains back to the chassis; it is packaging-level, not a fastener-torque claim."
+  },
+  "transmission": {
+    "ok": true,
+    "issues": [],
+    "checked": "gear pairs must sit at the sum of their pitch radii; belt and chain endpoints must land on pulley or sprocket centres; coplanar pulleys and sprockets may not render through one another"
+  },
+  "rule_report": {
+    "version": "kale-rules-1.0",
+    "season": "2026 REBUILT",
+    "envelope": {
+      "bodies": 273,
+      "measured": true,
+      "min_in": [
+        -16.81,
+        -1.125,
+        -20.17
+      ],
+      "max_in": [
+        18.275,
+        28.04,
+        16.81
+      ],
+      "width_in": 35.085,
+      "depth_in": 36.98,
+      "height_in": 29.165,
+      "ground_y_in": -1.125,
+      "tallest_part": "climb stage 2",
+      "tallest_part_top_in": 29.165,
+      "below_floor": []
+    },
+    "checks": [
+      {
+        "rule": "R107",
+        "check": "total height",
+        "measured": 29.165,
+        "limit": 30.0,
+        "unit": "in",
+        "ok": true,
+        "kind": "automatic",
+        "detail": "tallest solid (climb stage 2) at 29.2 in"
+      },
+      {
+        "rule": "R104",
+        "check": "frame perimeter",
+        "measured": 108.0,
+        "limit": 110.0,
+        "unit": "in",
+        "ok": true,
+        "kind": "automatic",
+        "detail": "27 x 27 in frame"
+      },
+      {
+        "rule": "R105",
+        "check": "horizontal extension",
+        "measured": 4.99,
+        "limit": 12.0,
+        "unit": "in",
+        "ok": true,
+        "kind": "automatic",
+        "detail": "measured from the frame perimeter to the outermost solid"
+      },
+      {
+        "rule": "R103",
+        "check": "estimated mass",
+        "measured": 121.4,
+        "limit": 115.0,
+        "unit": "lb",
+        "ok": false,
+        "kind": "estimated",
+        "detail": "summed from modelled part volumes; not a scale reading"
+      }
+    ],
+    "passed": [
+      {
+        "rule": "R107",
+        "check": "total height",
+        "measured": 29.165,
+        "limit": 30.0,
+        "unit": "in",
+        "ok": true,
+        "kind": "automatic",
+        "detail": "tallest solid (climb stage 2) at 29.2 in"
+      },
+      {
+        "rule": "R104",
+        "check": "frame perimeter",
+        "measured": 108.0,
+        "limit": 110.0,
+        "unit": "in",
+        "ok": true,
+        "kind": "automatic",
+        "detail": "27 x 27 in frame"
+      },
+      {
+        "rule": "R105",
+        "check": "horizontal extension",
+        "measured": 4.99,
+        "limit": 12.0,
+        "unit": "in",
+        "ok": true,
+        "kind": "automatic",
+        "detail": "measured from the frame perimeter to the outermost solid"
+      }
+    ],
+    "failed": [],
+    "estimated": [
+      {
+        "rule": "R103",
+        "check": "estimated mass",
+        "measured": 121.4,
+        "limit": 115.0,
+        "unit": "lb",
+        "ok": false,
+        "kind": "estimated",
+        "detail": "summed from modelled part volumes; not a scale reading"
+      }
+    ],
+    "ok": true,
+    "export_blocked": false,
+    "caveat": "Automatic checks measured against the generated solids. They are not an inspection: weight is estimated from modelled volumes, and anything not listed here was not checked."
+  }
+}

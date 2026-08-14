@@ -22,6 +22,7 @@ import hashlib
 import math
 import random
 import re
+from pathlib import Path
 from typing import Any
 
 from app.config import get_settings
@@ -92,8 +93,29 @@ _INCH = r'(?:in(?:ch(?:es)?)?|\")'
 # ─────────────────────────────────────────────────────────────────────────────
 # Small parsing helpers
 # ─────────────────────────────────────────────────────────────────────────────
+class DesignNotBuildable(ValueError):
+    """The request cannot be compiled as asked.
+
+    Carries the gate result (state, questions, violations) so the API can answer with a
+    clarification prompt or a rule citation instead of a robot nobody asked for.
+    """
+
+    def __init__(self, gate_result: dict) -> None:
+        super().__init__(gate_result.get("reason", "design not buildable"))
+        self.gate = gate_result
+
+
 def _seed(prompt: str) -> random.Random:
-    digest = hashlib.sha256(prompt.strip().lower().encode()).hexdigest()
+    """Seeded from the ORIGINAL request only, never the revision text.
+
+    Every choice the prompt leaves open is drawn from this stream. Seeding it from the full
+    prompt meant that ANY revision — "make the flywheel 6 inches" — reshuffled every seeded
+    choice on the robot: mechanism types flipped, roller sizes changed, the flywheel the
+    edit asked about could come back *smaller*. An edit must change what it names and
+    nothing else, so the seed is pinned to the request as it stood before any revision.
+    """
+    base = re.split(r"revision request:", prompt, maxsplit=1, flags=re.I)[0]
+    digest = hashlib.sha256(base.strip().lower().encode()).hexdigest()
     return random.Random(int(digest[:16], 16))
 
 
@@ -124,9 +146,14 @@ def _count(text: str, noun: str, default: int) -> int:
 
 
 def _pick_type(text: str, options: tuple[str, ...], keywords: dict[str, str], fallback: str) -> str:
-    for keyword, option in keywords.items():
-        if re.search(keyword, text, re.I):
-            return option
+    segments = [text]
+    if "revision request:" in text.lower():
+        base, latest = re.split(r"revision request:", text, maxsplit=1, flags=re.I)
+        segments = [latest, base]
+    for segment in segments:
+        for keyword, option in keywords.items():
+            if re.search(keyword, segment, re.I):
+                return option
     return fallback
 
 
@@ -135,8 +162,10 @@ def _pick_type(text: str, options: tuple[str, ...], keywords: dict[str, str], fa
 # ─────────────────────────────────────────────────────────────────────────────
 INTENT_SCHEMA: dict[str, Any] = {
     "type": "object",
+    "additionalProperties": False,
     "properties": {
-        "subsystems": {"type": "array", "items": {"type": "string", "enum": list(SUBSYSTEM_NAMES)}},
+        "subsystems": {"type": "array", "items": {"type": "string", "enum": list(SUBSYSTEM_NAMES)},
+                       "uniqueItems": True, "maxItems": len(SUBSYSTEM_NAMES)},
         "drive_type": {"type": "string", "enum": ["swerve", "swerve-ready", "west-coast", "tank"]},
         "intake_type": {"type": "string", "enum": list(INTAKE_TYPES)},
         "hopper_type": {"type": "string", "enum": list(HOPPER_TYPES)},
@@ -144,12 +173,19 @@ INTENT_SCHEMA: dict[str, Any] = {
         "arm_type": {"type": "string", "enum": list(ARM_TYPES)},
         "climber_type": {"type": "string", "enum": list(CLIMBER_TYPES)},
         "elevator_architecture": {"type": "string", "enum": list(ELEVATOR_TYPES)},
-        "elevator_stages": {"type": "integer"},
+        "elevator_stages": {"type": "integer", "minimum": 1, "maximum": 4},
         "pneumatics": {"type": "boolean"},
-        "design_notes": {"type": "array", "items": {"type": "string"}},
-        "risks": {"type": "array", "items": {"type": "string"}},
+        "design_notes": {"type": "array", "items": {"type": "string", "maxLength": 220},
+                         "maxItems": 6},
+        "risks": {"type": "array", "items": {"type": "string", "maxLength": 220},
+                  "maxItems": 6},
     },
-    "required": ["subsystems"],
+    # drive_type is required, not optional. The llama.cpp provider compiles this schema into a
+    # decoding grammar, and an optional field is one the grammar lets the model skip — v18
+    # skipped it on every prompt of its first served run, so every design silently fell back to
+    # the "swerve" default no matter what the robot was for. A field the model is meant to
+    # decide has to be one the grammar makes it decide.
+    "required": ["subsystems", "drive_type"],
 }
 
 SYSTEM_DESIGN = """You are Kale Forge's self-hosted FRC design model. You turn a team's request \
@@ -240,6 +276,176 @@ def _model_intent(prompt: str, parsed: dict[str, Any],
     return result.json, provenance
 
 
+# Which assembly the model is asked to propose, most interesting first. One subsystem, not the
+# robot: a full robot of geometry is ~10k tokens of generation, and the measured failure mode
+# (a feature repeated until the budget dies) grows with output length.
+_GEOMETRY_CANDIDATES = ("shooter", "intake", "elevator", "arm", "climber", "hopper")
+
+
+def _first_json_object(text: str) -> dict[str, Any] | None:
+    """The first balanced JSON object in a completion, or None."""
+    import json as _json
+    start = text.find("{")
+    if start < 0:
+        return None
+    depth, in_string, escape = 0, False, False
+    for index in range(start, len(text)):
+        ch = text[index]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    return _json.loads(text[start:index + 1])
+                except _json.JSONDecodeError:
+                    return None
+    return None
+
+
+def _adopt_model_assembly(spec: dict[str, Any], proposal: Any,
+                          subsystem: str) -> tuple[bool, str]:
+    """Swap one compiled assembly for a model-proposed one — iff the whole robot still passes.
+
+    Pure so it can be tested without a model. The proposal replaces the matching assembly in a
+    COPY of the CAD tree, and the merged whole goes back through normalize + require_valid_cad:
+    the model's geometry earns its place by passing the exact gate the compiler's does, coincident
+    -body and duplicate-assembly checks included. Any failure leaves the spec untouched.
+    """
+    from copy import deepcopy
+
+    from app.services.cad_contract import (CadContractError, normalize_cad, require_valid_cad,
+                                           structural_errors)
+
+    if not isinstance(proposal, dict) or not isinstance(proposal.get("features"), list):
+        return False, "proposal is not an assembly object"
+    target = subsystem if subsystem != "arm" else "manipulator"
+    cad = deepcopy(spec["cad"])
+    slot = next((i for i, a in enumerate(cad["assemblies"]) if a.get("id") == target), None)
+    if slot is None:
+        return False, f"no {target!r} assembly to replace"
+    # The id is the merge key and the origin places the assembly in the robot; neither is the
+    # model's to move. Everything else — the features — is what it is proposing.
+    proposal = deepcopy(proposal)
+    proposal["id"] = target
+    proposal.setdefault("kind", cad["assemblies"][slot].get("kind", "mechanism"))
+    proposal["origin"] = cad["assemblies"][slot].get("origin", [0, 0, 0])
+    cad["assemblies"][slot] = proposal
+    try:
+        spec_cad = require_valid_cad(normalize_cad(cad))
+    except CadContractError as exc:
+        return False, f"contract rejected it: {exc}"
+    # The same "nothing floats" audit the deterministic tree passes: a proposed mechanism
+    # whose parts touch nothing, or that never reaches the chassis, is not a mechanism.
+    floats = structural_errors(spec_cad)
+    if floats:
+        return False, "structural audit rejected it: " + "; ".join(floats[:6])
+    # The shipped report must describe the shipped tree, not the compiler's replaced one.
+    from app.services.cad_contract import structural_report  # noqa: PLC0415
+    spec_cad["integrity"] = structural_report(spec_cad)
+    spec["cad"] = spec_cad
+    return True, f"model geometry adopted for {target} ({len(proposal['features'])} features)"
+
+
+def _model_geometry_pass(spec: dict[str, Any], prompt: str) -> None:
+    """Ask the model for one subsystem's assembly and let the contract decide.
+
+    Provenance lands in spec["model_geometry"] either way, because a design whose geometry
+    might be model-authored must say so — and a fallback must say why.
+    """
+    from app.services.frc_cad import SYSTEM_CAD
+    from app.services.inference_client import InferenceClient, InferenceUnavailable
+    from app.services.security import fence_user_content
+
+    subsystem = next((name for name in _GEOMETRY_CANDIDATES if name in spec["subsystems"]), None)
+    provenance: dict[str, Any] = {"attempted": subsystem is not None, "used": False,
+                                  "subsystem": subsystem, "reason": ""}
+    spec["model_geometry"] = provenance
+    if subsystem is None:
+        provenance["reason"] = "no mechanism to propose geometry for"
+        return
+    settings = get_settings()
+    client = InferenceClient(settings.inference_url, settings.inference_timeout_seconds)
+    user = (f"Give me the {subsystem} assembly for this robot at part level.\n\nRobot:\n"
+            + fence_user_content(prompt[:1200]))
+    try:
+        # A permissive object schema, not the full assembly grammar: it makes the sampler emit
+        # one balanced JSON object (llama.cpp compiles it to a grammar) while leaving the real
+        # judging to the CAD contract afterwards. Without it the first live run produced an
+        # unparseable completion; with it, parse failures can only be truncation. 2600 tokens
+        # matches the evaluation budget the adapter was scored at. Temperature is low —
+        # geometry is not the place to explore.
+        result = client.generate(SYSTEM_CAD, user, json_schema={"type": "object"},
+                                 max_tokens=2600, temperature=0.3)
+    except InferenceUnavailable as exc:
+        provenance["reason"] = f"inference unavailable ({exc}); compiler geometry kept"
+        return
+    proposal = result.json if isinstance(result.json, dict) else _first_json_object(result.text or "")
+    if proposal is None:
+        provenance["reason"] = "no parseable assembly in the completion; compiler geometry kept"
+        return
+    adopted, reason = _adopt_model_assembly(spec, proposal, subsystem)
+    provenance.update(used=adopted, reason=reason,
+                      model_version=result.model_version, provider=result.provider,
+                      completion_tokens=result.completion_tokens)
+    if not adopted:
+        _record_geometry_rejection(spec, prompt, subsystem, proposal, reason,
+                                   result.model_version)
+
+
+def _record_geometry_rejection(spec: dict[str, Any], prompt: str, subsystem: str,
+                               proposal: dict[str, Any], reason: str,
+                               model_version: str) -> None:
+    """Bank a rejected proposal as a chosen/rejected training candidate.
+
+    Every rejection the contract makes is a free, exactly-labelled preference pair: the
+    model's assembly with the specific defect named, against the compiler's assembly for the
+    same request. `build_preference_pairs.py` consumes this file — the architecture doc names
+    preference training, not more broad SFT, as the continuation strategy, and this is where
+    its data accumulates without anyone doing anything.
+
+    Best-effort by design: the file lives outside the serverless bundle and the write is
+    guarded, so a read-only filesystem (Vercel) or a race loses one candidate, never a design.
+    """
+    import json as _json
+
+    target = subsystem if subsystem != "arm" else "manipulator"
+    chosen = next((a for a in spec["cad"]["assemblies"] if a.get("id") == target), None)
+    if chosen is None:
+        return
+    lowered = reason.lower()
+    if "coincident" in lowered or "duplicate" in lowered:
+        category = "duplicate_parts"
+    elif "pitch" in lowered or "disagrees with" in lowered:
+        category = "pitch_mismatch"
+    elif "illegal feature" in lowered:
+        category = "illegal_feature"
+    else:
+        category = "bad_dimension"
+    row = {"prompt": f"Give me the {subsystem} assembly for this robot at part level.\n\n"
+                     f"Robot:\n{prompt[:1200]}",
+           "rejected": proposal, "chosen": chosen, "category": category, "split": "train",
+           "reason": reason[:400], "model_version": model_version}
+    try:
+        out = Path(__file__).resolve().parents[4] / "datasets" / "raw" / \
+            "geometry-preference-candidates.jsonl"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with open(out, "a", encoding="utf-8") as handle:
+            handle.write(_json.dumps(row, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+
 def _sanitize_intent(intent: dict[str, Any]) -> dict[str, Any]:
     """Keep only enumerated values and clamped numbers. A model cannot widen the envelope."""
     clean: dict[str, Any] = {}
@@ -276,6 +482,14 @@ def _parse(prompt: str, requested_season: str = "") -> dict[str, Any]:
     """Everything the prompt states explicitly. `None` means 'not stated, decide later'."""
     p = prompt.lower()
     latest = p.rsplit("revision request:", 1)[-1]
+    # The request as it stood before the revision — the whole prompt when there is no revision.
+    #
+    # A revision states only what *changes*. Reading a sticky fact out of `latest` alone means
+    # that anything the revision does not happen to mention is treated as never having been
+    # asked for: "use 6 inch wheels" silently deleted the elevator and reverted the robot to
+    # the season defaults. Sticky facts read `latest` first so the revision still wins, then
+    # fall back here. `_pick_type` has always done this; the fields below had not.
+    original = p.rsplit("revision request:", 1)[0]
     profile_key, profile, season_reason = choose_profile(prompt, requested_season)
     season = get_season(profile_key)
     default_width, default_length = profile["frame"]
@@ -286,8 +500,10 @@ def _parse(prompt: str, requested_season: str = "") -> dict[str, Any]:
         # numbers only, so part callouts like "4x M4" or "2x1 tube" never match.
         pair = re.findall(r"\b(\d{2})\s*(?:x|×|by)\s*(\d{2})\b(?!\s*(?:layer|lb|mm))", p)
     pair_width, pair_length = pair[-1] if pair else (default_width, default_length)
-    width_in = _clamp(_number(p, rf"(\d+(?:\.\d+)?)\s*{_INCH}\s*(?:wide|width)", float(pair_width)), 20, 34)
-    length_in = _clamp(_number(p, rf"(\d+(?:\.\d+)?)\s*{_INCH}\s*(?:long|length|deep)", float(pair_length)), 20, 34)
+    width_in = _clamp(_number(latest, rf"(\d+(?:\.\d+)?)\s*{_INCH}\s*(?:wide|width)", 0)
+                      or _number(p, rf"(\d+(?:\.\d+)?)\s*{_INCH}\s*(?:wide|width)", float(pair_width)), 20, 34)
+    length_in = _clamp(_number(latest, rf"(\d+(?:\.\d+)?)\s*{_INCH}\s*(?:long|length|deep)", 0)
+                       or _number(p, rf"(\d+(?:\.\d+)?)\s*{_INCH}\s*(?:long|length|deep)", float(pair_length)), 20, 34)
 
     # The season's perimeter budget is a rule, not a preference, so it outranks even an
     # explicitly stated frame: a 28 × 28 robot is a legal 2025 robot and an illegal 2026 one,
@@ -303,21 +519,29 @@ def _parse(prompt: str, requested_season: str = "") -> dict[str, Any]:
                 "arm": r"arm|manipulator|wrist", "shooter": r"shoot(?:er)?|launcher",
                 "intake": r"intake|collector",
                 "hopper": r"hopper|spindexer|indexer|magazine|carousel|serializer"}[name]
-        if re.search(rf"\b(?:no|without|remove|delete|omit|drop)\s+(?:the\s+)?(?:{word})\b", latest):
-            return False
-        if re.search(rf"\b(?:{word})\b", latest):
-            return True
+        # The revision speaks last, but only about what it mentions; anything it is silent on
+        # is still governed by the original request.
+        for segment in (latest, original):
+            if re.search(rf"\b(?:no|without|remove|delete|omit|drop)\s+(?:the\s+)?(?:{word})\b", segment):
+                return False
+            if re.search(rf"\b(?:{word})\b", segment):
+                return True
         return None
 
-    bare_swerve = bool(re.search(r"\b(?:without|no|remove|omit)\s+(?:the\s+)?swerve(?:s|\s*modules?)?\b", latest))
-    if re.search(r"\b(?:tank|west[- ]coast|wcd|6[- ]wheel|kitbot)\b", latest):
-        drive_type = "west-coast"
-    elif bare_swerve:
-        drive_type = "swerve-ready"
-    elif re.search(r"\bswerve\b", p):
-        drive_type = "swerve"
-    else:
-        drive_type = None
+    def _drive_from(segment: str) -> str | None:
+        """The drivetrain one segment asks for, most specific first."""
+        if re.search(r"\b(?:tank|west[- ]coast|wcd|6[- ]wheel|kitbot)\b", segment):
+            return "west-coast"
+        if re.search(r"\b(?:without|no|remove|omit)\s+(?:the\s+)?swerve(?:s|\s*modules?)?\b", segment):
+            return "swerve-ready"
+        if re.search(r"\bswerve\b", segment):
+            return "swerve"
+        return None
+
+    # Sticky, for the same reason as the subsystems: a west-coast robot must not turn into a
+    # swerve robot because the edit was about wheel size.
+    drive_type = _drive_from(latest) or _drive_from(original)
+    bare_swerve = drive_type == "swerve-ready"
 
     wheel_in = _number(p, rf"(\d+(?:\.\d+)?)\s*{_INCH}\s*wheels?", 0) or None
     weight_lb = _number(p, r"(\d+(?:\.\d+)?)\s*(?:lb|lbs|pound)", 0) or None
@@ -351,15 +575,26 @@ def _parse(prompt: str, requested_season: str = "") -> dict[str, Any]:
         and not re.search(rf"\b(?:{_mech_words})\b", base))
     scope = "drivetrain" if (explicit_only or module_ask) else "robot"
 
+    # A closing exclusion — "defence bot, nothing else" — is a statement about the whole robot
+    # rather than about one mechanism, so `stated_subsystem` never sees it: that function only
+    # matches "no <mechanism>". Without this the sentence reads as saying nothing at all, the
+    # season defaults and the model's suggestions both apply, and a team that asked for a bare
+    # defence bot is handed an intake, a shooter and a climber. It is scoped to the latest
+    # revision text so "add an intake" after the fact still works.
+    exclusive = bool(re.search(
+        r"\bnothing\s+(?:else|more)\b|\bno\s+other\s+(?:mechanism|subsystem|manipulator)s?\b"
+        r"|\bnothing\s+but\b|\band\s+that(?:'|’)?s\s+(?:it|all)\b", latest))
+
     return {
-        "scope": scope,
+        "scope": scope, "exclusive": exclusive,
         "profile_key": profile_key, "profile": profile,
         "season": season, "season_reason": season_reason, "frame_budget": budget,
         "width_in": width_in, "length_in": length_in, "height_in": height_in,
         "drive_type": drive_type, "modules_included": not bare_swerve,
         "wheel_in": wheel_in, "weight_lb": weight_lb, "reach_in": reach_in,
         "pneumatics": pneumatics, "distributor_key": distributor,
-        "elevator_stages": _count(latest, "stage", 0) or None,
+        # Sticky: a "3 stage" elevator stays three stages through an edit about something else.
+        "elevator_stages": _count(latest, "stage", 0) or _count(original, "stage", 0) or None,
         "subsystems_stated": {name: stated_subsystem(name) for name in SUBSYSTEM_NAMES},
         "second_can_bus": bool(re.search(r"\bcanivore\b|second can|separate can", p)),
         "team_number": _team_number(p),
@@ -434,6 +669,55 @@ def _bumper_color(text: str) -> dict[str, str]:
 # ─────────────────────────────────────────────────────────────────────────────
 # Assembly
 # ─────────────────────────────────────────────────────────────────────────────
+# Every directive the deterministic engine can actually apply, one recognizer per row.
+# The revision report tests each clause of an edit against this table so an edit the engine
+# does not understand is REPORTED as not applied instead of silently rebuilding the same
+# robot — the difference between an imprecise tool and a precise one that says no.
+_EDIT_RECOGNIZERS: tuple[tuple[str, str], ...] = (
+    (r"\d+(?:\.\d+)?\s*(?:in|inch|inches|\")\s*(?:wide|width|long|length|deep|tall|height|high)", "frame / height dimension"),
+    (r"\b\d{2}\s*(?:x|×|by)\s*\d{2}\b", "frame size"),
+    (r"\b(?:no|without|remove|delete|omit|drop)\s+(?:the\s+)?(?:turret|climb|elevator|lift|arm|shooter|launcher|intake|hopper|spindexer|indexer|swerve|pneumatics?)", "removal"),
+    (r"\b(?:add|with)\s+(?:an?\s+|the\s+)?(?:turret|climber|elevator|lift|arm|shooter|launcher|intake|hopper|spindexer|indexer)", "addition"),
+    (r"\bbumpers?\b", "bumper colour"),
+    (r"\b(?:\d+|one|two|three|four|single|dual|triple)\s*[- ]?stage", "stage count"),
+    (r"(?<!\w)(?:l[1-4]\+?|x[1-3]|t[1-3]|r[1-3]|\d{2}t)(?!\w)|\d+(?:\.\d+)?\s*:\s*1", "drive ratio"),
+    (r"\bkraken|\bneo\b|\bvortex\b|\b550\b|\bfalcon\b|\bminion\b|\bcims?\b", "motor"),
+    (r"\bmk\s*\d\w*|maxswerve|thrifty|\bwcp\b|swerve|west[- ]coast|\btank\b|kitbot", "drivetrain"),
+    (r"\d+(?:\.\d+)?\s*(?:in|inch|inches|\")\s*wheels?", "wheel size"),
+    (r"flywheels?[^.\d]{0,18}?\d+(?:\.\d+)?\s*(?:in|inch|inches|\")|\d+(?:\.\d+)?\s*(?:in|inch|inches|\")\s*(?:diameter\s+)?flywheels?", "flywheel size"),
+    (r"rollers?[^.\d]{0,18}?\d+(?:\.\d+)?\s*(?:in|inch|inches|\")|\d+(?:\.\d+)?\s*(?:in|inch|inches|\")\s*(?:diameter\s+)?rollers?", "roller size"),
+    (r"\b(?:\d+|one|two|three|four|single|dual|triple)\s*[- ]?rollers?", "roller count"),
+    (r"intakes?[^.\d]{0,18}?\d+(?:\.\d+)?\s*(?:in|inch|inches|\")|\d+(?:\.\d+)?\s*(?:in|inch|inches|\")\s*(?:wide\s+)?intakes?", "intake width"),
+    (r"stows?\s+inside|inside\s+the\s+frame|within\s+the\s+frame|under[- ]?bumper|over[- ]?bumper|slapdown|4[- ]?bar|four[- ]?bar|funnel|sweeper|tunnel|compliant[- ]?wheel", "intake type"),
+    (r"spindexer|carousel|belt\s+floor|belt[- ]floor|twin[- ]lane|serpentine|paddle|agitator", "hopper type"),
+    (r"turret|stacked|barrel|accelerator|single\s+flywheel|fixed[- ]angle|fixed\s+hood|variable\s+hood|adjustable\s+hood|hooded", "shooter type"),
+    (r"double[- ]?jointed|wrist|telescop|four[- ]?bar\s+arm|\barm\b|reach", "arm"),
+    (r"deep\s*cage|hook|carriage\s+climb|climb", "climber"),
+    (r"cascade|continuous|elevator|lift|tower", "elevator"),
+    (r"\bteam\s*(?:number\s*|no\.?\s*|#\s*)?\d{1,5}\b|\bfrc\s*#?\s*\d{1,5}\b|#\d{3,5}\b", "team number"),
+    (r"\d+(?:\.\d+)?\s*(?:lb|lbs|pound)", "weight target"),
+    (r"pneumatic|cylinder|piston|solenoid|compressor", "pneumatics"),
+    (r"\bpdp\b|\bpdh\b|power distribution", "power distributor"),
+    (r"canivore|second can|separate can", "CAN bus"),
+    (r"nothing\s+(?:else|more)|no\s+other\s+mechanism|nothing\s+but", "scope"),
+)
+
+
+def revision_report(revision_text: str) -> dict[str, Any]:
+    """Which clauses of an edit the deterministic engine recognised, clause by clause."""
+    clauses = [c.strip() for c in re.split(r"[,;\n]| and | then ", revision_text, flags=re.I)
+               if c.strip()]
+    rows = []
+    for clause in clauses:
+        matched = [label for pattern, label in _EDIT_RECOGNIZERS
+                   if re.search(pattern, clause, re.I)]
+        rows.append({"clause": clause, "recognized": bool(matched),
+                     "as": sorted(set(matched))})
+    return {"request": revision_text.strip(),
+            "clauses": rows,
+            "unrecognized": [r["clause"] for r in rows if not r["recognized"]]}
+
+
 def build_robot_spec(prompt: str, *, use_model: bool = True, season: str = "") -> dict[str, Any]:
     """Synthesize one robot for one season.
 
@@ -442,10 +726,30 @@ def build_robot_spec(prompt: str, *, use_model: bool = True, season: str = "") -
     `frc_season.resolve_season`, which also records which of those three happened.
     """
     parsed = _parse(prompt, season)
+    season_data = parsed["season"]
+
+    # The gate runs BEFORE any geometry. A request that breaks a hard season limit, or that
+    # is too vague to compile, must not come back as a robot — see design_gate for the three
+    # defects that motivated this.
+    from app.services.design_gate import gate as _gate  # noqa: PLC0415
+
+    gate_result = _gate(prompt, season_data.get("rules"), season_data.get("label", ""))
+    if gate_result["state"] != "accepted":
+        raise DesignNotBuildable(gate_result)
+
+    # The gate's scope decision is authoritative over the looser prose parse: "no mechanisms,
+    # only a 27 inch chassis" has to mean a chassis, not a chassis plus four swerve modules
+    # and a control system.
+    for _name in gate_result["forbidden_mechanisms"]:
+        parsed["subsystems_stated"][_name] = False
+    if gate_result["scope"] == "chassis":
+        parsed["scope"] = "chassis"
+        parsed["exclusive"] = True
+
     rng = _seed(prompt)
     p, latest = parsed["lower"], parsed["latest"]
+    original_text = p.rsplit("revision request:", 1)[0]
     profile = parsed["profile"]
-    season_data = parsed["season"]
 
     intent: dict[str, Any] = {}
     provenance = {"used": False, "provider": "", "model_version": "",
@@ -466,6 +770,11 @@ def build_robot_spec(prompt: str, *, use_model: bool = True, season: str = "") -
     if parsed["scope"] != "robot":
         intent.pop("subsystems", None)  # model defaults don't apply to a component request
     model_subsystems = set(intent.get("subsystems", []))
+    if parsed["exclusive"]:
+        # "nothing else" closes the list: the team has told us the robot is complete, so neither
+        # the season defaults nor the model may add to it.
+        defaults = set()
+        model_subsystems = set()
     subsystems = []
     for name in SUBSYSTEM_NAMES:
         stated = parsed["subsystems_stated"][name]
@@ -483,12 +792,26 @@ def build_robot_spec(prompt: str, *, use_model: bool = True, season: str = "") -
     modules_included = parsed["modules_included"] and drive_type != "west-coast"
 
     # ── Drivetrain hardware ────────────────────────────────────────────────
-    drive_motor_key, drive_motor = select_motor(p, default="kraken_x60")
+    # The revision speaks last about hardware too: "use kraken x44 motors" must actually
+    # swap the motor, and "change the ratio to L2" must not lose to an L3 mentioned by the
+    # original request ("climber to L3"). Each selector runs on the revision text first and
+    # only falls back to the whole prompt when the revision says nothing about it.
+    from app.services.frc_parts import _MOTOR_ALIASES, _match  # noqa: PLC0415
+    _motor_in_latest = _match(latest, _MOTOR_ALIASES)
+    drive_motor_key, drive_motor = select_motor(latest if _motor_in_latest else p,
+                                                default="kraken_x60")
     if drive_type == "west-coast":
         # A tank drivebase has no modules at all, describing one would be a lie in the BOM.
         wheel_in = parsed["wheel_in"] or 6.0
         ratio = _number(p, r"(\d+(?:\.\d+)?)\s*:\s*1", 0) or rng.choice([8.45, 10.71, 12.75])
-        motor_count = 6 if wheel_in >= 5 else 4
+        # R502 caps PROPULSION motors, and on a tank drive every drive motor is one. Six
+        # across two gearboxes was the old six-CIM drivebase and it has been illegal since
+        # the limit came down to four; the rule report has been saying so on every
+        # west-coast design while the geometry went on building six. Two per side.
+        # (Swerve is untouched: its steering motors are explicitly not propulsion, so four
+        # drive plus four steer is eight motors and four against this limit.)
+        limit = int((season_data.get("rules") or {}).get("propulsion_motors", 4))
+        motor_count = min(6 if wheel_in >= 5 else 4, limit)
         wheel_rpm = drive_motor["free_rpm"] / ratio
         drivetrain = {
             "type": "west-coast", "modules_included": False, "module_count": 0,
@@ -517,7 +840,9 @@ def build_robot_spec(prompt: str, *, use_model: bool = True, season: str = "") -
         module_key, module = select_module(p, parsed["wheel_in"],
                                            default_key=rng.choice(("mk4i", "mk4i", "mk5i", "mk4n")))
         wheel_in = parsed["wheel_in"] or module["wheel_in"]
-        ratio_label, ratio = select_drive_ratio(module, p)
+        _ratio_in_latest = re.search(r"(?<!\w)(l[1-4]\+?|x[1-3]|t[1-3]|r[1-3]|\d{2}t)(?!\w)"
+                                     r"|\d+(?:\.\d+)?\s*:\s*1", latest, re.I)
+        ratio_label, ratio = select_drive_ratio(module, latest if _ratio_in_latest else p)
         steer_motor_key = "neo_550" if module_key == "maxswerve" else drive_motor_key
         module_count = 4 if modules_included else 0
         drivetrain = drivetrain_summary(module_key, module, drive_motor_key, drive_motor,
@@ -558,6 +883,7 @@ def build_robot_spec(prompt: str, *, use_model: bool = True, season: str = "") -
         r"series[- ]?roller|horizontal\s+roller": "horizontal series-roller intake",
         r"sweeper|floor\s+sweep|indexer": "active floor sweeper with indexer",
         r"compliant[- ]?wheel|pivoting\s+intake": "pivoting compliant-wheel intake",
+        r"stows?\s+inside|inside\s+the\s+frame|within\s+the\s+frame": "under-bumper roller",
     }, intent.get("intake_type") or rng.choice(
         ("coaxial slapdown", "coaxial slapdown", "four-bar over-bumper",
          "under-bumper roller", "fixed over-bumper roller", "dual-roller over-bumper",
@@ -587,6 +913,9 @@ def build_robot_spec(prompt: str, *, use_model: bool = True, season: str = "") -
         ("dual independent flywheel hooded shooter", "dual independent flywheel hooded shooter",
          "single flywheel backspin shooter", "variable-hood flywheel shooter",
          "fixed-angle flywheel shooter")))
+
+    if re.search(r"\b(?:no|without|remove|delete|omit|drop)\s+(?:the\s+)?turret\b", latest):
+        shooter_type = "dual independent flywheel hooded shooter"
 
     arm_type = _pick_type(p, ARM_TYPES, {
         r"double[- ]?jointed": "double-jointed arm",
@@ -620,14 +949,32 @@ def build_robot_spec(prompt: str, *, use_model: bool = True, season: str = "") -
 
     # Choices the prompt leaves open are seeded from the prompt, so different requests
     # diverge instead of all producing the same robot.
-    flywheel_in = _number(p, rf"(\d+(?:\.\d+)?)\s*{_INCH}\s*flywheel", 0) or rng.choice([4.0, 4.0, 5.0, 6.0])
-    roller_in = rng.choice([1.625, 2.0, 2.0, 2.5])
+    # Stated dimensions win over the seed, and both word orders count: "6 inch flywheel"
+    # and "flywheel 6 inches". The revision text is read first so an edit lands.
+    def _dim(noun: str, fallback: float) -> float:
+        forward = rf"(\d+(?:\.\d+)?)\s*{_INCH}\s*(?:diameter\s+)?{noun}"
+        backward = rf"{noun}[^.\d]{{0,18}}?(\d+(?:\.\d+)?)\s*{_INCH}"
+        for segment in (latest, p):
+            value = _number(segment, forward, 0) or _number(segment, backward, 0)
+            if value:
+                return value
+        return fallback
+
+    flywheel_in = _clamp(_dim(r"flywheels?", rng.choice([4.0, 4.0, 5.0, 6.0])), 2.0, 8.0)
+    roller_in = _clamp(_dim(r"rollers?", rng.choice([1.625, 2.0, 2.0, 2.5])), 0.875, 4.0)
     mech_motor_key, _ = select_motor(p, default=rng.choice(["neo", "neo_vortex", "kraken_x60"]))
     shooter_motor_key = "kraken_x60" if "kraken" in p else rng.choice(["neo_vortex", "kraken_x60", "falcon_500"])
     # Longitudinal placement varies within a band that stays serviceable and inside the frame.
     intake_bias = rng.uniform(0.06, 0.14)
     shooter_bias = rng.uniform(0.58, 0.72)
-    elevator_bias = rng.uniform(0.50, 0.64)
+    # The tower goes at the BACK. It is the tallest and heaviest thing on the robot: against
+    # the back rail its feet bolt to structure at both ends, its mass sits behind the drive
+    # centre, and the whole front of the frame is left for the intake and the gamepiece path.
+    # A band centred on 0.57 put it in the middle with the hopper in front and the shooter
+    # behind — the one place a tower should never be, and the reason the two kept fighting
+    # for the same volume. This is the value that matters: `_STATION_DEFAULTS` is only the
+    # fallback for a block that does not carry its own bias, and every generated one does.
+    elevator_bias = rng.uniform(0.82, 0.92)
     arm_bias = rng.uniform(0.46, 0.60)
 
     # Detailed, seeded intake geometry. Surface speed comes from the mechanism motor's free
@@ -635,7 +982,13 @@ def build_robot_spec(prompt: str, *, use_model: bool = True, season: str = "") -
     # approach speed or the intake pushes the gamepiece away instead of pulling it in.
     _PI = 3.141592653589793
     intake_reduction = rng.choice([3.0, 4.0, 4.0, 5.0])
-    intake_roller_count = 2 if any(word in intake_type for word in ("dual", "series", "tunnel")) else 1
+    # A stated roller count ("three roller intake") outranks the type's implied pair.
+    intake_roller_count = (_count(latest, "roller", 0) or _count(original_text, "roller", 0)
+                           or (2 if any(word in intake_type
+                                        for word in ("dual", "series", "tunnel")) else 1))
+    # A stated intake width ("24 inch intake", "intake 24 inches wide") outranks the frame
+    # heuristic; it is still capped so the intake fits between the frame rails downstream.
+    intake_width_stated = _dim(r"(?:wide\s+)?intakes?(?:\s+width)?", 0.0)
     intake_roller_center_in = round(roller_in + rng.choice([1.5, 2.0, 2.5]), 2)
     intake_wheel = rng.choice(["30A green compliant wheels", "35A green compliant wheels",
                                "40A grey compliant wheels"])
@@ -777,8 +1130,15 @@ def build_robot_spec(prompt: str, *, use_model: bool = True, season: str = "") -
     # rung — the robot has to hoist its own body instead, and the useful number becomes how far
     # it must RISE rather than how far it can reach.
     _height_cap = season_data["rules"].get("max_height_in") or 84.0
-    climber_stowed_in = round(min(parsed["height_in"], season_data["rules"]["start_height_in"]), 1)
-    climber_extended_in = round(min(parsed["height_in"] + 24, _height_cap), 1)
+    # A mechanism's own height is NOT the robot's height. It stands on the rail top plane
+    # (2.0 in above the bellypan) and the wheels hold the bellypan ~1.125 in off the carpet,
+    # so both of those eat into the legal envelope before the tower starts. Ignoring them is
+    # what produced a 32.1 in robot in a 30 in season — measured, not theorised.
+    _MOUNT_Y_IN, _GROUND_CLEARANCE_IN = 2.0, 1.125
+    _mech_budget = max(6.0, _height_cap - _MOUNT_Y_IN - _GROUND_CLEARANCE_IN - 1.25)
+    climber_stowed_in = round(min(parsed["height_in"],
+                                  season_data["rules"]["start_height_in"], _mech_budget), 1)
+    climber_extended_in = round(min(parsed["height_in"] + 24, _mech_budget), 1)
     climber_travel_in = round(max(climber_extended_in - climber_stowed_in, 0.0), 1)
 
     _tower = element(season_data, "TOWER")
@@ -816,11 +1176,24 @@ def build_robot_spec(prompt: str, *, use_model: bool = True, season: str = "") -
         # Structural decisions in the CAD tree — how many crossmembers, belt or chain, plate
         # or tube — are resolved from this, so one prompt always yields one robot while
         # different prompts differ in construction and not merely in dimensions.
-        "design_seed": int(hashlib.sha256(prompt.strip().lower().encode()).hexdigest()[:8], 16),
+        # Pinned to the original request (see _seed): a revision may not reshuffle the build.
+        "design_seed": int(hashlib.sha256(
+            re.split(r"revision request:", prompt, maxsplit=1, flags=re.I)[0]
+            .strip().lower().encode()).hexdigest()[:8], 16),
         "profile": {"id": parsed["profile_key"], "label": profile["label"], "season": profile["season"],
                     "knowledge_version": KNOWLEDGE_VERSION, "parts_version": PARTS_VERSION},
         "model": provenance,
-        "frame": {"width_in": width_in, "length_in": length_in, "rail_height_in": 1, "rail_width_in": 2,
+        # What the request actually scoped. `build_cad` and the FeatureScript defaults both
+        # read these, so a chassis-only request cannot pick up a drivetrain or a control
+        # system on the way through.
+        "scope": gate_result["scope"],
+        "include_drivetrain": gate_result["include_drivetrain"],
+        "include_electrical": gate_result["include_electrical"],
+        "gate": {"state": gate_result["state"], "assumptions": gate_result["assumptions"],
+                 "forbidden_mechanisms": gate_result["forbidden_mechanisms"],
+                 "version": gate_result["version"]},
+        "frame": {"width_in": width_in, "length_in": length_in, "height_in": height_in,
+                  "rail_height_in": 1, "rail_width_in": 2,
                   "wall_in": 0.100, "material": "6061-T6 aluminium",
                   "tube": "2x1x0.100 in", "bellypan": "0.090 in pocketed plate",
                   "perimeter_in": round(2 * (width_in + length_in), 1)},
@@ -831,7 +1204,11 @@ def build_robot_spec(prompt: str, *, use_model: bool = True, season: str = "") -
                   "motors": module_count * 2 if drive_type == "swerve" else (6 if drive_type == "west-coast" else 0)},
         "subsystems": subsystems,
         "scope": parsed["scope"],
-        "intake": block("intake", type=intake_type, width_in=round(min(width_in - 4, 24), 1),
+        # A stated width wins; an over-bumper intake may run wider than the frame interior
+        # (full-width "touch it, own it" intakes are real), an in-frame one cannot.
+        "intake": block("intake", type=intake_type,
+                        width_in=round(min(intake_width_stated, width_in + 4) if intake_width_stated
+                                       else min(width_in - 4, 24), 1),
                         roller_diameter_in=roller_in, roller_count=intake_roller_count,
                         roller_center_distance_in=intake_roller_center_in, compliant_wheel=intake_wheel,
                         compression_in=0.5, gear_reduction=f"{intake_reduction:g}:1",
@@ -895,7 +1272,7 @@ def build_robot_spec(prompt: str, *, use_model: bool = True, season: str = "") -
                                              if shooter_stacked else
                                              ["feeder", "left flywheel", "right flywheel", "hood"]),
         "elevator": block("elevator", architecture=elevator_arch, stages=int(stages),
-                          max_height_in=height_in, rail=ladder_label(int(stages) - 1),
+                          max_height_in=min(height_in, _mech_budget), rail=ladder_label(int(stages) - 1),
                           reduction="12:1",
                           rigged=elevator_rigged, rigging=elevator_rigging,
                           bearing_blocks="opposed, preloaded at every stage interface",
@@ -969,6 +1346,16 @@ def build_robot_spec(prompt: str, *, use_model: bool = True, season: str = "") -
         # different season produces different targets instead of the same robot relabelled.
         "season": {
             **season_digest(season_data),
+            # The raw published limits travel WITH the design, so the rule report measures
+            # geometry against this season's numbers instead of a constant compiled in
+            # somewhere else. `season_rule_report` reads this block.
+            "limits": dict(season_data["rules"]),
+            "rule_source": {
+                "manual": f"{season_data.get('year', '')} FRC Game Manual".strip(),
+                "season_key": season_data["key"],
+                "enforced_automatically": ["perimeter_in", "max_height_in", "extension_in"],
+                "human_review_required": ["weight_lb", "bumper_zone_in", "propulsion_motors"],
+            },
             "selected_by": parsed["season_reason"],
             "summary": season_data["summary"],
             "gamepiece": season_data["gamepiece"],
@@ -1009,9 +1396,48 @@ def build_robot_spec(prompt: str, *, use_model: bool = True, season: str = "") -
     # ── CAD: the same robot expressed as individual dimensioned parts ──────
     # Everything above says what the robot *is*; this says what it is made of, in one
     # coordinate system, so a viewer, a BOM and a cut list all read the same geometry.
-    spec["cad"] = build_cad(spec)
+    from app.services.cad_contract import (compact_design_spec, editable_manifest, normalize_cad,
+                                           require_valid_cad, require_valid_parametric_design)
+    # The bumper envelope is what the robot is actually measured at, so it is published beside
+    # the frame rather than left for each consumer to re-derive from a plate size.
+    from app.services.frc_cad import bumper_envelope  # noqa: PLC0415
+    spec["bumper"] = bumper_envelope(width_in, length_in)
+    spec["cad"] = require_valid_cad(normalize_cad(build_cad(spec)))
+    # Model-proposed geometry, gated by the same contract as everything else. The model may
+    # PROPOSE one subsystem's assembly; require_valid_cad decides whether it ships, and a
+    # rejection falls back to the compiler's geometry with the reason recorded on the spec.
+    if use_model and get_settings().model_geometry:
+        _model_geometry_pass(spec, prompt)
+    spec["parametric_design"] = require_valid_parametric_design(compact_design_spec(spec))
+    # The design's own title, set here so every caller (not just the web wrapper) gets a name
+    # that matches the request. A chassis-only design must not be titled after a mechanism it
+    # was explicitly denied.
+    _season_label = (spec.get("season") or {}).get("label", "")
+    if spec.get("scope") == "chassis":
+        spec["name"] = (f"{width_in:g} × {length_in:g} in chassis"
+                        + (f" | {_season_label}" if _season_label else ""))
+    else:
+        _dt = spec.get("drivetrain") or {}
+        _module = _dt.get("module") or (str(_dt.get("type", "swerve")).title() + " drivetrain")
+        _lead = (spec.get("subsystems") or ["drivebase"])[0].title()
+        spec["name"] = (f"{_module} {_lead} robot"
+                        + (f" | {_season_label}" if _season_label else ""))
+
+    # Measured against the solids that were actually generated, not against the constants the
+    # FeatureScript declares. `export_blocked` is what the API refuses exports on.
+    from app.services.cad_contract import (  # noqa: PLC0415
+        fidelity_report, season_rule_report, transmission_report)
+    spec["rule_report"] = season_rule_report(spec)
+    spec["fidelity"] = fidelity_report(spec.get("cad") or {})
+    spec["transmission"] = transmission_report(spec.get("cad") or {})
+    spec["editable_manifest"] = editable_manifest(spec["cad"])
     spec["cut_list"] = cut_list(spec["cad"])
     spec["profile"]["cad_version"] = CAD_VERSION
+    if "revision request:" in p:
+        # Say exactly which clauses of the edit landed. An edit the engine cannot apply is
+        # reported, never silently absorbed into an identical rebuild.
+        raw_revision = re.split(r"revision request:", prompt, flags=re.I)[-1]
+        spec["revision"] = revision_report(raw_revision)
     return spec
 
 

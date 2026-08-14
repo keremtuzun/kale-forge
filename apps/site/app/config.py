@@ -1,16 +1,31 @@
-"""Minimal stub so the bundled robot_spec imports cleanly in the self-contained demo.
-The demo always calls build_robot_spec(..., use_model=False), so the inference settings
-here are never actually used — they exist only to satisfy the top-level import."""
+"""Settings for the self-contained Vercel Design Studio.
+
+Deliberately NOT the backend's config: that one is pydantic, and this function deploys with
+the standard library only. Copying the backend file here once took the whole live site down
+with FUNCTION_INVOCATION_FAILED — the import crashed before the handler ever ran. This module
+carries exactly the fields the bundled `app.services` tree reads, nothing more.
+"""
 from __future__ import annotations
+
+import os
 from dataclasses import dataclass
+from functools import lru_cache
 
 
-@dataclass
-class _Settings:
+@dataclass(frozen=True)
+class Settings:
     inference_url: str = ""
-    inference_timeout_seconds: float = 2.0
-    admin_token: str = ""
+    inference_timeout_seconds: float = 30.0
+    # Ask the model to PROPOSE one subsystem's geometry; the CAD contract decides whether it
+    # ships. Off by default — a proposal is minutes of CPU generation, far past a serverless
+    # budget, so this is for environments that own their inference box.
+    model_geometry: bool = False
 
 
-def get_settings() -> _Settings:
-    return _Settings()
+@lru_cache
+def get_settings() -> Settings:
+    return Settings(
+        inference_url=os.environ.get("INFERENCE_URL", "").rstrip("/"),
+        inference_timeout_seconds=float(os.environ.get("INFERENCE_TIMEOUT_SECONDS", "30")),
+        model_geometry=os.environ.get("MODEL_GEOMETRY", "false").lower() in {"1", "true", "yes"},
+    )

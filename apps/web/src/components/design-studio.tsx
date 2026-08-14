@@ -105,17 +105,17 @@ export function DesignStudio() {
     catch (e) { setError(e instanceof Error ? e.message : "Exact copy failed"); } finally { setBusy(""); }
   };
 
-  return <div className="space-y-6">
-    <section className="border-b border-border pb-8 pt-4">
+  return <div className="space-y-5">
+    <section className="blueprint-grid border border-border px-6 py-8 lg:px-8">
       <div className="flex flex-col justify-between gap-6 md:flex-row md:items-end">
         <div className="max-w-3xl">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Design Studio</p>
-          <h1 className="mt-4 text-3xl font-semibold tracking-tight md:text-4xl">Describe it. Engineer it. Revise it.</h1>
+          <h1 className="font-display mt-4 text-4xl font-medium tracking-[-0.04em] md:text-5xl">Design, resolve, revise.</h1>
           <p className="mt-3 max-w-2xl leading-7 text-muted-foreground">Generate editable PCB projects and full-scale FRC assemblies, then refine any revision with another prompt. Every revision is kept.</p>
         </div>
         <div className="flex shrink-0 items-center gap-2 rounded-md border border-border px-3.5 py-2.5 text-sm text-muted-foreground">
           <span className={`h-2 w-2 rounded-full ${connected ? "bg-primary" : "bg-border"}`} aria-hidden />
-          Onshape {connected ? "connected" : "not connected"}
+          Onshape {connected ? "connected · parametric only" : "not connected"}
         </div>
       </div>
     </section>
@@ -123,7 +123,7 @@ export function DesignStudio() {
     {error && <div className="flex items-start justify-between rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-300"><span>{error}</span><button onClick={() => setError("")}><X className="h-4 w-4" /></button></div>}
     {designs.some((design) => design.is_example) && <div className="rounded-lg border border-primary/30 bg-accent px-4 py-4"><div className="flex items-start gap-3"><Check className="mt-0.5 h-5 w-5 shrink-0 text-primary"/><div><h2 className="font-semibold">Worked example included</h2><p className="mt-1 text-sm leading-6 text-muted-foreground">The design marked “Example” is provided only to show how the Studio works. You can revise or delete it, then create your own PCB or robot designs with the controls on this page.</p></div></div></div>}
 
-    <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
+    <div className="grid gap-5 lg:grid-cols-[380px_1fr]">
       <div className="space-y-4">
         <Card className="overflow-hidden">
           <div className="p-4"><div className="flex items-center justify-between"><span className="text-xs font-semibold uppercase tracking-wider text-primary">Reference model</span><span className="text-xs text-muted-foreground">44 instances · 48 mates</span></div><h2 className="mt-3 font-semibold">2025 Serpentheim robot</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Create an exact, independent and editable copy of every original Onshape tab, feature, assembly, and mate.</p><Button className="mt-4 w-full" variant="outline" onClick={copyExactRobot} disabled={busy !== ""}>{busy === "exact-copy" ? <Loader2 className="h-4 w-4 animate-spin"/> : <Copy className="h-4 w-4"/>} Copy exact robot</Button></div>
@@ -190,7 +190,7 @@ export function DesignStudio() {
         <Card className="overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-5">
             <div><div className="flex items-center gap-2"><h2 className="text-xl font-semibold">{selected.name}</h2>{selected.is_example && <Badge className="bg-accent text-primary">Worked example</Badge>}<Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">r{selected.revision}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{selected.is_example ? "Example only — revise it for practice or create your own design." : selected.kind === "pcb" ? "Editable KiCad engineering package" : "Full-scale FRC assembly concept"}</p></div>
-            <div className="flex gap-2">{selected.onshape?.url && <a href={selected.onshape.url} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium hover:bg-muted"><ExternalLink className="h-4 w-4" /> Open</a>}{selected.kind === "robot" && !selected.spec.exact_copy && <Button variant="outline" onClick={publish} disabled={busy !== ""}>{busy === "publish" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Cloud className="h-4 w-4" />} {selected.onshape ? "Update Onshape" : "Publish to Onshape"}</Button>}<Button variant="ghost" size="icon" title="Delete" onClick={() => void remove(selected.id)}><Trash2 className="h-4 w-4" /></Button></div>
+            <div className="flex gap-2">{selected.onshape?.url && <a href={selected.onshape.url} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 border border-border px-3 text-sm font-medium hover:bg-muted"><ExternalLink className="h-4 w-4" /> Open source</a>}{selected.kind === "robot" && !selected.spec.exact_copy && <Button variant="outline" onClick={publish} disabled={busy !== ""}>{busy === "publish" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Cloud className="h-4 w-4" />} {selected.onshape ? "Update parametric source" : "Publish editable source"}</Button>}<Button variant="ghost" size="icon" title="Delete" onClick={() => void remove(selected.id)}><Trash2 className="h-4 w-4" /></Button></div>
           </div>
 
           <div className="grid md:grid-cols-[1.25fr_.75fr]">

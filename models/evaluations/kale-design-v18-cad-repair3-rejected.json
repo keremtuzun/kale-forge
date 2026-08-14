@@ -1,0 +1,186 @@
+{
+  "intent_results": [
+    {
+      "parsed": true,
+      "has_subsystems": true,
+      "enum_violations": [],
+      "clean": true,
+      "prompt": "We are a rookie team. Design a robot on a 27 x 27 inch frame that cycl",
+      "season": "2026-rebuilt"
+    },
+    {
+      "parsed": true,
+      "has_subsystems": true,
+      "enum_violations": [],
+      "clean": true,
+      "prompt": "MK5i swerve on Krakens at R2 with a ground-to-feeder tunnel intake and",
+      "season": "2025-reefscape"
+    },
+    {
+      "parsed": true,
+      "has_subsystems": true,
+      "enum_violations": [],
+      "clean": true,
+      "prompt": "27 inch REEFSCAPE robot, three-stage cascade elevator, wristed carriag",
+      "season": "2025-reefscape"
+    },
+    {
+      "parsed": true,
+      "has_subsystems": true,
+      "enum_violations": [],
+      "clean": true,
+      "prompt": "27x27 west-coast drivebase on Krakens. Defence bot, nothing else.",
+      "season": "offseason"
+    },
+    {
+      "parsed": true,
+      "has_subsystems": true,
+      "enum_violations": [],
+      "clean": true,
+      "prompt": "Experienced team, 27 inch swerve, turreted dual flywheel hooded shoote",
+      "season": "2026-rebuilt"
+    },
+    {
+      "parsed": true,
+      "has_subsystems": true,
+      "enum_violations": [],
+      "clean": true,
+      "prompt": "Just an MK4n swerve module on a Kraken X60.",
+      "season": "offseason"
+    },
+    {
+      "parsed": true,
+      "has_subsystems": true,
+      "enum_violations": [],
+      "clean": true,
+      "prompt": "Resource-limited team, 26x26, horizontal series-roller intake and a fo",
+      "season": "2025-reefscape"
+    },
+    {
+      "parsed": true,
+      "has_subsystems": true,
+      "enum_violations": [],
+      "clean": true,
+      "prompt": "26x29 robot with a staged accelerator-and-flywheel shooter, a twin-lan",
+      "season": "2026-rebuilt"
+    },
+    {
+      "parsed": true,
+      "has_subsystems": true,
+      "enum_violations": [],
+      "clean": true,
+      "prompt": "Design a 28 x 28 inch REBUILT robot with an over-bumper intake and a h",
+      "season": "2026-rebuilt"
+    }
+  ],
+  "signatures": [
+    "{\"arm_type\": \"double-jointed arm\", \"climber_type\": \"dual telescoping winch hooks\", \"drive_type\": \"swerve\", \"elevator_architecture\": \"cascade\", \"hopper_type\": \"serpentine tunnel indexer\", \"intake_type\": \"horizontal series-roller intake\", \"shooter_type\": \"variable-hood flywheel shooter\"}",
+    "{\"arm_type\": \"telescoping dead-axle shoulder arm\", \"climber_type\": \"dual telescoping winch hooks\", \"drive_type\": \"swerve\", \"elevator_architecture\": \"cascade\", \"hopper_type\": \"oval spindexer\", \"intake_type\": \"ground-to-feeder tunnel intake\", \"shooter_type\": \"variable-hood flywheel shooter\"}",
+    "{\"arm_type\": \"telescoping dead-axle shoulder arm\", \"climber_type\": \"dual telescoping winch hooks\", \"drive_type\": \"swerve\", \"elevator_architecture\": \"chain-rigged continuous tower\", \"hopper_type\": \"twin-lane belt hopper\", \"intake_type\": \"active floor sweeper with indexer\", \"shooter_type\": \"staged accelerator-and-flywheel shooter\"}",
+    "{\"arm_type\": \"telescoping dead-axle shoulder arm\", \"climber_type\": \"dual telescoping winch hooks\", \"drive_type\": \"swerve\", \"elevator_architecture\": \"continuous\", \"hopper_type\": \"circular spindexer\", \"intake_type\": \"active floor sweeper with indexer\", \"shooter_type\": \"turreted dual flywheel hooded shooter\"}",
+    "{\"arm_type\": \"telescoping dead-axle shoulder arm\", \"climber_type\": \"dual telescoping winch hooks\", \"drive_type\": \"swerve\", \"elevator_architecture\": \"continuous\", \"hopper_type\": \"circular spindexer\", \"intake_type\": \"under-bumper roller\", \"shooter_type\": \"dual independent flywheel hooded shooter\"}",
+    "{\"arm_type\": \"telescoping dead-axle shoulder arm\", \"climber_type\": \"dual telescoping winch hooks\", \"drive_type\": \"swerve\", \"elevator_architecture\": \"telescoping box\", \"hopper_type\": \"oval spindexer\", \"intake_type\": \"coaxial slapdown\", \"shooter_type\": \"variable-hood flywheel shooter\"}",
+    "{\"arm_type\": \"telescoping dead-axle shoulder arm\", \"climber_type\": \"single pivoting hook\", \"drive_type\": \"swerve\", \"elevator_architecture\": \"continuous\", \"hopper_type\": \"oval spindexer\", \"intake_type\": \"coaxial slapdown\", \"shooter_type\": \"dual independent flywheel hooded shooter\"}",
+    "{\"arm_type\": \"wristed carriage arm\", \"climber_type\": \"dual telescoping winch hooks\", \"drive_type\": \"swerve\", \"elevator_architecture\": \"cascade\", \"hopper_type\": \"serpentine tunnel indexer\", \"intake_type\": \"ground-to-feeder tunnel intake\", \"shooter_type\": \"single flywheel backspin shooter\"}",
+    "{\"arm_type\": \"wristed carriage arm\", \"climber_type\": \"dual telescoping winch hooks\", \"drive_type\": \"west-coast\", \"elevator_architecture\": \"telescoping box\", \"hopper_type\": \"serpentine tunnel indexer\", \"intake_type\": \"horizontal series-roller intake\", \"shooter_type\": \"variable-hood flywheel shooter\"}"
+  ],
+  "cad_results": [
+    {
+      "parsed": true,
+      "has_features": true,
+      "feature_count": 21,
+      "schema_keys": true,
+      "unknown_types": [],
+      "non_stock_sections": [],
+      "inconsistent_pitch_diameters": [],
+      "positioned_fraction": 1.0,
+      "clean": true,
+      "generated_tokens": 1347,
+      "subsystem": "intake",
+      "season": "2026-rebuilt",
+      "prompt": "27x27 swerve robot built around a dual-roller over-bumper intake."
+    },
+    {
+      "parsed": true,
+      "has_features": true,
+      "feature_count": 24,
+      "schema_keys": true,
+      "unknown_types": [],
+      "non_stock_sections": [],
+      "inconsistent_pitch_diameters": [],
+      "positioned_fraction": 1.0,
+      "clean": true,
+      "generated_tokens": 1466,
+      "subsystem": "elevator",
+      "season": "2025-reefscape",
+      "prompt": "28x28 REEFSCAPE robot with a 3 stage belt-rigged cascade tower."
+    },
+    {
+      "parsed": true,
+      "has_features": true,
+      "feature_count": 18,
+      "schema_keys": true,
+      "unknown_types": [],
+      "non_stock_sections": [],
+      "inconsistent_pitch_diameters": [],
+      "positioned_fraction": 1.0,
+      "clean": true,
+      "generated_tokens": 1103,
+      "subsystem": "shooter",
+      "season": "2026-rebuilt",
+      "prompt": "27 inch robot with a turreted dual flywheel hooded shooter on Krakens."
+    },
+    {
+      "parsed": false,
+      "generated_tokens": 2600,
+      "output_head": "{\"id\":\"hopper\",\"name\":\"Hopper / indexer\",\"kind\":\"mechanism\",\"origin\":[0.0,2.0,-1.4],\"features\":[{\"t\":\"plate\",\"n\":\"hopper floor\",\"at\":[0,0.5,0],\"size\":[23.0,0.093,13.0],\"mat\":\"aluminium\",\"pockets\":6},{\"t\":\"polycarb\",\"n\":\"hopper back wall\",\"at\":[0,5.5,-6.4],\"size\":[23.0,10.0,0.093],\"rot\":[0,90,0]},{\"t\":\"polycarb\",\"n\":\"hopper left wall\",\"at\":[-11.5,5.5,0],\"size\":[0.093,10.0,13.0],\"rot\":[90,0,0]},{\"t\":\"polycuboid\",\"n\":\"hopper right wall\",\"at\":[11.5,5.5,0],\"size\":[0.093,10.0,13.0],\"rot\":[90,0,0]},{\"t\":\"polycarb\",\"n\":\"hopper left funnel\",\"at\":[-10.5,3.5,0],\"size\":[2.0,7.0,0.093],\"rot\":[90,0,0],\"thick\":0.069},{\"t\":\"polycarb\",\"n\":\"hopper right funnel\",\"at\":[10.5,3.5,0],\"size\":[2.0,7.0,0.093],\"rot\":[90,0,0],\"thick\":0.069},{\"t\":\"shaft\",\"n\":\"hopper drive shaft\",\"at\":[0,1.2,-1.4],\"dia\":0.5,\"len\":24.0,\"rot\":[0,0,90],\"form\":\"hex\",\"mat\":\"steel\"},{\"t\":\"bearing\",\"n\":\"hopper shaft bearing\",\"at\":[-11.8,1.2,-1.4],\"bore\":0.5,\"od\":1.125,\"w\":0.313,\"rot\":[0,0,90],\"flanged\":true},{\"t\":\"bearing\",\"n\":\"hopper shaft bearing\",\"at\":[11.8,1.2,-1.4],\"bore\":0.5,\"od\":1.125,\"w\":0.313,\"rot\":[0,0,90],\"flanged\":true},{\"t\":\"wheel\",\"n\":\"index wheel 1\",\"at\":[-10.2,1.2,-1.4],\"dia\":3.0,\"w\":0.9,\"kind\":\"compliant\",\"rot\":[0,0,9",
+      "output_tail": "[0,2.2,-29.9],\"size\":[13.0,0.125,9.0],\"rot\":[0,90,0]},{\"t\":\"polycarb\",\"n\":\"hopper exit guide\",\"at\":[0,2.2,-31.3],\"size\":[13.0,0.125,9.0],\"rot\":[0,90,0]},{\"t\":\"polycarb\",\"n\":\"hopper exit guide\",\"at\":[0,2.2,-32.7],\"size\":[13.0,0.125,9.0],\"rot\":[0,90,0]},{\"t\":\"polycarb\",\"n\":\"hopper exit guide\",\"at\":[0,2.2,-34.1],\"size\":[13.0,0.125,9.0],\"rot\":[0,90,0]},{\"t\":\"polycarb\",\"n\":\"hopper exit guide\",\"at\":[0,2.2,-35.5],\"size\":[13.0,0.125,9.0],\"rot\":[0,90,0]},{\"t\":\"polycarb\",\"n\":\"hopper exit guide\",\"at\":[0,2.2,-36.9],\"size\":[13.0,0.125,9.0],\"rot\":[0,90,0]},{\"t\":\"polycarb\",\"n\":\"hopper exit guide\",\"at\":[0,2.2,-38.3],\"size\":[13.0,0.125,9.0],\"rot\":[0,90,0]},{\"t\":\"polycarb\",\"n\":\"hopper exit guide\",\"at\":[0,2.2,-39.7],\"size\":[13.0,0.125,9.0],\"rot\":[0,90,0]},{\"t\":\"polycarb\",\"n\":\"hopper exit guide\",\"at\":[0,2.2,-41.1],\"size\":[13.0,0.125,9.0],\"rot\":[0,90,0]},{\"t\":\"polycarb\",\"n\":\"hopper exit guide\",\"at\":[0,2.2,-42.5],\"size\":[13.0,0.125,9.0],\"rot\":[0,90,0]},{\"t\":\"polycarb\",\"n\":\"hopper exit guide\",\"at\":[0,2.2,-43.9],\"size\":[13.0,0.125,9.0],\"rot\":[0,90,0]},{\"t\":\"polycarb\",\"n\":\"hopper exit guide\",\"at\":[0,2.2,-45.3],\"size\":[13.0,0.125,9.0],\"rot\":[0,90,0]},{\"t\":\"polycarb\",\"n\":\"hopper exit guide\",\"at\":[0,2.2,-46.7",
+      "subsystem": "hopper",
+      "season": "2026-rebuilt",
+      "prompt": "27x27 REBUILT robot with a circular spindexer feeding a hooded shooter"
+    },
+    {
+      "parsed": true,
+      "has_features": true,
+      "feature_count": 20,
+      "schema_keys": true,
+      "unknown_types": [],
+      "non_stock_sections": [],
+      "inconsistent_pitch_diameters": [],
+      "positioned_fraction": 1.0,
+      "clean": true,
+      "generated_tokens": 1308,
+      "subsystem": "arm",
+      "season": "2025-reefscape",
+      "prompt": "28x28 robot with a double-jointed arm reaching 24 in."
+    },
+    {
+      "parsed": false,
+      "generated_tokens": 2600,
+      "output_head": "{\"id\":\"climber\",\"name\":\"Climber\",\"kind\":\"mechanism\",\"origin\":[0.0,1.0,0.0],\"features\":[{\"t\":\"tube\",\"n\":\"climber tower\",\"at\":[0,22.0,0],\"sec\":[2.0,2.0],\"len\":36.0,\"wall\":0.125,\"rot\":[90,0,0],\"mat\":\"aluminium\",\"bolt_pitch\":2.0,\"pockets\":true},{\"t\":\"tube\",\"n\":\"climber tower\",\"at\":[0,40.0,0],\"sec\":[2.0,2.0],\"len\":36.0,\"wall\":0.125,\"rot\":[90,0,0],\"mat\":\"aluminium\",\"bolt_pitch\":2.0,\"pockets\":true},{\"t\":\"tube\",\"n\":\"climber tower\",\"at\":[0,58.0,0],\"sec\":[2.0,2.0],\"len\":36.0,\"wall\":0.125,\"rot\":[90,0,0],\"mat\":\"aluminium\",\"bolt_pitch\":2.0,\"pockets\":true},{\"t\":\"shaft\",\"n\":\"climb stage 1 shaft\",\"at\":[0,22.0,0.9],\"dia\":0.625,\"len\":36.0,\"rot\":[90,0,0],\"form\":\"hex\",\"mat\":\"steel\"},{\"t\":\"shaft\",\"n\":\"climb stage 2 shaft\",\"at\":[0,40.0,0.9],\"dia\":0.625,\"len\":36.0,\"rot\":[90,0,0],\"form\":\"hex\",\"mat\":\"steel\"},{\"t\":\"shaft\",\"n\":\"climb stage 3 shaft\",\"at\":[0,58.0,0.9],\"dia\":0.625,\"len\":36.0,\"rot\":[90,0,0],\"form\":\"hex\",\"mat\":\"steel\"},{\"t\":\"wheel\",\"n\":\"stage 1 driven wheel\",\"at\":[0,22.0,0.9],\"dia\":4.0,\"w\":0.65,\"kind\":\"driven\",\"rot\":[90,0,0],\"duro\":\"greaseable\",\"flanged\":true},{\"t\":\"wheel\",\"n\":\"stage 2 driven wheel\",\"at\":[0,40.0,0.9],\"dia\":4.0,\"w\":0.65,\"kind\":\"driven\",\"rot\":[90,0,0],\"duro\":\"greaseable\",\"flanged\":",
+      "output_tail": "\"size\":[0.75,0.5,0.75],\"mat\":\"steel\",\"pockets\":4},{\"t\":\"plate\",\"n\":\"climb stowed rail stop\",\"at\":[0,58.0,1.4],\"size\":[2.0,0.5,1.0],\"mat\":\"aluminium\",\"pockets\":4},{\"t\":\"plate\",\"n\":\"climb stowed rail stop\",\"at\":[0,58.0,1.8],\"size\":[2.0,0.5,1.0],\"mat\":\"aluminium\",\"pockets\":4},{\"t\":\"plate\",\"n\":\"climb stowed rail stop\",\"at\":[0,58.0,2.2],\"size\":[2.0,0.5,1.0],\"mat\":\"aluminium\",\"pockets\":4},{\"t\":\"plate\",\"n\":\"climb stowed rail stop\",\"at\":[0,58.0,2.6],\"size\":[2.0,0.5,1.0],\"mat\":\"aluminium\",\"pockets\":4},{\"t\":\"plate\",\"n\":\"climb stowed rail stop\",\"at\":[0,58.0,3.0],\"size\":[2.0,0.5,1.0],\"mat\":\"aluminium\",\"pockets\":4},{\"t\":\"plate\",\"n\":\"climb stowed rail stop\",\"at\":[0,58.0,3.4],\"size\":[2.0,0.5,1.0],\"mat\":\"aluminium\",\"pockets\":4},{\"t\":\"plate\",\"n\":\"climb stowed rail stop\",\"at\":[0,58.0,3.8],\"size\":[2.0,0.5,1.0],\"mat\":\"aluminium\",\"pockets\":4},{\"t\":\"plate\",\"n\":\"climb stowed rail stop\",\"at\":[0,58.0,4.2],\"size\":[2.0,0.5,1.0],\"mat\":\"aluminium\",\"pockets\":4},{\"t\":\"plate\",\"n\":\"climb stowed rail stop\",\"at\":[0,58.0,4.6],\"size\":[2.0,0.5,1.0],\"mat\":\"aluminium\",\"pockets\":4},{\"t\":\"plate\",\"n\":\"climb stowed rail stop\",\"at\":[0,58.0,5.0],\"size\":[2.0,0.5,1.0],\"mat\":\"aluminium\",\"pockets\":4},{\"t\":\"plate\",\"n\":\"climb stowed",
+      "subsystem": "climber",
+      "season": "2026-rebuilt",
+      "prompt": "27 inch robot with dual telescoping winch hooks."
+    },
+    {
+      "parsed": false,
+      "generated_tokens": 2600,
+      "output_head": "{\"id\":\"chassis\",\"name\":\"Chassis 2x1 tube frame\",\"kind\":\"structure\",\"origin\":[0.0,0.0,0.0],\"features\":[{\"t\":\"tube\",\"n\":\"side rail left\",\"at\":[-13.0,0.0,0],\"sec\":[2.0,1.0],\"len\":28.0,\"wall\":0.1,\"mat\":\"aluminium\",\"bolt_pitch\":2.0,\"note\":\"2x1 tube, strong axis vertical\"},{\"t\":\"tube\",\"n\":\"side rail right\",\"at\":[13.0,0.0,0],\"sec\":[2.0,1.0],\"len\":28.0,\"wall\":0.1,\"mat\":\"aluminium\",\"bolt_pitch\":2.0,\"note\":\"2x1 tube, strong axis vertical\"},{\"t\":\"tube\",\"n\":\"front rail\",\"at\":[0.0,0.0,-13.0],\"sec\":[1.0,1.0],\"len\":26.0,\"wall\":0.1,\"mat\":\"aluminium\",\"bolt_pitch\":2.0,\"note\":\"1x1 tube, strong axis vertical\"},{\"t\":\"tube\",\"n\":\"back rail\",\"at\":[0.0,0.0,13.0],\"sec\":[1.0,1.0],\"len\":26.0,\"wall\":0.1,\"mat\":\"aluminium\",\"bolt_pitch\":2.0,\"note\":\"1x1 tube, strong axis vertical\"},{\"t\":\"gusset\",\"n\":\"corner gusset\",\"at\":[-11.8,-1.0,11.8],\"size\":[3.0,3.0],\"th\":0.09,\"mat\":\"aluminium\"},{\"t\":\"gusset\",\"n\":\"corner gusset\",\"at\":[-11.8,-1.0,-11.8],\"size\":[3.0,3.0],\"th\":0.09,\"mat\":\"aluminium\"},{\"t\":\"gusset\",\"n\":\"corner gusset\",\"at\":[11.8,-1.0,-11.8],\"size\":[3.0,3.0],\"th\":0.09,\"mat\":\"aluminium\"},{\"t\":\"gusset\",\"n\":\"corner gusset\",\"at\":[11.8,-1.0,11.8],\"size\":[3.0,3.0],\"th\":0.09,\"mat\":\"aluminium\"},{\"t\":\"tube\",\"n\":\"crossmember",
+      "output_tail": ",\"mat\":\"aluminium\",\"bolt_pitch\":2.0},{\"t\":\"tube\",\"n\":\"crossmember\",\"at\":[0.0,0.0,51.0],\"sec\":[1.0,1.0],\"len\":26.0,\"wall\":0.1,\"mat\":\"aluminium\",\"bolt_pitch\":2.0},{\"t\":\"tube\",\"n\":\"crossmember\",\"at\":[0.0,0.0,53.0],\"sec\":[1.0,1.0],\"len\":26.0,\"wall\":0.1,\"mat\":\"aluminium\",\"bolt_pitch\":2.0},{\"t\":\"tube\",\"n\":\"crossmember\",\"at\":[0.0,0.0,55.0],\"sec\":[1.0,1.0],\"len\":26.0,\"wall\":0.1,\"mat\":\"aluminium\",\"bolt_pitch\":2.0},{\"t\":\"tube\",\"n\":\"crossmember\",\"at\":[0.0,0.0,57.0],\"sec\":[1.0,1.0],\"len\":26.0,\"wall\":0.1,\"mat\":\"aluminium\",\"bolt_pitch\":2.0},{\"t\":\"tube\",\"n\":\"crossmember\",\"at\":[0.0,0.0,59.0],\"sec\":[1.0,1.0],\"len\":26.0,\"wall\":0.1,\"mat\":\"aluminium\",\"bolt_pitch\":2.0},{\"t\":\"tube\",\"n\":\"crossmember\",\"at\":[0.0,0.0,61.0],\"sec\":[1.0,1.0],\"len\":26.0,\"wall\":0.1,\"mat\":\"aluminium\",\"bolt_pitch\":2.0},{\"t\":\"tube\",\"n\":\"crossmember\",\"at\":[0.0,0.0,63.0],\"sec\":[1.0,1.0],\"len\":26.0,\"wall\":0.1,\"mat\":\"aluminium\",\"bolt_pitch\":2.0},{\"t\":\"tube\",\"n\":\"crossmember\",\"at\":[0.0,0.0,65.0],\"sec\":[1.0,1.0],\"len\":26.0,\"wall\":0.1,\"mat\":\"aluminium\",\"bolt_pitch\":2.0},{\"t\":\"tube\",\"n\":\"crossmember\",\"at\":[0.0,0.0,67.0],\"sec\":[1.0,1.0],\"len\":26.0,\"wall\":0.1,\"mat\":\"aluminium\",\"bolt_pitch\":2.0},{\"t\":\"tube\",\"n\":\"crossmember\",\"at\":[0.0,0.0,69.",
+      "subsystem": "chassis",
+      "season": "2025-reefscape",
+      "prompt": "30x28 swerve robot, bolted 2x1 tube frame."
+    },
+    {
+      "parsed": false,
+      "generated_tokens": 2600,
+      "output_head": "{\"id\":\"swerve module\",\"name\":\"Swerve module\",\"kind\":\"mechanism\",\"origin\":[0.0,0.0,0.0],\"features\":[{\"t\":\"plate\",\"n\":\"module plate\",\"at\":[0.0,0.0,0.0],\"size\":[2.6,0.2,2.6],\"mat\":\"aluminium\",\"pockets\":4},{\"t\":\"plate\",\"n\":\"module plate\",\"at\":[0.0,2.4,0.0],\"size\":[2.6,0.2,2.6],\"rot\":[0,90,0],\"mat\":\"aluminium\",\"pockets\":4},{\"t\":\"plate\",\"n\":\"module plate\",\"at\":[0.0,-2.4,0.0],\"size\":[2.6,0.2,2.6],\"rot\":[0,-90,0],\"mat\":\"aluminium\",\"pockets\":4},{\"t\":\"plate\",\"n\":\"module plate\",\"at\":[0.0,0.0,-2.4],\"size\":[2.6,0.2,2.6],\"rot\":[0,0,90],\"mat\":\"aluminium\",\"pockets\":4},{\"t\":\"plate\",\"n\":\"module plate\",\"at\":[0.0,0.0,2.4],\"size\":[2.6,0.2,2.6],\"rot\":[0,0,-90],\"mat\":\"aluminium\",\"pockets\":4},{\"t\":\"shaft\",\"n\":\"module shaft\",\"at\":[0.0,0.0,-1.2],\"dia\":0.5,\"len\":2.6,\"rot\":[0,0,90],\"form\":\"hex\",\"mat\":\"steel\"},{\"t\":\"bearing\",\"n\":\"module bearing\",\"at\":[-1.3,0.0,-1.2],\"bore\":0.5,\"od\":1.125,\"w\":0.313,\"rot\":[0,0,90],\"flanged\":true},{\"t\":\"bearing\",\"n\":\"module bearing\",\"at\":[1.3,0.0,-1.2],\"bore\":0.5,\"od\":1.125,\"w\":0.313,\"rot\":[0,0,90],\"flanged\":true},{\"t\":\"plate\",\"n\":\"module corner gusset\",\"at\":[-1.3,0.0,-1.2],\"size\":[2.6,0.15,0.19],\"mat\":\"aluminium\",\"pockets\":0},{\"t\":\"plate\",\"n\":\"module corner gusset\",\"at\":[1.3,0.0",
+      "output_tail": ",\"mat\":\"aluminium\",\"pockets\":0},{\"t\":\"plate\",\"n\":\"module side plate\",\"at\":[0.0,0.0,2.4],\"size\":[2.6,0.2,2.6],\"rot\":[0,0,90],\"mat\":\"aluminium\",\"pockets\":0},{\"t\":\"plate\",\"n\":\"module top plate\",\"at\":[0.0,2.4,0.0],\"size\":[2.6,0.19,2.6],\"mat\":\"aluminium\",\"pockets\":0},{\"t\":\"plate\",\"n\":\"module bottom plate\",\"at\":[0.0,-2.4,0.0],\"size\":[2.6,0.19,2.6],\"mat\":\"aluminium\",\"pockets\":0},{\"t\":\"plate\",\"n\":\"module side plate\",\"at\":[0.0,0.0,-2.4],\"size\":[2.6,0.2,2.6],\"rot\":[0,0,90],\"mat\":\"aluminium\",\"pockets\":0},{\"t\":\"plate\",\"n\":\"module side plate\",\"at\":[0.0,0.0,2.4],\"size\":[2.6,0.2,2.6],\"rot\":[0,0,90],\"mat\":\"aluminium\",\"pockets\":0},{\"t\":\"plate\",\"n\":\"module top plate\",\"at\":[0.0,2.4,0.0],\"size\":[2.6,0.19,2.6],\"mat\":\"aluminium\",\"pockets\":0},{\"t\":\"plate\",\"n\":\"module bottom plate\",\"at\":[0.0,-2.4,0.0],\"size\":[2.6,0.19,2.6],\"mat\":\"aluminium\",\"pockets\":0},{\"t\":\"plate\",\"n\":\"module side plate\",\"at\":[0.0,0.0,-2.4],\"size\":[2.6,0.2,2.6],\"rot\":[0,0,90],\"mat\":\"aluminium\",\"pockets\":0},{\"t\":\"plate\",\"n\":\"module side plate\",\"at\":[0.0,0.0,2.4],\"size\":[2.6,0.2,2.6],\"rot\":[0,0,90],\"mat\":\"aluminium\",\"pockets\":0},{\"t\":\"plate\",\"n\":\"module top plate\",\"at\":[0.0,2.4,0.0],\"size\":[2.6,0.19,2.6],\"mat\":\"aluminium\",\"pockets\":0},{\"t",
+      "subsystem": "swerve module",
+      "season": "offseason",
+      "prompt": "Just an MK4i swerve module on a Kraken X60 at L2."
+    }
+  ],
+  "held_results": []
+}

@@ -1,0 +1,20 @@
+{
+  "version": "design-v18-cad-repair3",
+  "seed": 18002,
+  "source": "design-v18 train split only",
+  "held_out_geometry_added": false,
+  "family_counts": {
+    "cad_geometry_repair": 390,
+    "design_intent": 60,
+    "other_cad_preservation": 0
+  },
+  "split_counts": {
+    "train": 414,
+    "valid": 36
+  },
+  "sha256": {
+    "train": "d8318a2f581570716f17b153f524d01cd5f0e7c45baf6353818dee49a3780345",
+    "valid": "7fcf906596ef4589c983e9c4e3b882aed6aca873df3ebc3507cf3d66c98d6b37"
+  },
+  "purpose": "Unique editable part names and bounded complete assemblies for observed repetition failures."
+}

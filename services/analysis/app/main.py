@@ -21,6 +21,10 @@ from app.rules.registry import discover_rules, engine_version
 from app.services.security import ensure_bootstrap_admin
 
 logging.basicConfig(level=logging.INFO)
+# `_seed_model_registry` logs a warning when models/registry.json is absent, which is the
+# normal case in any deployment that does not ship the dev registry. Without this name that
+# warning raised NameError *inside the startup hook* and killed the whole service.
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 app = FastAPI(title="Kale Forge Analysis Service", version="0.1.0")

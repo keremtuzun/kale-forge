@@ -17,6 +17,7 @@ class _PendingRequest:
     req: GenerateRequest
     event: threading.Event = field(default_factory=threading.Event)
     result: Optional[GenerateResult] = None
+    error: Optional[Exception] = None
 
 
 class TransformersProvider(Provider):
@@ -71,6 +72,10 @@ class TransformersProvider(Provider):
                 self._worker_running = True
                 threading.Thread(target=self._drain, daemon=True).start()
         pending.event.wait(timeout=120)
+        if pending.error is not None:
+            if isinstance(pending.error, ProviderUnavailable):
+                raise pending.error
+            raise ProviderUnavailable(f"generation failed: {pending.error}") from pending.error
         if pending.result is None:
             raise ProviderUnavailable("generation timed out")
         return pending.result
@@ -78,11 +83,19 @@ class TransformersProvider(Provider):
     def _drain(self) -> None:
         time.sleep(self.batch_window_ms / 1000.0)
         with self._lock:
-            batch = self._queue[: self.batch_size]
-            self._queue = self._queue[self.batch_size :]
+            # A JSON grammar is request-specific. Never combine two different grammars in one
+            # sampling call; structured requests trade a little throughput for correctness.
+            take = 1 if self._queue and self._queue[0].req.json_schema is not None else self.batch_size
+            batch = self._queue[:take]
+            self._queue = self._queue[take:]
             if not self._queue:
                 self._worker_running = False
-        self._run_batch(batch)
+        try:
+            self._run_batch(batch)
+        except Exception as exc:
+            for pending in batch:
+                pending.error = exc
+                pending.event.set()
         with self._lock:
             if self._queue and not self._worker_running:
                 self._worker_running = True
@@ -92,12 +105,29 @@ class TransformersProvider(Provider):
         started = time.monotonic()
         prompts = [self._format(p.req) for p in batch]
         inputs = self._tokenizer(prompts, return_tensors="pt", padding=True).to(self._model.device)
+        generation_kwargs = {}
+        if batch[0].req.json_schema is not None:
+            try:
+                from lmformatenforcer import JsonSchemaParser  # noqa: PLC0415
+                from lmformatenforcer.integrations.transformers import (  # noqa: PLC0415
+                    build_transformers_prefix_allowed_tokens_fn,
+                )
+            except ImportError as exc:
+                raise ProviderUnavailable(
+                    "constrained JSON generation requires lm-format-enforcer; refusing "
+                    "unconstrained structured output"
+                ) from exc
+            parser = JsonSchemaParser(batch[0].req.json_schema)
+            generation_kwargs["prefix_allowed_tokens_fn"] = (
+                build_transformers_prefix_allowed_tokens_fn(self._tokenizer, parser)
+            )
         with self._torch.no_grad():
             out = self._model.generate(
                 **inputs,
                 max_new_tokens=max(p.req.max_tokens for p in batch),
                 do_sample=batch[0].req.temperature > 0,
                 temperature=max(batch[0].req.temperature, 1e-4),
+                **generation_kwargs,
             )
         latency = (time.monotonic() - started) * 1000
         for i, pending in enumerate(batch):

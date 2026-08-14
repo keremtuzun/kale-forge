@@ -115,15 +115,8 @@ def download_file(design_id: str, filename: str, user=Depends(get_current_user))
 
 
 @router.post("/{design_id}/onshape/publish")
-def publish_onshape(design_id: str, mesh: bool = False, user=Depends(get_current_user)):
-    """Publish to Onshape as an editable Feature Studio.
-
-    `mesh=true` falls back to the old OBJ translation. It is kept because an imported mesh is
-    occasionally what someone wants — a quick visual reference, or a shape to measure against —
-    but it is no longer the default, because what it produces cannot be edited: a triangle
-    carries no wall thickness, no tooth count and no centre distance, so every dimension the
-    design was built from is gone by the time it lands.
-    """
+def publish_onshape(design_id: str, user=Depends(get_current_user)):
+    """Publish editable parametric source; flattened export is not a studio operation."""
     studio = get_design_studio()
     try:
         design = studio.get(design_id, user.id)
@@ -131,15 +124,11 @@ def publish_onshape(design_id: str, mesh: bool = False, user=Depends(get_current
             raise HTTPException(400, "Only robot assemblies publish to Onshape")
         prior = design.get("onshape") or {}
         title = f"{design['name']} — Kale r{design['revision']}"
-        if mesh:
-            obj = next(name for name in design["artifacts"] if name.endswith(".obj"))
-            result = onshape.publish(user.id, title, studio.artifact(design_id, obj, user.id),
-                                     prior.get("document_id", ""), prior.get("workspace_id", ""))
-        else:
-            source = studio.artifact(design_id, "KaleRobot.fs", user.id).read_text()
-            result = onshape.publish_parametric(
-                user.id, title, source,
-                prior.get("document_id", ""), prior.get("workspace_id", ""))
+        source = studio.artifact(design_id, "KaleRobot.fs", user.id).read_text()
+        result = onshape.publish_parametric(
+            user.id, title, source,
+            prior.get("document_id", ""), prior.get("workspace_id", ""),
+            prior.get("element_id", ""))
         studio.set_onshape(design_id, user.id, result)
         return result
     except FileNotFoundError as exc: raise HTTPException(404, "design not found") from exc

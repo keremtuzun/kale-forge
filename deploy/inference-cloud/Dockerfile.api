@@ -1,0 +1,37 @@
+# Kale Forge inference API + STEP compiler, for the cloud VM.
+#
+# One image carries the FastAPI service, cadquery/OpenCascade for step_worker.py, and the
+# Design Studio's own CAD modules (step_worker imports them from apps/site). The model is
+# NOT in here — llama-server runs as its own container (see docker-compose.yml), for the
+# same reason the laptop runs it out of process: a C++ fault must not take the API down.
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# OpenCascade (under cadquery) links against the system OpenGL/X11 stack even for headless
+# solid modelling, and python:slim ships none of it — without these, `import cadquery` dies
+# with "libGL.so.1: cannot open shared object file" and every STEP export 500s.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       libgl1 libglu1-mesa libxi6 libxmu6 libsm6 libice6 libxext6 libxrender1 libfontconfig1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# The analysis package supplies the shared FastAPI/Pydantic/HTTP dependencies.
+COPY src/services/analysis /tmp/analysis
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir /tmp/analysis \
+    && pip install --no-cache-dir cadquery \
+    && rm -rf /tmp/analysis \
+    && python -c "import cadquery; print('cadquery import OK')"
+
+# step_worker.py resolves the studio modules as ../../../apps/site relative to itself,
+# so the layout inside the image mirrors the repo: /app/services/inference + /app/apps/site.
+COPY src/services/inference /app/services/inference
+COPY src/apps/site/app /app/apps/site/app
+
+WORKDIR /app/services/inference
+EXPOSE 8001
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]

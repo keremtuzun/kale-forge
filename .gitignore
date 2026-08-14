@@ -58,6 +58,8 @@ models/adapters/*-work/
 # throwaway geometry. Tooling and outputs, not source — and the venv in particular should be
 # reinstalled onto local disk rather than read from here (see docs/training-guide.md).
 work/
+kale-v18-lightning.zip
+models/evaluations/*.progress.json
 
 # Training and eval run logs: run output, not source. The durable artifacts of a run are
 # its checkpoints (models/adapters/) and its scorecard (models/evaluations/).
@@ -65,3 +67,17 @@ logs/
 
 # Vercel project links and absorbed nested-repo histories
 .vercel/
+
+# Trained weights. An adapter is a build output of a run, not source: the recipe
+# (training/configs/, services/training/) and the scorecard (models/evaluations/) are what
+# reproduce it. A 126 MB safetensors is also over GitHub's hard 100 MB per-file limit.
+models/adapters/**/*.safetensors
+models/adapters/**/tokenizer.json
+
+# Oracle recovery payload: the pulled /opt/kale tree and its tarballs are a BACKUP of a
+# running box. The scripts that produced them are tracked; the 115 MB payload is not.
+deploy/oracle-recovery/recovered/
+*.tar.gz
+
+# Render output from dev_server.py's /capture receiver.
+apps/site/captures/

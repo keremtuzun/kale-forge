@@ -1,0 +1,34 @@
+# Low-rate anti-repetition continuation from the strongest v18 checkpoint.
+base_model: Qwen/Qwen3-4B-Instruct-2507
+initial_adapter: models/adapters/kale-design-qwen3-4b-v18-cad-repair/checkpoint-50
+dataset_dir: datasets/processed/design-v18-cad-repair3
+dataset_version: design-v18-cad-repair3
+seed: 45
+lr: 0.000002
+epochs: 1
+max_steps: 20
+per_device_batch: 1
+grad_accum: 4
+max_seq_len: 3072
+packing: false
+gradient_checkpointing: true
+optim: paged_adamw_8bit
+warmup_ratio: 0.1
+logging_steps: 2
+save_steps: 20
+save_total_limit: 1
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+quantization:
+  enabled: true
+  bits: 4
+  type: nf4
+  compute_dtype: float16
+  double_quant: true
+tracking:
+  backend: none
+output_dir: models/adapters/kale-design-qwen3-4b-v18-cad-repair3
+eval_per_epoch: false

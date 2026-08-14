@@ -845,6 +845,98 @@ def _binder_examples(rng: random.Random, start: int, requests: list[tuple[str, s
     return rows
 
 
+def _cad_binder_audit_examples(rng: random.Random, start: int,
+                               requests: list[tuple[str, str]],
+                               cap: int = 240) -> list[dict[str, Any]]:
+    """Teach one answer to reconcile requirements, binder claims, and actual CAD.
+
+    The older binder family is intentionally prose-first while ``cad_geometry`` is
+    structure-first.  This bridge family makes the model prove every important claim against
+    the generated tree: it names the exact parts, dimensions, interfaces, calculation inputs,
+    and a measurable validation step.  Targets are still produced from Kale's deterministic
+    spec/CAD pipeline, so the added detail cannot invent a part that the model does not contain.
+    """
+    rows: list[dict[str, Any]] = []
+    index = start
+    for request, season_key in requests:
+        spec = build_robot_spec(request, use_model=False, season=season_key)
+        cad = spec.get("cad") or {}
+        frame = spec.get("frame") or {}
+        assemblies = cad.get("assemblies") or []
+        for assembly in assemblies:
+            features = assembly.get("features") or []
+            if not features:
+                continue
+            dims: list[str] = []
+            for feature in features[:12]:
+                kind = feature.get("t", "part")
+                if feature.get("sec") and feature.get("len") is not None:
+                    measure = (f"{feature['sec'][0]:g} x {feature['sec'][1]:g} in section, "
+                               f"{feature.get('wall', 0):g} in wall, {feature['len']:g} in long")
+                elif feature.get("size"):
+                    measure = " x ".join(f"{value:g}" for value in feature["size"]) + " in"
+                elif feature.get("dia") is not None:
+                    measure = f"{feature['dia']:g} in diameter"
+                    if feature.get("len") is not None:
+                        measure += f", {feature['len']:g} in long"
+                elif feature.get("teeth") is not None:
+                    measure = (f"{feature['teeth']} teeth; pitch diameter "
+                               f"{feature.get('pd', 0):g} in")
+                else:
+                    measure = "catalog envelope; verify against the vendor drawing"
+                at = feature.get("at") or [0, 0, 0]
+                dims.append(
+                    f"- `{feature.get('id', feature.get('n', 'part'))}` — "
+                    f"{feature.get('n', kind)} ({kind}), {measure}, origin "
+                    f"[{at[0]:g}, {at[1]:g}, {at[2]:g}] in."
+                )
+
+            perimeter = 2 * (float(frame.get("width_in") or 27)
+                             + float(frame.get("length_in") or 27))
+            lines = [
+                f"## CAD-to-binder audit — {assembly.get('name', assembly.get('id', 'assembly'))}",
+                "",
+                f"**Requirement trace.** This assembly belongs to a {frame.get('width_in', 27):g} x "
+                f"{frame.get('length_in', 27):g} in robot for {spec['season']['label']}. "
+                f"The frame perimeter is {perimeter:g} in; compare it with the season limit "
+                f"before freezing interfaces.",
+                "",
+                f"**Model evidence.** The source tree contains {len(features)} separately named "
+                "parts in this assembly. The first twelve are:",
+                *dims,
+                "",
+                "**Interface contract.** Preserve the assembly origin, shaft/roller axes, bearing "
+                "bores, fastener access, and clearance to the frame envelope. A revision is not "
+                "complete until every changed interface is propagated to both mating parts.",
+                "",
+                "**Calculation trace.** Recompute derived measures from their inputs: gear pitch "
+                "diameter = teeth / diametral pitch; pulley pitch diameter = teeth x pitch / pi; "
+                "tube inside size = outside size - 2 x wall. Do not copy the previous result after "
+                "editing an input.",
+                "",
+                "**Validation.** Regenerate the CAD tree, run interference and travel checks, "
+                "compare the cut list with every tube feature, then inspect one physical or vendor "
+                "reference for each critical interface. Record the measured value, tolerance, "
+                "method, owner, and date.",
+                "",
+                "**Open status.** This is dimensioned concept geometry. Vendor dimensions, loads, "
+                "tolerances, current rules, and proof-test results remain verification items until "
+                "evidence is attached.",
+            ]
+            prompt = (
+                "Audit this subsystem by cross-checking its technical-binder claims against the "
+                "actual parametric CAD. Name the parts and measures, show the derivations, identify "
+                "interfaces, and give a verification plan.\n\n"
+                f"Season: {spec['season']['label']}\nRobot:\n{_fenced(request)}\n"
+                f"Subsystem: {assembly.get('name', assembly.get('id', 'assembly'))}"
+            )
+            rows.append(_row(SYSTEM_KNOWLEDGE, prompt, "\n".join(lines),
+                             "cad_binder_audit", index))
+            index += 1
+    rng.shuffle(rows)
+    return rows[:cap]
+
+
 def _binder_requirement(key: str, spec: dict[str, Any], season: dict[str, Any]) -> str:
     gp = season["gamepiece"]
     rules = season["rules"]
@@ -1747,7 +1839,7 @@ def generate(output_dir: Path, intent_count: int = 320, electrical_count: int = 
              seed: int = 1701, merge: list[Path] | None = None,
              cad_count: int = 90, season_math_count: int = 260,
              binder_extra: int = 0, binder_cap: int | None = None,
-             qa_extra: int = 0) -> dict[str, Any]:
+             qa_extra: int = 0, cad_binder_count: int = 0) -> dict[str, Any]:
     rng = random.Random(seed)
     rows: list[dict[str, Any]] = []
     rows += [_intent_example(rng, index) for index in range(intent_count)]
@@ -1758,6 +1850,10 @@ def generate(output_dir: Path, intent_count: int = 320, electrical_count: int = 
     if binder_extra:
         binder_requests += _varied_cad_requests(rng, binder_extra)
     rows += _binder_examples(rng, len(rows), binder_requests, cap=binder_cap)
+    if cad_binder_count:
+        audit_requests = _varied_cad_requests(rng, max(24, cad_binder_count // 4))
+        rows += _cad_binder_audit_examples(
+            rng, len(rows), audit_requests, cap=cad_binder_count)
     rows += _parts_examples(rng, len(rows))
     rows += _electrical_examples(rng, len(rows), electrical_count)
     rows += _technique_examples(rng, len(rows))
@@ -1830,6 +1926,8 @@ def main() -> None:
                         help="hard cap on binder rows after sampling")
     parser.add_argument("--qa-extra", type=int, default=0,
                         help="additional sampled robots feeding the cad_qa family")
+    parser.add_argument("--cad-binder-count", type=int, default=0,
+                        help="CAD-grounded technical-binder audit rows")
     parser.add_argument("--seed", type=int, default=1701)
     parser.add_argument("--merge", nargs="*", default=[],
                         help="existing processed dataset dirs to fold in (e.g. datasets/processed/design-v2)")
@@ -1838,7 +1936,7 @@ def main() -> None:
                         [Path(item) for item in args.merge], cad_count=args.cad_count,
                         season_math_count=args.season_math_count,
                         binder_extra=args.binder_extra, binder_cap=args.binder_cap,
-                        qa_extra=args.qa_extra)
+                        qa_extra=args.qa_extra, cad_binder_count=args.cad_binder_count)
     print(json.dumps(manifest, indent=2))
 
 

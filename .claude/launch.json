@@ -9,6 +9,13 @@
       "port": 3000
     },
     {
+      "name": "studio",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["dev_server.py", "8899"],
+      "cwd": "apps/site",
+      "port": 8899
+    },
+    {
       "name": "kale-demo",
       "runtimeExecutable": "/usr/local/bin/python3",
       "runtimeArgs": ["serve_local.py", "8787"],

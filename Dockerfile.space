@@ -1,0 +1,44 @@
+# Kale inference on a Hugging Face Space, free CPU tier.
+#
+# Serves only the inference service — geometry stays deterministic on Vercel, so this box is
+# asked for one ~900-token constrained-JSON completion per design and nothing else. That is
+# what makes a free 2 vCPU box a workable home for it.
+#
+# Space settings: SDK "docker", hardware "CPU basic (free)". Set KALE_GGUF_REPO and
+# KALE_GGUF_FILE to wherever build-v18-gguf.sh put the quantised model.
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    HF_HOME=/data/hf \
+    KALE_INFERENCE_PROVIDER=local_llamacpp \
+    KALE_MODEL_VERSION=kale-design-qwen3-4b-v18-cad-repair-50 \
+    KALE_GGUF_REPO=keremtuzun/kale-design-v18-gguf \
+    KALE_GGUF_FILE=kale-design-v18-q4_k_m.gguf \
+    PORT=7860
+
+# build-essential is needed only if pip falls back to building llama-cpp-python from source.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential cmake curl git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# The analysis package supplies the shared FastAPI/Pydantic stack the inference service imports.
+COPY services/analysis /tmp/analysis
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir /tmp/analysis \
+    && pip install --no-cache-dir "llama-cpp-python>=0.3" "huggingface_hub>=0.23" \
+    && rm -rf /tmp/analysis
+
+COPY services/inference /app/services/inference
+
+# Spaces give the container a writable /data; anything else is read-only on restart, so the
+# weights are cached there rather than baked into the image (which would blow the size limit).
+RUN mkdir -p /data/hf && chmod -R 777 /data
+
+COPY scripts/space-inference-start.sh /app/space-inference-start.sh
+RUN chmod +x /app/space-inference-start.sh
+
+EXPOSE 7860
+CMD ["/app/space-inference-start.sh"]

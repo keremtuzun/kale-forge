@@ -1,0 +1,34 @@
+# The recovered Kale.ai app, on its own hostname so it can be verified end-to-end before any
+# live traffic is pointed at it. Same split the old VM's Caddyfile used: /api/* to the
+# analysis service, everything else to Next.js.
+{$KALEAI_HOST} {
+  encode zstd gzip
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options "nosniff"
+    Referrer-Policy "strict-origin-when-cross-origin"
+    -Server
+  }
+  handle /api/* {
+    reverse_proxy kaleai:8000
+  }
+  handle {
+    reverse_proxy kaleai:7860
+  }
+}
+
+{$KALE_HOST} {
+  encode zstd gzip
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options "nosniff"
+    Referrer-Policy "strict-origin-when-cross-origin"
+    -Server
+  }
+  reverse_proxy api:8001 {
+    # STEP export and long generations legitimately take minutes on CPU.
+    transport http {
+      response_header_timeout 480s
+    }
+  }
+}
