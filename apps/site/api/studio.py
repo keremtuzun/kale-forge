@@ -1056,10 +1056,8 @@ PAGE = r"""<!doctype html>
 <div id="gate" hidden>
   <div class="gate-card" role="dialog" aria-modal="true" aria-labelledby="gate-title">
     <h1 id="gate-title">Sign in to the Design Studio</h1>
-    <p>Designs are generated for signed-in accounts. Creating one takes a moment. An email is just your key back in.</p>
-    <div class="gate-tabs"><button type="button" id="tab-in" class="on">Sign in</button><button type="button" id="tab-up">Create account</button></div>
+    <p>Sign in with an existing Rams Forge account to generate and save designs.</p>
     <form id="gate-form">
-      <div id="f-name" style="display:none"><label for="g-name">Name</label><input id="g-name" autocomplete="name"></div>
       <label for="g-email">Email</label><input id="g-email" type="email" autocomplete="email" required>
       <label for="g-pass">Password</label><input id="g-pass" type="password" autocomplete="current-password" required minlength="8">
       <div id="gate-err"></div>
@@ -1073,18 +1071,7 @@ PAGE = r"""<!doctype html>
 // the main app's auth API through the same-domain /api proxy, so the cookie is first-party.
 (() => {
   const gate = document.getElementById('gate'), err = document.getElementById('gate-err');
-  const tabIn = document.getElementById('tab-in'), tabUp = document.getElementById('tab-up');
-  const nameRow = document.getElementById('f-name'), go = document.getElementById('gate-go');
   const who = document.getElementById('who'), whoName = document.getElementById('who-name');
-  let mode = 'in';
-  const setMode = m => { mode = m;
-    tabIn.classList.toggle('on', m === 'in'); tabUp.classList.toggle('on', m === 'up');
-    nameRow.style.display = m === 'up' ? '' : 'none';
-    go.textContent = m === 'in' ? 'Sign in' : 'Create account';
-    document.getElementById('g-pass').autocomplete = m === 'in' ? 'current-password' : 'new-password';
-    err.style.display = 'none';
-  };
-  tabIn.onclick = () => setMode('in'); tabUp.onclick = () => setMode('up');
   const open = () => {
     who.style.display = 'none';
     if (window.__openDialog) window.__openDialog(gate, document.getElementById('g-email'));
@@ -1099,9 +1086,8 @@ PAGE = r"""<!doctype html>
     e.preventDefault(); err.style.display = 'none';
     const body = { email: document.getElementById('g-email').value.trim(),
                    password: document.getElementById('g-pass').value };
-    if (mode === 'up') body.name = document.getElementById('g-name').value.trim();
     try {
-      const r = await fetch(mode === 'in' ? '/api/auth/login' : '/api/auth/register', {
+      const r = await fetch('/api/auth/login', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       if (!r.ok) { const d = await r.json().catch(() => ({}));
         err.textContent = d.detail || d.error || 'That did not work. Check the details and try again.';
