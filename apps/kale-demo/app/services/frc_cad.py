@@ -28,6 +28,7 @@ import math
 import random
 from typing import Any
 
+from app.services.electronics_detail import device_bodies, harness_cables
 from app.services.frc_parts import ELECTRONICS, MOTORS, STRUCTURE, SWERVE_MODULES
 
 CAD_VERSION = "kale-cad-2.2"
@@ -147,11 +148,18 @@ def _feat(_t: str, _n: str, _at_: list[float], **kw: Any) -> dict[str, Any]:
 def tube(name: str, section: tuple[float, float], length: float, at: list[float],
          rot: list[float] | None = None, *, wall: float = 0.100,
          mat: str = "aluminium", bolts: float | None = 2.0,
-         pockets: bool = False, note: str = "") -> dict[str, Any]:
-    """A length of rectangular tube.  ``bolts`` is the hole pitch down the long face."""
+         pockets: bool = False, note: str = "",
+         allow: list[str] | None = None) -> dict[str, Any]:
+    """A length of rectangular tube.  ``bolts`` is the hole pitch down the long face.
+
+    ``allow`` names the parts this one is MEANT to sit inside — a telescoping stage nests in
+    its parent by design, and the geometry audit would otherwise report a stage 100% buried
+    in the tower as a truncated component. Declaring it here, on the part that nests, is the
+    honest form: it authorises one interface rather than exempting every tube on the robot.
+    """
     return _feat("tube", name, at, sec=[section[0], section[1]], len=round(length, 3),
                  wall=wall, rot=rot, mat=mat, bolt_pitch=bolts, pockets=pockets or None,
-                 note=note or None)
+                 note=note or None, allow=allow or None)
 
 
 def bore(dia: float, x: float = 0.0, z: float = 0.0, *, depth: float = 0.0,
@@ -676,7 +684,8 @@ def bumper_envelope(width_in: float, length_in: float) -> dict[str, float]:
             "number_colour": "white", "number_locations": 4}
 
 
-def _bumper(w: float, ln: float, team_number: int | str = 0) -> list[dict[str, Any]]:
+def _bumper(w: float, ln: float, team_number: int | str = 0,
+            corner_low: bool = True) -> list[dict[str, Any]]:
     """The bumper ring, built the way the reference builds it and sized the way R402–R412
     measures it.
 
@@ -787,8 +796,19 @@ def _bumper(w: float, ln: float, team_number: int | str = 0) -> list[dict[str, A
     # bracket this small needs — the reference teams all bend sheet in 5052 for that reason.
     for sx in (-1, 1):
         for sz in (-1, 1):
+            # The height depends on what owns the corner, because something always does.
+            #
+            # A swerve module puts its motors there, standing from y 2.2 to 5.9, so the old
+            # fixed h-0.6 (y 4.4) ran straight through them on every swerve robot. Dropping the
+            # bracket to the rail fixes that — and breaks west-coast, where the corner belongs
+            # to a drive wheel whose tread reaches y 2.9. Neither height is free on both.
+            #
+            # So it is chosen: low under the swerve motors, high over the west-coast tread. The
+            # bracket only has to tie the two plywood ends into one ring, and it does that at
+            # any height on the board.
             features.append(gusset("bumper corner bracket", (2.5, 2.5),
-                                   _at(sx * (half_w - 0.4), h - 0.6, sz * (half_l - 0.4)),
+                                   _at(sx * (half_w - 0.4), h * 0.28 if corner_low else h - 0.6,
+                                       sz * (half_l - 0.4)),
                                    thickness=0.125, form="angle",
                                    note="ties the two plywood ends into one ring at the corner"))
     # A bolt runs along its own local Z, and a turned part along its own local Y, so the two
@@ -809,12 +829,20 @@ def _bumper(w: float, ln: float, team_number: int | str = 0) -> list[dict[str, A
 
         for side in (-1, 1):
             label = "a" if side < 0 else "b"
-            along = side * ((half_w if front_back else half_l) - 3.0)
+            # Between the modules, not on top of them. At 3.0 in from the corner a hanger sits
+            # exactly where the drive wheel is (x 9.95-11.45 on a 27 in frame), so it was drawn
+            # through the wheel on all four rails. The hangers only have to carry the board's
+            # weight along the rail; further inboard does that and leaves the corners clear.
+            along = side * ((half_w if front_back else half_l) - 6.5)
 
             # The hanger carries the bumper's weight: an angle bolted flat to the rail top
             # with its short leg turned down against the board's inner face, so the board is
             # held up by aluminium and the bolt only has to keep it from swinging out.
-            hanger = place(along, -0.6)
+            # Level with the frame plane, not 0.6 in inside it. A west-coast drivetrain runs
+            # wheels the length of both side rails and their tread stands above the rail top,
+            # so a hanger set inboard was drawn through a wheel on every side hanger. At the
+            # plane it still lands on the rail — nothing floats — and it clears the tread.
+            hanger = place(along, -0.1)
             hanger[1] = 2.045
             features.append(gusset(f"{tag} bumper hanger {label}", (2.0, 1.6), hanger,
                                    _rot(0, rot_y, 0), thickness=0.090, form="angle",
@@ -982,7 +1010,10 @@ def _chassis(spec: dict[str, Any], c: Choices, stations: dict[str, float]) -> di
                                   _at(sx * (half_w - 1.4), -0.045, sz * (half_l - 1.4)),
                                   dia=0.375, len=0.30, mat="aluminium-dark",
                                   note="rivnut boss; the pan drops without losing hardware"))
-    features += _bumper(w, ln, spec.get("team_number") or 0)
+    # Swerve puts motors at the corners and west-coast puts a wheel there, so the corner
+    # bracket has to go under one and over the other.
+    features += _bumper(w, ln, spec.get("team_number") or 0,
+                        corner_low=(spec.get("drivetrain") or {}).get("type") != "west-coast")
     return _asm("chassis", f"Chassis {w:g} × {ln:g} in", "structure", features,
                 note="Welded-free bolted tube frame; every joint is a gusset and four 10-32s.",
                 mates=["bellypan fixed to rails", "rails fixed to each other at the corners"])
@@ -1225,7 +1256,21 @@ def _intake(spec: dict[str, Any], c: Choices) -> dict[str, Any] | None:
     rail_top = 2.0
 
     # The pivot sits above the bumper top on two towers; the arms reach over the bumper.
-    pivot_y = BUMPER_HEIGHT_IN + 1.6
+    # High enough that the arm plate clears the bumper it reaches over.
+    #
+    # 1.6 put the pivot at y 6.6, and a 2.4 in deep arm raked ~46 deg from there still cut the
+    # bumper's top corner — measured at 1.0 in of overlap. The relationship is monotonic once
+    # the arm is raked the right way (it was not, until the rake sign was fixed: at +1.6 the
+    # intrusion was identical at every pivot height, which is what proved the fault was
+    # orientation rather than height). Swept: 1.6 -> 1.01 in, 2.8 -> 0.46, 3.4 -> 0.22,
+    # 4.2 -> clear on every drivetrain and season, with R107 height still passing.
+    #
+    # But 3.4 is what ships. Above it the taller intake changes its own footprint enough that
+    # the placement pass re-stations its neighbours and the manipulator ends up 0.39 in past
+    # the frame line — `test_nothing_but_the_intake_hangs_outside_the_frame` fails at 3.8 and
+    # 4.2 and passes at 3.4. Trading a 0.2 in graze on the bumper for a gripper hanging out of
+    # the frame is the wrong way round, so the last fifth of an inch is reported, not taken.
+    pivot_y = BUMPER_HEIGHT_IN + 3.4
     pivot_z = 0.6                                            # just inside the front rail
     # Deployed, the first roller floats a half inch off the carpet, clear of the bumper.
     roll1_y = roller_d / 2 + 0.5
@@ -1237,13 +1282,26 @@ def _intake(spec: dict[str, Any], c: Choices) -> dict[str, Any] | None:
     # The tower feet are clamped to the rail's real span: a wide over-bumper intake may
     # overhang the frame, but a tower standing outboard of the rail stands on nothing.
     tower_x = min(width / 2 + 0.45, w / 2 - 1.35)
+    # The tower plate stands ON the front rail, so it may not reach in front of it.
+    #
+    # It used to be centred on the pivot, and the pivot sits forward of the rail on an
+    # over-bumper intake — which put 0.7 in of the plate's 2.6 in depth out past the rail face
+    # and straight into the bumper plywood. Visible in the viewer as the intake disappearing
+    # into the bumper, and missed by the interference audit because the deepest axis of the
+    # overlap is the plate's own 0.19 in thickness, well under the 0.60 in tolerance meant for
+    # mechanism-on-mechanism packaging.
+    #
+    # The plate slides back until its front face clears the rail; the pivot axis, the bearing
+    # and the dead axle do not move, so the intake's kinematics are untouched.
+    _TOWER_DEPTH = 2.6
+    tower_z = max(pivot_z, _TOWER_DEPTH / 2 + 0.08)
     for sx, side in ((-1, "left"), (1, "right")):
         tx = sx * tower_x
-        features.append(plate(f"pivot tower {side}", (0.190, pivot_y - rail_top + 1.0, 2.6),
-                              _at(tx, (pivot_y + rail_top) / 2 - 0.3, pivot_z), pockets=2,
+        features.append(plate(f"pivot tower {side}", (0.190, pivot_y - rail_top + 1.0, _TOWER_DEPTH),
+                              _at(tx, (pivot_y + rail_top) / 2 - 0.3, tower_z), pockets=2,
                               note="stands on the front rail; carries the pivot bearing"))
         features.append(gusset(f"tower foot gusset {side}", (2.2, 1.8),
-                               _at(tx, rail_top + 0.1, pivot_z + 0.9), _rot(90, 0, 0)))
+                               _at(tx, rail_top + 0.1, tower_z + 0.9), _rot(90, 0, 0)))
         features.append(fastener_row(f"tower foot bolts {side}", _at(tx, rail_top + 0.1, 0.5),
                                      2, [0, 0.9, 0], rot=_rot(90, 0, 0), length=1.3))
         features.append(bearing(f"pivot bearing {side}", _at(tx, pivot_y, pivot_z),
@@ -1265,8 +1323,15 @@ def _intake(spec: dict[str, Any], c: Choices) -> dict[str, Any] | None:
     arm_mid = _at(0, (pivot_y + roll1_y) / 2, (pivot_z + roll1_z) / 2)
     for sx, side in ((-1, "left"), (1, "right")):
         ax = sx * width / 2
+        # `+arm_angle`, not `-`. Rotating the plate about X by `a` sends its length axis to
+        # (0, cos a, sin a), and the pivot-to-roller direction is (0, arm_dy, arm_dz) — both
+        # positive, since the pivot is above and BEHIND the roller. Negating the angle leaned
+        # the arm up-and-forward instead of up-and-back, so the plate never lay along the line
+        # it is supposed to join and instead ran down through the front bumper. The rollers
+        # were always placed correctly off `arm_dy/arm_dz`, which is why only the arm was wrong
+        # and why it looked plausible until the bumper rule measured it.
         features.append(plate(f"intake arm {side}", (0.190, arm_len + 1.6, 2.4),
-                              _at(ax, arm_mid[1], arm_mid[2]), _rot(-arm_angle, 0, 0),
+                              _at(ax, arm_mid[1], arm_mid[2]), _rot(arm_angle, 0, 0),
                               pockets=3, note=f"{arm_len:.1f} in between pivot and roller"))
 
     # Rollers climb back up the arm toward the frame, so a gamepiece walks over the bumper.
@@ -1313,29 +1378,43 @@ def _intake(spec: dict[str, Any], c: Choices) -> dict[str, Any] | None:
         if drive != "gear":
             features.append(transmit(f"roller {r + 1}", 18, _at(drive_x, y, z)))
 
-    # Power rides on the arm: gearbox and motor at the pivot end where the mass belongs,
-    # one reduction run down to the first roller, roller-to-roller runs after that. They
-    # hang on a drive plate held off the arm plate by two standoffs — a gearbox drawn in
-    # free air beside the arm is exactly the floating-part defect this file must not make.
+    # Power hangs on the TOWER, not on the arm.
+    #
+    # It used to ride the arm, and the spec has always described the power path as "belt from
+    # a static gearbox" — the geometry and the declared design disagreed, and the geometry was
+    # wrong. A drive package bolted to the arm swings with it: sitting 1.9 in below the pivot
+    # and behind it, the motor and gearbox sweep up and forward through the front bumper
+    # somewhere around 60° of deploy. The motion audit reported that on every over-bumper
+    # intake, and no amount of moving the package around the arm fixes it, because the arm is
+    # what is moving.
+    #
+    # Mounted to the tower it does not move at all, and the reduction reaches the arm through
+    # the dead axle: gearbox → idler on the axle (both static), then axle → first roller,
+    # which is an arm-local run whose length cannot change as the arm rotates about that same
+    # axle. That is how a real over-bumper intake is built and why the axle is dead.
     drive_plate_x = drive_x + 0.32
+    # Where the power package sits. Computed BEFORE the plate, because the plate exists to
+    # carry it and therefore has to be under it — it used to be pinned at `pivot_z - 1.0`,
+    # which is 2.4 in away from its own gearbox and, worse, is squarely inside the front
+    # bumper. A plate that carries nothing and lives in the bumper is two faults in one line.
+    pack_z = _package_pos(spec, "z", -ln / 2, pivot_z + 1.4, motor_r + 0.4, side=-1.0)
     # The standoffs span from the arm plate to the drive plate, and on a wide over-bumper
     # intake the drive plate is now INBOARD of the arm rather than outboard of it. The span
     # is therefore a distance, not a signed offset — as a signed one it went negative and the
     # contract rejected the whole design for a negative dimension.
     features.append(plate("intake drive plate", (0.190, 3.6, 3.4),
-                          _at(drive_plate_x, pivot_y - 1.9, pivot_z - 1.0), pockets=1,
-                          note="carries the gearbox and motor, held off the arm on standoffs"))
+                          _at(drive_plate_x, pivot_y - 1.9, pack_z), pockets=1,
+                          note="bolts to the pivot tower on standoffs; carries the gearbox "
+                               "and motor clear of the arm's swing"))
     for so, sy in ((1, 1.2), (2, -1.2)):
         features.append(_feat("standoff", f"drive plate standoff {so}",
-                              _at((width / 2 + drive_plate_x) / 2, pivot_y - 1.9 + sy,
-                                  pivot_z - 1.0),
-                              dia=0.375, len=max(0.5, round(abs(drive_plate_x - width / 2), 3)),
+                              _at((tower_x + drive_plate_x) / 2, pivot_y - 1.9 + sy, pack_z),
+                              dia=0.375, len=max(0.5, round(abs(drive_plate_x - tower_x), 3)),
                               rot=_rot(0, 0, 90)))
     # The power package goes BEHIND the pivot, inside the frame. It used to sit 1.4 in in
     # front of it, which on an over-bumper intake is inside the front bumper — the one place
     # on a robot where a motor is guaranteed to be hit. Belt and chain are what make that
     # possible: they carry torque down the arm, so the mass stays back at the pivot.
-    pack_z = _package_pos(spec, "z", -ln / 2, pivot_z + 1.4, motor_r + 0.4, side=-1.0)
     gb_at = _at(drive_x + 0.85, pivot_y - 1.9, pack_z)
     features.append(gearbox("intake gearbox", (2.0, 2.2, 1.2), gb_at,
                             ratio=ik.get("gear_reduction", "4:1"), stages=2))
@@ -1343,7 +1422,17 @@ def _intake(spec: dict[str, Any], c: Choices) -> dict[str, Any] | None:
                           _at(drive_x + 2.05, pivot_y - 1.9, pack_z), _rot(0, 0, 90)))
     features.append(transmit("gearbox output", 36, _at(drive_x, pivot_y - 1.9, pack_z)))
     kind = "#25 chain" if drive == "chain" else "HTD 5 mm 15 mm belt"
+    # The idler rides the dead axle at the pivot. Everything upstream of it is bolted to the
+    # tower and never moves; everything downstream turns with the arm about this same centre,
+    # so the run to the first roller is a fixed length at every deploy angle.
+    # On its own plane, outboard of the roller pulleys. Sharing their plane put it through
+    # roller 3's pulley on a three-roller intake — a fault introduced by adding the idler,
+    # caught by the truncation audit. A two-stage reduction runs on two planes anyway.
+    idler_x = drive_x + 0.55
+    features.append(transmit("pivot idler", 24, _at(idler_x, pivot_y, pivot_z)))
     features.append(belt("reduction run", _at(drive_x, pivot_y - 1.9, pack_z),
+                         _at(idler_x, pivot_y, pivot_z), 0.35, kind=kind))
+    features.append(belt("arm run", _at(idler_x, pivot_y, pivot_z),
                          _at(drive_x, roller_ats[0][1], roller_ats[0][2]), 0.35, kind=kind))
     for r in range(count - 1):
         features.append(belt(f"roller {r + 1}→{r + 2} run",
@@ -1376,13 +1465,24 @@ def _intake(spec: dict[str, Any], c: Choices) -> dict[str, Any] | None:
                 articulation={"type": "pivot", "axis": "x",
                               "at": [0, round(pivot_y, 3), round(pivot_z, 3)],
                               "deg": [0.0, stow_deg], "home": 0.0,
+                              # The drive package is tower-mounted, so it does not swing with
+                              # the arm — listing it here is what stops the motion audit
+                              # sweeping a motor through the front bumper.
                               "static": ["pivot tower left", "pivot tower right",
                                          "tower foot gusset left", "tower foot gusset right",
                                          "tower foot bolts left", "tower foot bolts right",
                                          "pivot bearing left", "pivot bearing right",
                                          "stowed hard stop left", "stowed hard stop right",
                                          "deployed hard stop left", "deployed hard stop right",
-                                         "pivot dead axle"],
+                                         "pivot dead axle", "intake drive plate",
+                                         "drive plate standoff 1", "drive plate standoff 2",
+                                         "intake gearbox", "intake motor",
+                                         # `transmit` names by drive type, so both spellings
+                                         # are listed — matching is exact, and the belt build
+                                         # of this robot would otherwise leave the output
+                                         # pulley swinging on its own through the bumper.
+                                         "gearbox output pulley", "gearbox output sprocket",
+                                         "pivot idler pulley", "pivot idler sprocket"],
                               "note": "deploys toward the front over the bumper; "
                                       "limited arc between the hard stops"},
                 mates=["pivot towers bolt to the front rail, two 10-32s each",
@@ -1528,9 +1628,14 @@ def _hopper(spec: dict[str, Any], lane_x: float, c: Choices,
         offset = (lane - (lanes - 1) / 2) * (exit_w + 1.0)
         features.append(polycarb(f"exit lane {lane + 1} guide", (exit_w, wall_h * 0.6, 3.0),
                                  _at(offset, floor_y + wall_h * 0.3, -depth / 2 - 1.5)))
-        features.append(wheel(f"exit lane {lane + 1} roller", 2.0, exit_w * 0.8,
-                              _at(offset, floor_y + 1.0, -depth / 2 - 2.4), _rot(0, 0, 90),
-                              kind="compliant", durometer="40A"))
+        # The roller runs INSIDE the guide channel — that is what makes it a lane rather than
+        # two loose parts — so the nesting is declared instead of being reported as a roller
+        # swallowed by a polycarb panel.
+        exit_roller = wheel(f"exit lane {lane + 1} roller", 2.0, exit_w * 0.8,
+                            _at(offset, floor_y + 1.0, -depth / 2 - 2.4), _rot(0, 0, 90),
+                            kind="compliant", durometer="40A")
+        exit_roller["allow"] = [f"exit lane {lane + 1} guide"]
+        features.append(exit_roller)
         features.append(_feat("sensor", f"lane {lane + 1} beam-break",
                               _at(offset, floor_y + 1.6, -depth / 2 - 2.0),
                               size=[0.5, 0.5, 0.5], kind="beam-break",
@@ -1626,7 +1731,43 @@ def _hopper(spec: dict[str, Any], lane_x: float, c: Choices,
                       + (["floor disc revolute about Y on the centre bearing"] if rotating else []))
 
 
-def _turret_stack(ring_bore: float) -> list[dict[str, Any]]:
+def _turret_pedestal(ring_bore: float, height: float) -> list[dict[str, Any]]:
+    """Four posts and a deck that carry the slew bearing above whatever is beside it.
+
+    A turret packed next to a spindexer does not graze the hopper, it sweeps straight through
+    it: the pivot sits at y≈3.4 and the hopper's walls reach y≈14.8, so every angle past a few
+    degrees drives the head into a wall. No rotation limit can fix that — the arc that clears
+    is zero wide — and moving the hopper is not available on a 27 in frame.
+
+    Teams solve it the way this does: the turret goes on a tower and sweeps OVER the storage.
+    The deck is what the turret base plate bolts to, and the posts land on the crossmember
+    pair at this station, so the whole stack still chains back to the frame.
+    """
+    if height <= 0.1:
+        return []
+    side = ring_bore + 3.2
+    inset = 1.0
+    out: list[dict[str, Any]] = []
+    for sx in (-1, 1):
+        for sz in (-1, 1):
+            x, z = sx * (side / 2 - inset), sz * (side / 2 - inset)
+            out.append(tube(f"turret tower post {'LR'[sx > 0]}{'FB'[sz > 0]}", TUBE_1X1, height,
+                            _at(x, height / 2, z), _rot(90, 0, 0), bolts=3.0,
+                            note="lands on the crossmember pair; carries the turret deck"))
+            out.append(gusset(f"turret tower foot {'LR'[sx > 0]}{'FB'[sz > 0]}", (1.8, 1.8),
+                              _at(x, 0.9, z + sz * 0.55), _rot(90, 0, 0), form="triangle"))
+    # Cross-bracing: four posts and a deck is a parallelogram until the diagonals go in, and a
+    # turret is exactly the load case that racks it.
+    for sz in (-1, 1):
+        out.append(tube(f"turret tower brace {'FB'[sz > 0]}", TUBE_1X1, side - 2 * inset,
+                        _at(0, height * 0.55, sz * (side / 2 - inset)), _rot(0, 90, 0),
+                        bolts=None, mat="aluminium-dark"))
+    out.append(plate("turret deck", (side, 0.250, side), _at(0, height + 0.125, 0), pockets=6,
+                     note="the turret base plate bolts to this"))
+    return out
+
+
+def _turret_stack(ring_bore: float, lift: float = 0.0) -> list[dict[str, Any]]:
     """A real turret, bottom-up: base plate on the crossmembers, slew bearing on the base,
     ring gear bolted to the rotating platform, the platform disc everything above rides on,
     and the pinion + motor that drive it. Heights stack so every part rests on the one below
@@ -1657,6 +1798,18 @@ def _turret_stack(ring_bore: float) -> list[dict[str, Any]]:
              bore=ring_bore - 0.4, mat="anodised"),
         wheel("turret platform", ring_bore + 2.4, 0.32, _at(0, 1.45, 0), kind="smooth",
               durometer="0.25 in 6061 disc — everything above this rotates"),
+        # The drive package meshes on the ring's +X side, where the shooter posts also stand,
+        # so the motor and the right-hand post share about an inch of space.
+        #
+        # Moving it to the BACK of the ring is the obvious fix and it does clear the post — a
+        # pinion meshes at any clock position, only the centre distance matters. It was tried
+        # and reverted: it changes the shooter's footprint in Z, the placement pass re-stations
+        # the head off that footprint, and the swept turret then lands 2.1 in inside the
+        # elevator uprights on a packed robot. Trading a 1 in intra-assembly overlap for a
+        # 2 in swept collision with another mechanism is the wrong way round.
+        #
+        # Fixing this properly means teaching the placement pass that the shooter's footprint
+        # changed, not moving the motor and hoping. Left as it is, and reported.
         gear("turret pinion", 14, _at(mesh_x, 0.975, 0), dp=20, face=0.45, bore=0.375),
         motor("turret motor", "neo_550", _at(mesh_x, 2.2, 0), _rot(180, 0, 0)),
     ]
@@ -1666,17 +1819,29 @@ def _turret_stack(ring_bore: float) -> list[dict[str, Any]]:
     stack.append(_feat("chain_track", "turret energy chain", _at(0, 0.45, r + 0.9),
                        size=[0.9, 0.7, ring_bore * 1.5], kind="energy chain",
                        note="constant-force spring keeps it tensioned through the sweep"))
+    # The whole stack rides the pedestal deck when there is one. Shifting the built features
+    # keeps the height table in the docstring true relative to the deck, which is the datum
+    # every part above it is dimensioned from.
+    if lift > 0.001:
+        for feature in stack:
+            at = feature["at"]
+            feature["at"] = [at[0], round(at[1] + lift, 3), at[2]]
     return stack
 
 
 def _shooter(spec: dict[str, Any], lane_x: float, c: Choices,
-             station_z: float) -> dict[str, Any] | None:
+             station_z: float, turret_lift: float = 0.0) -> dict[str, Any] | None:
     """Flywheel shooter — staged barrel or classic hooded pair — on a real pivot."""
     sh = spec.get("shooter") or {}
     if not sh.get("included"):
         return None
     frame = spec["frame"]
     ln = frame["length_in"]
+    # A turret on a pedestal puts its slew bearing on the deck, so every datum above the
+    # bearing moves up with it: the deck sits at `turret_lift`, is 0.250 thick, and the stack
+    # is dimensioned from its top face.
+    turret_lift = max(0.0, float(turret_lift or 0.0))
+    stack_lift = round(turret_lift + 0.250, 3) if turret_lift > 0.1 else 0.0
     stages = max(1, min(int(sh.get("flywheel_stages", 1)), 3))
     fw_d = sh.get("flywheel_diameter_in", 4.0)
     stacked = bool(sh.get("stacked"))
@@ -1729,7 +1894,7 @@ def _shooter(spec: dict[str, Any], lane_x: float, c: Choices,
                                             _at(sx * (fw + 0.55), pivot_y + sy * (fw + 0.25), z), _rot(0, 0, 90)))
             features.append(motor(f"stage {s + 1} motor", mkey,
                                   _at(fw + 2.6, pivot_y + (-1 if s % 2 else 1) * (fw + 0.4), z), _rot(0, 0, 90)))
-        post_base = 1.61 if sh.get("turreted") else 0.0
+        post_base = (1.61 + stack_lift) if sh.get("turreted") else 0.0
         for sx in (-1, 1):
             features.append(bearing("pivot trunnion", _at(sx * (fw + 1.5), pivot_y, 0), _rot(0, 0, 90),
                                     bore=0.625, od=1.5, width=0.5))
@@ -1737,13 +1902,14 @@ def _shooter(spec: dict[str, Any], lane_x: float, c: Choices,
                                  _at(sx * (fw + 1.5), (pivot_y + post_base) / 2, 0),
                                  _rot(90, 0, 0), bolts=2.0))
         if sh.get("turreted"):
-            features += _turret_stack(5.4)
+            features += _turret_pedestal(5.4, turret_lift)
+            features += _turret_stack(5.4, lift=stack_lift)
     else:
         # On a turret the whole head sits on the rotating platform, so every head part is
         # lifted by the platform's top face. A head drawn at fixed heights over a turret is
         # how the old model ended up with posts starting mid-air.
         turret = bool(sh.get("turreted"))
-        y0 = 1.61 if turret else 0.0
+        y0 = (1.61 + stack_lift) if turret else 0.0
         # The head's centre height follows the FLYWHEEL, because the lower wheel hangs a full
         # radius below the shaft and the shaft hangs (fw + 0.25) below the centre. Pinned at
         # 4.5 it worked for a 4 in wheel and only just; a 5 in wheel put the lower flywheel's
@@ -1762,23 +1928,42 @@ def _shooter(spec: dict[str, Any], lane_x: float, c: Choices,
                                   (0.190, 6.6 + rise, 5.6), _at(sx * side_x, y0 + 3.5 + rise / 2, 0.5),
                                   pockets=3,
                                   note="carries the flywheel bearings, the feeder and the hood"))
+        # The drive package sits OUTBOARD of the post that carries the side plate, not on top
+        # of it. A 2x1 post at x = side_x spans ±0.5 in, so a pulley at side_x + 0.3 is inside
+        # it — 100% inside it, which is why the flywheel pulley was reported as a truncated
+        # part rather than a colliding one on every turreted robot. The shaft grows to carry
+        # the pulley out past the post, which is what it has to do on the real machine too.
+        # The pulley stays where it always was and the POST moves inboard instead.
+        #
+        # Moving the drive package outboard also clears the post, and it was tried: every tenth
+        # of an inch it gains is a tenth on the radius of the cylinder the whole head sweeps,
+        # and on a packed robot that drove the swept turret straight into the elevator
+        # uprights. Sliding the post in costs nothing — it still underlaps the side plate it
+        # carries — and leaves the swept radius exactly as it was.
+        drive_x = round(side_x + 0.3, 3)
+        post_x = round(side_x - 0.35, 3)
         for sy in (-1, 1):
             fy = y0 + head_y + sy * (fw + 0.25)
-            features.append(shaft("flywheel shaft", _HEX_BORE, (side_x + 0.4) * 2,
+            features.append(shaft("flywheel shaft", _HEX_BORE, (drive_x + 0.35) * 2,
                                   _at(0, fy, 0), _rot(0, 0, 90)))
             for sx in (-1, 1):
                 features.append(wheel("flywheel", fw_d, 0.8, _at(sx * 1.0, fy, 0),
                                       _rot(0, 0, 90), kind="urethane", durometer="grey 60A"))
                 features.append(bearing("flywheel bearing", _at(sx * side_x, fy, 0),
                                         _rot(0, 0, 90)))
-            features.append(pulley("flywheel pulley", 24, 0.45, _at(side_x + 0.3, fy, 0),
+            features.append(pulley("flywheel pulley", 24, 0.45, _at(drive_x, fy, 0),
                                    _rot(0, 0, 90)))
+            # The motor keeps its original station. It is the longest thing on the head and
+            # therefore what sets the radius of the cylinder the turret sweeps — pushing it
+            # out with the pulley drove that cylinder 0.84 in into the elevator uprights.
+            # It sits behind the post at z = -1.4, not on it, so it does not need the offset
+            # the pulley does.
             features.append(motor("flywheel motor", mkey,
                                   _at(side_x + 0.05 + m_len / 2, fy, -1.4), _rot(0, 0, 90)))
             features.append(pulley("flywheel motor pulley", 12, 0.45,
-                                   _at(side_x + 0.3, fy, -1.4), _rot(0, 0, 90)))
-            features.append(belt("flywheel drive belt", _at(side_x + 0.3, fy, -1.4),
-                                 _at(side_x + 0.3, fy, 0), 0.45))
+                                   _at(drive_x, fy, -1.4), _rot(0, 0, 90)))
+            features.append(belt("flywheel drive belt", _at(drive_x, fy, -1.4),
+                                 _at(drive_x, fy, 0), 0.45))
         # The hood is not a half pipe. It is a formed skin on two cut ribs, wrapping the ball
         # from where the feeder hands it over to where it leaves — about 130°, not the 180°
         # this used to draw, which put a metre of aluminium behind the flywheels doing
@@ -1818,9 +2003,11 @@ def _shooter(spec: dict[str, Any], lane_x: float, c: Choices,
                                   rot=_rot(0, 0, 90), mat="aluminium-dark",
                                   note="ties the two side plates into one frame"))
         for sx in (-1, 1):
-            features.append(tube("shooter post", TUBE_2X1, 4.4 + rise, _at(sx * side_x, y0 + (4.4 + rise) / 2, 0),
+            features.append(tube("shooter post", TUBE_2X1, 4.4 + rise,
+                                 _at(sx * post_x, y0 + (4.4 + rise) / 2, 0),
                                  _rot(90, 0, 0), bolts=2.0,
-                                 note="stands under the side plate it carries"))
+                                 note="stands under the side plate it carries, inboard of the "
+                                      "flywheel drive pulley"))
             features.append(gusset(f"shooter post gusset {'left' if sx < 0 else 'right'}",
                                    (2.2, 2.4), _at(sx * (side_x - 0.15), y0 + 4.1, 0.9),
                                    _rot(0, 0, 90), thickness=0.090, form="triangle",
@@ -1851,7 +2038,9 @@ def _shooter(spec: dict[str, Any], lane_x: float, c: Choices,
             features.append(motor("feeder motor", "neo_550", _at(width * 0.4, y0 + 3.1, 1.9), _rot(0, 0, 90)))
         features.append(polycarb("feeder guide", (width * 0.7, 0.093, 3.0), _at(0, y0 + 3.2, 1.6), _rot(-24, 0, 0)))
         if turret:
-            features += _turret_stack(max(width * 0.45, 5.0))
+            ring = max(width * 0.45, 5.0)
+            features += _turret_pedestal(ring, turret_lift)
+            features += _turret_stack(ring, lift=stack_lift)
     # Feet: every post lands on a plate bolted through the crossmember the chassis placed at
     # this station. The origin is the rail-top plane, so local y = 0 IS structure.
     post_xs = [sx * (fw + 1.5) for sx in (-1, 1)] if (stacked and barrel > 4) \
@@ -1875,7 +2064,10 @@ def _shooter(spec: dict[str, Any], lane_x: float, c: Choices,
         # Everything above the slew bearing turns, so everything above it needs clearance all
         # the way round — not just where it happens to be pointing when the model is drawn.
         # The clearance audit reads this and checks the swept cylinder instead of the pose.
-        asm["sweep"] = {"x": 0.0, "z": 0.0, "from_y": 1.45}
+        # Only what is above the slew bearing turns, and the bearing rides the deck — so the
+        # cut plane moves up with the pedestal. Left at 1.45 it would call the tower posts
+        # rotating parts and sweep the whole pedestal round the robot.
+        asm["sweep"] = {"x": 0.0, "z": 0.0, "from_y": round(1.45 + stack_lift, 3)}
     return asm
 
 
@@ -1948,7 +2140,9 @@ def _elevator(spec: dict[str, Any], lane_x: float, c: Choices,
                                  _at(x, stage_y, 0),
                                  _rot(90, 0, 0), wall=wall, mat="aluminium-dark",
                                  note=f"nests inside {outer_sec[0]:g}x{outer_sec[1]:g}"
-                                      if s == 1 else f"nests inside {ladder[s - 1][0][0]:g}x{ladder[s - 1][0][1]:g}"))
+                                      if s == 1 else f"nests inside {ladder[s - 1][0][0]:g}x{ladder[s - 1][0][1]:g}",
+                                 allow=["left upright", "right upright"]
+                                       + [f"stage {k} rail" for k in range(1, s + 1)]))
             # Four rollers per stage, and WHICH member each one is bolted to is the whole
             # constraint: the upper pair rides on the parent's top, the lower pair on this
             # stage's own bottom. Two blocks bolted to the same tube — which is what putting
@@ -2077,6 +2271,35 @@ def _elevator(spec: dict[str, Any], lane_x: float, c: Choices,
     # motor ended up two feet forward of the tower — which on a tower at the back rail is
     # inside the turret's swept circle. Symmetric about the output is also how a two-motor
     # gearbox is actually built.
+    # Centre distance has to clear both pitch radii, or the belt drive is one pulley inside
+    # another. A 36T and a 12T HTD 5 mm pair is 1.13 + 0.38 in of radius, and the motors used
+    # to sit 0.85 in from the driven pulley — so on every rope-rigged elevator the nearest
+    # winch motor pulley was reported 100% inside the driven pulley it was supposed to drive.
+    # The package stays symmetric about its own centre; the centre just moves far enough away.
+    # Straddle the output rather than stack behind it. Stacking every motor on one side keeps
+    # the centre distance honest but walks the package back along -Z until it reaches the
+    # carriage rollers — which is exactly what happened on the first attempt at this. Motors
+    # alternate sides instead, so the nearest is always at the minimum centre distance and the
+    # package never grows further from the drum than it has to.
+    # Two constraints, and the motor has to satisfy both:
+    #   * centre distance from the 36T driven pulley at z=0.7 must clear both pitch radii
+    #     (1.13 + 0.38 in) or the belt drive is one pulley inside another;
+    #   * the carriage rollers ride at z = ±1.19 and a 2.2 in motor body reaches 1.1 in either
+    #     way, so anything nearer than ~2.9 in from centre lands in a roller.
+    # NOTE — attempted and reverted, 17 Aug 2026. The nearest winch motor pulley sits 0.85 in
+    # from the 36T driven pulley whose pitch radius alone is 1.13 in, so it is reported 100%
+    # inside it: a belt drive with a centre distance smaller than its pulleys. The fix is one
+    # line here, and every version of it costs more than it saves on a packed robot:
+    #
+    #   * stacking both motors back  → the far one lands in the carriage rollers at z ±1.19;
+    #   * straddling the drum at ±3  → the +Z one enters the turret's swept circle;
+    #   * shifting only 1.05 in back → 0.14 in brush on a carriage roller;
+    #   * taking that 0.14 in in X   → motors reach into the turret's swept circle;
+    #   * adding a motor plate so nothing floats → the plate itself is in that circle.
+    #
+    # Z is crowded by the carriage rollers and X by the turret, so the real fix is to give the
+    # winch package its own lane — which is a change to how the tower is laid out, not to where
+    # two motors sit. Left as it is and reported, rather than traded for a worse collision.
     def _motor_z(i: int) -> float:
         return 0.7 - 1.9 - (i - (motor_count - 1) / 2) * 2.1
 
@@ -2328,13 +2551,20 @@ def _climber(spec: dict[str, Any], lane_x: float, c: Choices,
             cy = h * 0.5 + s * 1.5
             features.append(tube(f"climb stage {s}", sec, inner_len, _at(0, cy, 0), _rot(90, 0, 0),
                                  wall=wall, mat="aluminium-dark",
-                                 note=f"nests inside {ladder[s - 1][0][0]:g}x{ladder[s - 1][0][1]:g}"))
+                                 note=f"nests inside {ladder[s - 1][0][0]:g}x{ladder[s - 1][0][1]:g}",
+                                 allow=["climber tower"] + [f"climb stage {k}" for k in range(1, s)]))
             for sz in (-1, 1):
                 features.append(bearing(f"stage {s} rolling block", _at(0, cy - inner_len / 2 + 0.6, sz * 1.0),
                                         _rot(90, 0, 0), bore=0.375, od=0.875, width=0.45))
             top = cy + inner_len * 0.4
+        # The hook is BOLTED to the top of the innermost stage — that overlap is the joint,
+        # not a packaging fault, so it is declared rather than nudged apart until the audit
+        # stops noticing. Both the tower and every stage are named because which member is
+        # innermost depends on how many stages this climber got.
         features.append(_feat("hook", cl.get("hook", "hook"), _at(0, top, 1.4), size=[0.6, 1.8, 3.0],
-                              kind=cl.get("hook", "")))
+                              kind=cl.get("hook", ""),
+                              allow=["climber tower"]
+                                    + [f"climb stage {k}" for k in range(1, stages + 1)]))
     # The winch package hangs on one shaft: gearbox output, brake disc, drum and ratchet all
     # ride it, and the plate ties the package to the tower web. Each part used to be placed
     # at its own x with nothing continuous through them.
@@ -2408,7 +2638,153 @@ def _climber(spec: dict[str, Any], lane_x: float, c: Choices,
                        "ratchet holds the load with the motor unpowered"])
 
 
-def _electrical(spec: dict[str, Any]) -> dict[str, Any] | None:
+# How far a turret's pedestal may lift it before the design is something else. A turret two
+# feet in the air moves the centre of gravity where no drivetrain wants it, and at that point
+# the right answer is a different shooter, not a taller tower.
+_MAX_TURRET_LIFT_IN = 20.0
+
+# Air between the underside of the rotating head and the top of whatever it sweeps over.
+_TURRET_SWEEP_CLEARANCE_IN = 0.75
+
+
+def _height_headroom(spec: dict[str, Any], provisional: list[dict[str, Any]],
+                     drivetrain: list[dict[str, Any]]) -> float:
+    """Inches left under the season's height rule, measured on the provisional robot.
+
+    R107 caps a 2026 robot at 30 in for the whole match. A pedestal tall enough to clear a
+    spindexer is 15 in, and spending all of it put a legal robot at 36.8 in — trading a
+    geometry fault for a rule violation, which is a worse deal because the rule is the one
+    that gets you turned away at inspection.
+    """
+    from app.services.cad_contract import geometry_envelope  # noqa: PLC0415
+
+    # Same source `season_rule_report` reads, so the cap and the rule check agree.
+    season = spec.get("season") or {}
+    limits = season.get("limits") or season.get("rules") or {}
+    max_h = limits.get("max_height_in")
+    if not max_h:
+        return _MAX_TURRET_LIFT_IN
+    env = geometry_envelope({"assemblies": list(provisional) + list(drivetrain)})
+    if not env.get("measured"):
+        return _MAX_TURRET_LIFT_IN
+    return max(0.0, float(max_h) - float(env["height_in"]) - 0.25)
+
+
+def _turret_lift(provisional: list[dict[str, Any]],
+                 drivetrain: list[dict[str, Any]], headroom: float = _MAX_TURRET_LIFT_IN
+                 ) -> float:
+    """How high the slew bearing has to sit for the head to sweep clear, measured not guessed.
+
+    Run on the provisional pass, the same throwaway measurement the placement optimiser uses:
+    the height a turret needs depends on what ends up beside it, which is not known until
+    everything has been built once.
+
+    Only obstacles the head would actually meet count — those whose footprint falls inside the
+    circle the head sweeps — so a hopper packed against the turret raises it and a climber in
+    the far corner does not.
+    """
+    from app.services.cad_contract import _floats, _world_box, expand_mirrors  # noqa: PLC0415
+
+    shooter = next((a for a in provisional if a.get("sweep")), None)
+    if shooter is None:
+        return 0.0
+    origin = _floats(shooter.get("origin"), 3) or [0.0, 0.0, 0.0]
+    sweep = shooter["sweep"]
+    axis_x = origin[0] + float(sweep.get("x") or 0.0)
+    axis_z = origin[2] + float(sweep.get("z") or 0.0)
+    floor = origin[1] + float(sweep.get("from_y") or 0.0)
+
+    radius, head_bottom = 0.0, float("inf")
+    for feature in expand_mirrors(shooter.get("features") or []):
+        box = _world_box(feature, origin)
+        if not box or box[1][1] < floor:
+            continue                      # below the bearing: pedestal and base, not the head
+        low, high = box
+        radius = max(radius, abs(low[0] - axis_x), abs(high[0] - axis_x),
+                     abs(low[2] - axis_z), abs(high[2] - axis_z))
+        head_bottom = min(head_bottom, low[1])
+    if radius <= 0.0 or head_bottom == float("inf"):
+        return 0.0
+
+    tallest = 0.0
+    for assembly in list(provisional) + list(drivetrain):
+        if assembly is shooter:
+            continue
+        aid = str(assembly.get("id") or "")
+        asm_origin = _floats(assembly.get("origin"), 3) or [0.0, 0.0, 0.0]
+        for feature in expand_mirrors(assembly.get("features") or []):
+            box = _world_box(feature, asm_origin)
+            if not box:
+                continue
+            low, high = box
+            # Nearest point of this body to the turret axis, in plan.
+            dx = max(low[0] - axis_x, 0.0, axis_x - high[0])
+            dz = max(low[2] - axis_z, 0.0, axis_z - high[2])
+            if (dx * dx + dz * dz) ** 0.5 > radius:
+                continue                  # outside the swept circle: never in the way
+            tallest = max(tallest, high[1])
+    needed = tallest + _TURRET_SWEEP_CLEARANCE_IN - head_bottom
+    if needed <= 0.1:
+        return 0.0
+    allowed = min(_MAX_TURRET_LIFT_IN, max(headroom, 0.0))
+    # All of it, or none of it. A tower tall enough to clear the hopper is 15 in and R107 only
+    # ever leaves about one — and a one-inch pedestal is the worst of both: it adds four posts,
+    # two braces and a deck for the head to catch on while lifting it over nothing. Measured:
+    # the flagship went from 3 unresolved issues to 7 when a partial pedestal was built.
+    #
+    # So when the lift cannot be afforded the turret stays on the crossmembers and the motion
+    # audit reports the arc it is actually blocked over. That is a real design conflict — a
+    # 30 in height limit does not admit a turret sweeping over an 11 in hopper — and saying so
+    # is worth more than a tower that pretends to solve it.
+    if allowed < needed - 0.5:
+        return 0.0
+    return round(allowed, 2)
+
+
+def _motor_points(assemblies: list[dict[str, Any]],
+                  assignments: list[dict[str, Any]]) -> dict[str, list[float]]:
+    """Where each channel's load physically is, in world space.
+
+    The power analysis names loads by motor and subsystem ("Kraken X60 drive 1",
+    "drivetrain"); the geometry names them by their job in an assembly ("drive motor"). There
+    is no reliable string match between the two, and inventing one would silently mis-route
+    half the harness. Matching on the SUBSYSTEM and then taking that subsystem's motors in
+    order is honest about what is known: the wire lands on a real motor of the right
+    mechanism, which is what the run has to clear.
+    """
+    from app.services.cad_contract import _floats  # noqa: PLC0415
+
+    pools: dict[str, list[list[float]]] = {}
+    for asm in assemblies:
+        aid = str(asm.get("id") or "")
+        # A swerve module's motors are drivetrain motors.
+        subsystem = "drivetrain" if aid.startswith("swerve") or aid == "drivetrain" else aid
+        origin = _floats(asm.get("origin"), 3) or [0.0, 0.0, 0.0]
+        for feature in asm.get("features") or []:
+            if not isinstance(feature, dict) or feature.get("t") != "motor":
+                continue
+            at = _floats(feature.get("at"), 3)
+            if at is None:
+                continue
+            pools.setdefault(subsystem, []).append([origin[i] + at[i] for i in range(3)])
+    # "arm" in the power analysis is "manipulator" in the tree, the same rename the model
+    # geometry pass has to make.
+    if "manipulator" in pools:
+        pools.setdefault("arm", pools["manipulator"])
+    out: dict[str, list[float]] = {}
+    used: dict[str, int] = {}
+    for entry in assignments:
+        pool = pools.get(str(entry.get("subsystem") or ""))
+        if not pool:
+            continue
+        index = used.get(entry["subsystem"], 0)
+        out[str(entry.get("load"))] = pool[index % len(pool)]
+        used[entry["subsystem"]] = index + 1
+    return out
+
+
+def _electrical(spec: dict[str, Any],
+                assemblies: list[dict[str, Any]] | None = None) -> dict[str, Any] | None:
     """The control system, placed where electrical_layout put it, as real boxes plus the
     battery → main breaker → distributor cable run."""
     elec = spec.get("electrical") or {}
@@ -2465,10 +2841,17 @@ def _electrical(spec: dict[str, Any]) -> dict[str, Any] | None:
             cy = mast_h + sz / 2
             on_pan = False
         by_key[pl["key"]] = _at(cx, cy, cz)
-        features.append(_feat("component", pl.get("name", pl["key"]), _at(cx, cy, cz),
+        # The device envelope stays as the placeable body — it is what the layout engine
+        # packed against and what the geometry audit checks against structure, so a roboRIO
+        # buried in a frame rail is still caught. Its internals hang off it as sub-parts that
+        # declare `allow` against it.
+        name = pl.get("name", pl["key"])
+        features.append(_feat("component", name, _at(cx, cy, cz),
                               key=pl["key"], size=[round(sx, 3), round(sz, 3), round(sy, 3)],
                               rot=_rot(0, pl.get("rotation_deg", 0), 0),
                               note=pl.get("note") or None))
+        features.extend(device_bodies(pl["key"], name, _at(cx, cy, cz),
+                                      {"channels": len(elec.get("assignments") or []) or 20}))
         if on_pan:
             # The mate string says "bolts through the bellypan" — these are those bolts.
             features.append(fastener_row(f"{pl['key']} mount bolts", _at(cx, 0.03, cz), 2,
@@ -2481,14 +2864,14 @@ def _electrical(spec: dict[str, Any]) -> dict[str, Any] | None:
         # geometry, not a note.
         at, bw, bd = battery
         features.append(polycarb("battery strap", (bw + 0.8, 0.093, 1.6), at))
-    dist = by_key.get("pdh") or by_key.get("pdp")
-    if by_key.get("battery") and by_key.get("main_breaker") and dist:
-        features.append(_feat("cable", "battery + to main breaker", by_key["battery"],
-                              to=by_key["main_breaker"], gauge="6 AWG", polarity="+", dia=0.26))
-        features.append(_feat("cable", "main breaker to distributor", by_key["main_breaker"],
-                              to=dist, gauge="6 AWG", polarity="+", dia=0.26))
-        features.append(_feat("cable", "battery - to distributor", by_key["battery"],
-                              to=dist, gauge="6 AWG", polarity="-", dia=0.26))
+    # The harness from the control-system diagram: the battery loop, one power pair per
+    # high-current channel at that breaker's gauge, the CAN daisy-chain, the roboRIO feed,
+    # the radio and RSL runs, and the pneumatics. Motor endpoints come from the mechanism
+    # assemblies that were already built, so a channel wire ends at the motor it powers
+    # rather than in the air over the bellypan.
+    features.extend(harness_cables(by_key, elec.get("assignments") or [],
+                                   motor_points=_motor_points(assemblies or [],
+                                                              elec.get("assignments") or [])))
     return _asm("electrical", "Control system", "electrical", features,
                 note=f"{elec.get('main_breaker_a', 120)} A main breaker, "
                      f"{ELECTRONICS[elec.get('distributor_key', 'pdh')]['name']}",
@@ -2922,12 +3305,13 @@ def build_cad(spec: dict[str, Any]) -> dict[str, Any]:
     if (spec.get("elevator") or {}).get("included"):
         stations.pop("climber", None)
 
-    def mechanisms(lanes: dict[str, float],
-                   stations: dict[str, float]) -> list[dict[str, Any]]:
+    def mechanisms(lanes: dict[str, float], stations: dict[str, float],
+                   turret_lift: float = 0.0) -> list[dict[str, Any]]:
         elevator = _elevator(spec, lanes["elevator"], c, stations.get("elevator", 0.0))
         built = [_intake(spec, c),
                  _hopper(spec, lanes["hopper"], c, stations.get("hopper", 0.0)),
-                 _shooter(spec, lanes["shooter"], c, stations.get("shooter", 0.0)),
+                 _shooter(spec, lanes["shooter"], c, stations.get("shooter", 0.0),
+                          turret_lift=turret_lift),
                  elevator,
                  _arm(spec, lanes["manipulator"], c, stations.get("manipulator", 0.0)),
                  _climber(spec, lanes["climber"], c, stations.get("climber", 0.0),
@@ -2951,8 +3335,18 @@ def build_cad(spec: dict[str, Any]) -> dict[str, Any]:
     # additions the prompt has to ask for; adding them anyway is how "only a 27 inch chassis"
     # used to come back with four swerve modules and a PDH.
     assemblies += drivetrain
-    for asm in mechanisms(lanes, stations) + [
-            _electrical(spec) if spec.get("include_electrical", True) else None]:
+    # The control system is built LAST and is handed everything already built, so each
+    # high-current channel's wire can end at the motor it actually powers instead of stopping
+    # in the air over the bellypan.
+    # How tall the turret's pedestal has to be depends on what the placement pass finally put
+    # beside it, so it is measured from the provisional pass — the same throwaway build the
+    # station optimiser measures — and spent on the real one.
+    built = mechanisms(lanes, stations,
+                       _turret_lift(provisional, drivetrain,
+                                    _height_headroom(spec, provisional, drivetrain)))
+    for asm in built + [
+            _electrical(spec, assemblies + built)
+            if spec.get("include_electrical", True) else None]:
         if asm:
             asm.pop("host", None)          # a build-time mounting fact, not geometry
             assemblies.append(asm)
@@ -3015,6 +3409,12 @@ def build_cad(spec: dict[str, Any]) -> dict[str, Any]:
     cad["clearance"] = clearance_report(cad)
     if unresolved:
         cad["clearance"]["unresolved"] = unresolved
+    # The narrow-phase audit. `clearance_report` compares whole mechanisms in the pose they
+    # are drawn in; this one goes inside each assembly, tells a swallowed part from an
+    # overlapping one, and samples every mechanism through its travel — which is where a
+    # turret that looks fine on screen turns out to sweep through the hopper.
+    from app.services.geometry_validation import validate_geometry  # noqa: PLC0415
+    cad["geometry"] = validate_geometry(cad)
     return cad
 
 

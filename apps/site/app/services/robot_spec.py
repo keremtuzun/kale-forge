@@ -350,9 +350,24 @@ def _adopt_model_assembly(spec: dict[str, Any], proposal: Any,
     floats = structural_errors(spec_cad)
     if floats:
         return False, "structural audit rejected it: " + "; ".join(floats[:6])
+    # Model-authored coordinates are a suggestion, not geometry. A proposal that drives its
+    # own parts through each other, buries one inside another or sweeps through the rest of
+    # the robot is refused here and the deterministic tree is kept.
+    #
+    # Judged as a DELTA against the tree it is replacing, not against zero. The compiler's own
+    # output still carries faults of its own in other mechanisms, and holding a proposed intake
+    # responsible for a pre-existing overlap in the climber would reject every proposal ever
+    # made while saying nothing about the proposal.
+    from app.services.geometry_validation import (  # noqa: PLC0415
+        geometry_errors, validate_geometry)
+    before = set(geometry_errors(spec["cad"]))
+    introduced = [e for e in geometry_errors(spec_cad) if e not in before]
+    if introduced:
+        return False, "geometry audit rejected it: " + "; ".join(introduced[:6])
     # The shipped report must describe the shipped tree, not the compiler's replaced one.
     from app.services.cad_contract import structural_report  # noqa: PLC0415
     spec_cad["integrity"] = structural_report(spec_cad)
+    spec_cad["geometry"] = validate_geometry(spec_cad)
     spec["cad"] = spec_cad
     return True, f"model geometry adopted for {target} ({len(proposal['features'])} features)"
 
@@ -543,7 +558,24 @@ def _parse(prompt: str, requested_season: str = "") -> dict[str, Any]:
     drive_type = _drive_from(latest) or _drive_from(original)
     bare_swerve = drive_type == "swerve-ready"
 
-    wheel_in = _number(p, rf"(\d+(?:\.\d+)?)\s*{_INCH}\s*wheels?", 0) or None
+    # Both word orders, and the revision before the original request.
+    #
+    # This only ever matched "4 inch wheels", so "make this wheel 4 inches" — which is how
+    # people actually phrase an edit — changed nothing at all while the studio reported
+    # success. Every other dimension goes through `_dim`, which has tried both directions for
+    # a long time; this one selector was written by hand and never got the second pattern.
+    #
+    # The reverse pattern is deliberately tighter than `_dim`'s generic `[^.\d]{0,18}?` gap.
+    # That gap would read "wheels and a 27 in frame" as a 27 in wheel — fine for flywheels,
+    # where no frame dimension follows, and quietly catastrophic here.
+    _wheel_forward = rf"(\d+(?:\.\d+)?)\s*{_INCH}\s*wheels?"
+    _wheel_reverse = rf"wheels?\s*(?:are|at|to|of|=)?\s*(\d+(?:\.\d+)?)\s*{_INCH}"
+    wheel_in = None
+    for _segment in (latest, p):
+        wheel_in = (_number(_segment, _wheel_forward, 0)
+                    or _number(_segment, _wheel_reverse, 0) or None)
+        if wheel_in:
+            break
     weight_lb = _number(p, r"(\d+(?:\.\d+)?)\s*(?:lb|lbs|pound)", 0) or None
     reach_in = _number(p, rf"(\d+(?:\.\d+)?)\s*{_INCH}\s*(?:arm|reach|extension)", 0) or None
 
@@ -718,13 +750,113 @@ def revision_report(revision_text: str) -> dict[str, Any]:
             "unrecognized": [r["clause"] for r in rows if not r["recognized"]]}
 
 
-def build_robot_spec(prompt: str, *, use_model: bool = True, season: str = "") -> dict[str, Any]:
+def plan_and_resolve(prompt: str, *, season: str = "") -> tuple[str, dict[str, Any]]:
+    """Rewrite the last revision into clauses the selectors can act on, and say how.
+
+    Built here rather than in the studio because the amplifier needs the design as it stood
+    BEFORE this edit to turn "wider" into a number — and the design before the edit is exactly
+    the prompt minus its last revision. The pre-edit build skips repair: it is a measurement,
+    thrown away, and paying the repair loop twice per edit doubles the cost of every edit for
+    no benefit.
+    """
+    from app.services.edit_planner import plan_edit  # noqa: PLC0415
+
+    if "revision request:" not in prompt.lower():
+        return prompt, {}
+    parts = re.split(r"revision request:", prompt, flags=re.I)
+    latest = parts[-1].strip()
+    previous = [seg.strip() for seg in parts[1:-1]]
+    joiner = "\n\nRevision request: "
+    base_prompt = parts[0] + "".join(joiner + seg for seg in previous)
+    try:
+        before = build_robot_spec(base_prompt, use_model=False, season=season, _repair=False)
+    except Exception:                     # a broken base must not block the edit
+        before = {}
+    plan = plan_edit(latest, previous=previous, spec=before)
+
+    # For a genuinely open request, one interpretation is a guess. Build the alternatives and
+    # keep whichever measures best — the winner replaces the planner's single reading.
+    from app.services.edit_explorer import explore  # noqa: PLC0415
+
+    try:
+        study = explore(base_prompt, plan, season=season, spec=before,
+                        # Trial builds skip the repair loop: it is 2-4 s of the 5 s build, it
+                        # is applied equally to whichever option wins, and comparing designs
+                        # as GENERATED is the fairer comparison anyway. The winner is rebuilt
+                        # in full by the caller.
+                        build=lambda text: build_robot_spec(text, use_model=False,
+                                                            season=season, _repair=False))
+    except Exception:                     # exploration is an optimisation, never a gate
+        study = None
+    if study:
+        plan = {**plan, "exploration": study, "resolved_text": study["resolved_text"]}
+        plan["notes"] = list(plan.get("notes") or []) + [
+            f"explored {study['explored']} alternatives and built each one; "
+            f"chose \"{study['chosen']}\" — {study['why']}"]
+
+    # Then work the chosen direction until the objective actually moves. Exploration picks
+    # WHICH architecture; iteration decides how far to push it, and backs off instead of
+    # giving up when a size breaks the geometry.
+    from app.services.edit_iterator import iterate  # noqa: PLC0415
+
+    try:
+        loop = iterate(base_prompt, plan, season=season, before=before,
+                       build=lambda text: build_robot_spec(text, use_model=False,
+                                                           season=season, _repair=False))
+    except Exception:                     # iteration is an optimisation, never a gate
+        loop = None
+    if loop and not loop["resolved_text"]:
+        # The loop tried and could not improve the design without breaking it. Leave the robot
+        # alone and say so — a reported failure is worth more than a silent regression.
+        plan = {**plan, "iteration": loop, "resolved_text": latest}
+        plan["notes"] = list(plan.get("notes") or []) + [
+            f"{loop['iterations']} attempt(s) built and measured; {loop['outcome']} — "
+            f"the design was left unchanged"]
+        return prompt, plan
+    if loop:
+        plan = {**plan, "iteration": loop, "resolved_text": loop["resolved_text"]}
+        plan["notes"] = list(plan.get("notes") or []) + [
+            f"{loop['iterations']} attempt(s), each built and measured; "
+            f"finished on \"{loop['outcome']}\""]
+
+    resolved = plan.get("resolved_text") or latest
+    if resolved == latest:
+        return prompt, plan
+    return base_prompt + joiner + resolved, plan
+
+
+# Recently built designs, keyed by their inputs. An EDIT builds the base robot up to three
+# times — once to measure the design before the edit, once to diff against, once for the
+# result — and two of those are byte-identical repeats. Caching them took an intake edit from
+# 8.8 s to about half that.
+#
+# Sound because the builder is pure: the seed is pinned to the request, and the repair loop is
+# bounded in trials rather than seconds, so the same inputs cannot yield two different robots.
+# Copies go in and out so a caller mutating its spec cannot corrupt the entry.
+_BUILD_CACHE: dict[str, dict[str, Any]] = {}
+_BUILD_CACHE_MAX = 24
+
+
+def clear_build_cache() -> None:
+    _BUILD_CACHE.clear()
+
+
+def build_robot_spec(prompt: str, *, use_model: bool = True, season: str = "",
+                     _repair: bool = True) -> dict[str, Any]:
     """Synthesize one robot for one season.
 
     ``season`` is the team's explicit choice ("2026-rebuilt", "2025-reefscape"). Left empty,
     the season is inferred from the prompt and falls back to the current one — see
     `frc_season.resolve_season`, which also records which of those three happened.
     """
+    from copy import deepcopy as _deepcopy  # noqa: PLC0415
+
+    from app.services.component_graph import build_signature  # noqa: PLC0415
+
+    _key = build_signature(prompt, season, use_model, "", _repair)
+    _hit = _BUILD_CACHE.get(_key)
+    if _hit is not None:
+        return _deepcopy(_hit)
     parsed = _parse(prompt, season)
     season_data = parsed["season"]
 
@@ -1398,6 +1530,7 @@ def build_robot_spec(prompt: str, *, use_model: bool = True, season: str = "") -
     # coordinate system, so a viewer, a BOM and a cut list all read the same geometry.
     from app.services.cad_contract import (compact_design_spec, editable_manifest, normalize_cad,
                                            require_valid_cad, require_valid_parametric_design)
+    from app.services.geometry_validation import geometry_status
     # The bumper envelope is what the robot is actually measured at, so it is published beside
     # the frame rather than left for each consumer to re-derive from a plate size.
     from app.services.frc_cad import bumper_envelope  # noqa: PLC0415
@@ -1430,6 +1563,19 @@ def build_robot_spec(prompt: str, *, use_model: bool = True, season: str = "") -
     spec["rule_report"] = season_rule_report(spec)
     spec["fidelity"] = fidelity_report(spec.get("cad") or {})
     spec["transmission"] = transmission_report(spec.get("cad") or {})
+    # Generate → validate → repair → rebuild → validate again. The repair passes move real
+    # design parameters (a mechanism's station, a turret's travel limits) and re-validate
+    # after each one; a pass that makes the total worse, or that would leave a mechanism
+    # floating off its mount, is reverted. A design that is already clean is untouched.
+    from app.services.geometry_repair import repair_geometry  # noqa: PLC0415
+    repaired, repair = (repair_geometry(spec["cad"]) if _repair
+                        else (spec["cad"], {"issues_before": 0, "issues_after": 0,
+                                            "passes": 0, "repairs": [], "status": "skipped"}))
+    if repair["issues_after"] < repair["issues_before"]:
+        spec["cad"] = require_valid_cad(normalize_cad(repaired))
+        spec["cad"]["geometry"] = repair["report"]
+    spec["cad"]["geometry_repair"] = {k: v for k, v in repair.items() if k != "report"}
+    spec["geometry_status"] = geometry_status(spec.get("cad") or {})
     spec["editable_manifest"] = editable_manifest(spec["cad"])
     spec["cut_list"] = cut_list(spec["cad"])
     spec["profile"]["cad_version"] = CAD_VERSION
@@ -1438,6 +1584,9 @@ def build_robot_spec(prompt: str, *, use_model: bool = True, season: str = "") -
         # reported, never silently absorbed into an identical rebuild.
         raw_revision = re.split(r"revision request:", prompt, flags=re.I)[-1]
         spec["revision"] = revision_report(raw_revision)
+    if len(_BUILD_CACHE) >= _BUILD_CACHE_MAX:
+        _BUILD_CACHE.pop(next(iter(_BUILD_CACHE)), None)
+    _BUILD_CACHE[_key] = _deepcopy(spec)
     return spec
 
 

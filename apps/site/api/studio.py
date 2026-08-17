@@ -278,6 +278,36 @@ def _new_nonce() -> str:
     return base64.b64encode(secrets.token_bytes(16)).decode()
 
 
+
+# ── per-domain branding ──────────────────────────────────────────────────────
+# One codebase, one deployment, two front doors. `forge.frcrams.com` is Rams Forge and
+# `kaleai.vercel.app` is Kale Forge — the same engine either way, which is the point: a
+# separate deployment per brand means one of them silently falls behind the other, and the
+# demo copy that used to carry the Kale name has none of the geometry validation, electronics
+# or edit work.
+#
+# Applied as a substitution over the rendered page rather than by templating it. The page is a
+# 2000-line literal full of braces and CSS; threading a format context through it would be a
+# far larger and more fragile change than swapping four tokens on the way out.
+_BRAND_KALE = (("Rams Forge", "Kale Forge"),
+               ("RAMS <b>FORGE</b>", "KALE <b>FORGE</b>"),
+               ("Rams FRC Robot", "Kale FRC Robot"))
+
+
+def _is_kale(host: str) -> bool:
+    host = (host or "").lower()
+    return "kaleai" in host or "kale.ai" in host
+
+
+def _brand(html: str, host: str) -> str:
+    """Rebrand the page for the domain it is being served from."""
+    if not _is_kale(host):
+        return html
+    for rams, kale in _BRAND_KALE:
+        html = html.replace(rams, kale)
+    return html
+
+
 class handler(BaseHTTPRequestHandler):
     def _send(self, code: int, body: bytes, content_type: str,
               extra: dict[str, str] | None = None, nonce: str = "") -> None:
@@ -489,10 +519,35 @@ class handler(BaseHTTPRequestHandler):
         more useful answer than a robot nobody asked for.
         """
         from app.services.design_router import DesignNotSupported  # noqa: PLC0415
-        from app.services.robot_spec import DesignNotBuildable  # noqa: PLC0415
+        from app.services.edit_planner import edit_summary  # noqa: PLC0415
+        from app.services.robot_spec import DesignNotBuildable, plan_and_resolve  # noqa: PLC0415
+        # An edit is an engineering objective, not a string. `plan_and_resolve` classifies it,
+        # resolves anything said relative to the previous edit ("a little more"), and rewrites
+        # a vague objective into the concrete clauses the selectors can act on — so "improve
+        # the intake" moves real dimensions instead of rebuilding the identical robot.
+        plan, before = {}, None
         try:
-            return make_spec(prompt, season, use_model=use_model,
-                             design_type=design_type), None
+            resolved, plan = plan_and_resolve(prompt, season=season)
+        except Exception:                 # planning must never be able to block a build
+            resolved = prompt
+        try:
+            spec = make_spec(resolved, season, use_model=use_model, design_type=design_type)
+            if plan:
+                spec["edit_plan"] = plan
+                # What actually changed, measured against the design as it stood before this
+                # edit. "Robot updated successfully" is emitted whether or not anything moved;
+                # this reports a no-op as a no-op.
+                try:
+                    base = prompt.rsplit("Revision request:", 1)[0].strip()
+                    before = make_spec(base, season, use_model=False, design_type=design_type)
+                    spec["edit_summary"] = edit_summary(before, spec)
+                    # Which subsystems the rebuild actually altered, against what the edit was
+                    # entitled to alter. An edit that quietly moved the climber is visible.
+                    from app.services.component_graph import drift_report  # noqa: PLC0415
+                    spec["edit_drift"] = drift_report(before, spec, plan)
+                except Exception:
+                    pass
+            return spec, None
         except DesignNotSupported as exc:
             payload = exc.payload
             self._fail(422, "UNSUPPORTED_REQUEST", payload.get("message", "Not supported."),
@@ -622,7 +677,8 @@ class handler(BaseHTTPRequestHandler):
             return
         # One nonce per response, stamped on the three inline scripts and named in the CSP.
         nonce = _new_nonce()
-        self._send(200, PAGE.replace("__CSP_NONCE__", nonce).encode(),
+        _host = (self.headers.get("X-Forwarded-Host") or self.headers.get("Host") or "")
+        self._send(200, _brand(PAGE.replace("__CSP_NONCE__", nonce), _host).encode(),
                    "text/html; charset=utf-8", nonce=nonce)
 
     def do_POST(self) -> None:  # noqa: N802
@@ -717,6 +773,22 @@ class handler(BaseHTTPRequestHandler):
                                for c in report.get("failed", [])])
             _log("export.blocked", requestId=rid,
                  rules=[c.get("rule") for c in report.get("failed", [])])
+            return
+
+        # Geometry is the other half of the gate. A STEP file of a robot with a part sunk
+        # inside another one, or a turret that sweeps through the hopper, is worse than no
+        # STEP file: it looks finished. Blocked on the classes the geometry is genuinely
+        # unusable for — see `_BLOCKING` in geometry_validation.
+        geometry = spec.get("geometry_status") or {}
+        if geometry and not geometry.get("exportable", True):
+            self._fail(422, "GEOMETRY_INVALID",
+                       "The geometry did not pass validation, so it cannot be exported: "
+                       + "; ".join(geometry.get("detail") or [])[:400], rid,
+                       failed=[{"rule": "geometry", "check": cls,
+                                "detail": d}
+                               for cls, d in zip(geometry.get("blocking_classes") or [],
+                                                 geometry.get("detail") or [])])
+            _log("export.blocked", requestId=rid, geometry=geometry.get("blocking_classes"))
             return
 
         name = spec.get("name", "Rams FRC Robot")
@@ -2159,6 +2231,78 @@ function renderDossier(rawSpec){
       partHtml.push(integ.ok
         ? `<p class="note">Every one of the ${integ.bodies} bodies is in contact with structure and every assembly has a mount path back to the chassis, ${integ.contacts} contacts verified at ±${integ.tolerance_in} in. Feet sit on crossmembers, gearboxes on plates, bolts at every joint.</p>`
         : `<p class="note"><b>Assembly connectivity flagged:</b> ${(integ.floating||[]).concat(integ.unreached_assemblies||[]).slice(0,6).join(' · ')}</p>`);
+    }
+    // What this edit actually did. "Robot updated successfully" was emitted whether the
+    // engine moved a dimension or silently rebuilt the identical robot, which is most of why
+    // edits felt unpredictable — so the diff is reported, and a no-op is shown as a no-op.
+    const plan = spec.edit_plan, es = spec.edit_summary;
+    if (plan && plan.objective){
+      partHtml.push(`<h2>Edit</h2><dl class="kv">
+        ${row('Objective', plan.objective)}
+        ${row('Read as', `${plan.intent} · ${plan.scope} · ${plan.strength}`)}
+        ${plan.affected_subsystems.length?row('Subsystems', plan.affected_subsystems.join(', ')):''}
+        ${es?row('Outcome', es.applied?'applied':'NO CHANGE'):''}
+      </dl>`);
+      if (plan.diagnosis && plan.diagnosis.length){
+        partHtml.push(`<p class="note"><b>Likely causes considered:</b> ${plan.diagnosis.slice(0,4).join(' · ')}</p>`);
+      }
+      if (es && es.changed.length){
+        partHtml.push(`<ul class="sslist">`+es.changed.map(c=>`<li><span>${c}</span></li>`).join('')+`</ul>`);
+      } else if (es){
+        partHtml.push(`<p class="note"><b>${es.note}</b></p>`);
+      }
+      // The alternatives that were built and measured. Shown because the tool chose between
+      // real designs on real numbers, and that reasoning is worth more than the verdict.
+      const ex = plan.exploration;
+      if (ex && ex.options && ex.options.length > 1){
+        partHtml.push(`<p class="note"><b>Explored ${ex.explored} alternatives</b> — chose <b>${ex.chosen}</b>: ${ex.why}</p>`);
+        partHtml.push(`<ul class="sslist">`+ex.options.map((o,i)=>
+          `<li><b>${i===0?'&#10003; ':''}${o.name}</b><span>score ${o.score} · ${Object.entries(o.metrics).map(([k,v])=>`${k.replace(/_/g,' ')} ${(+v).toFixed(2).replace(/\.00$/,'')}`).join(' · ')}</span></li>`).join('')+`</ul>`);
+      }
+      // The attempts the engine made before settling. Shown because "it tried three sizes and
+      // the biggest one collided" is the useful answer, not just the final dimension.
+      const it = plan.iteration;
+      if (it && it.attempts && it.attempts.length){
+        partHtml.push(`<p class="note"><b>${it.iterations} attempt${it.iterations>1?'s':''}</b>, each built and measured — ${it.outcome}${it.converged?'':' (design left unchanged)'}</p>`);
+        if (it.attempts.length > 1){
+          partHtml.push(`<ul class="sslist">`+it.attempts.map(a=>
+            `<li><b>#${a.attempt} ${a.strength}</b><span>${a.verdict} · gain ${(a.gain*100).toFixed(1)}% · ${a.text}</span></li>`).join('')+`</ul>`);
+        }
+      }
+      const drift = spec.edit_drift;
+      if (drift){
+        partHtml.push(`<p class="note"><b>Rebuilt:</b> ${drift.changed.join(', ')||'nothing'} · <b>preserved:</b> ${drift.preserved.join(', ')||'nothing'}${drift.unintended.length?` · <b>UNINTENDED:</b> ${drift.unintended.join(', ')}`:''}</p>`);
+      }
+      if (plan.notes && plan.notes.length){
+        partHtml.push(`<p class="note">${plan.notes.join(' · ')}</p>`);
+      }
+      if (plan.success_criteria && plan.success_criteria.length){
+        partHtml.push(`<p class="note"><b>Checked against:</b> ${plan.success_criteria.join(' · ')}</p>`);
+      }
+    }
+    // Interference, truncation and mechanism travel. Reported whether it passes or not: a
+    // design that is shown as finished while a turret sweeps through the hopper is worse
+    // than one that says so, and the export buttons refuse the blocking classes anyway.
+    const geo = cad.geometry, gs = spec.geometry_status, rep = cad.geometry_repair;
+    if (geo){
+      const pill = gs && gs.status === 'valid' ? 'passed' : 'FLAGGED';
+      partHtml.push(`<h2>Geometry validation</h2><dl class="kv">
+        ${row('Interference', pill)}
+        ${row('Bodies checked', geo.bodies)}
+        ${row('Solid overlaps', geo.collision_count)}
+        ${row('Truncated parts', geo.truncation_count)}
+        ${row('Mechanism travel', `${geo.motion_collision_count} collisions over ${(geo.motion_envelopes||[]).length} sampled envelopes`)}
+        ${row('Out of bounds', geo.out_of_bounds_count)}
+        ${row('Inside the bumper', geo.bumper_intrusion_count)}
+        ${rep&&rep.passes?row('Auto-repair', `${rep.passes} pass${rep.passes>1?'es':''}, ${rep.issues_before} → ${rep.issues_after} issues`):''}
+      </dl>`);
+      if (rep && (rep.repairs||[]).length){
+        partHtml.push(`<p class="note"><b>Repaired:</b> ${rep.repairs.map(r=>`${r.assembly} — ${r.change}`).join(' · ')}</p>`);
+      }
+      const left = (gs&&gs.detail||[]).slice(0,6);
+      partHtml.push(left.length
+        ? `<p class="note"><b>Unresolved:</b> ${left.map(d=>d.replace(/^\$\.[a-z]+: /,'')).join(' · ')}</p>`
+        : `<p class="note">No unintended interference, nothing truncated, and every moving mechanism was sampled through its full range without collision. ${geo.checked}</p>`);
     }
     partHtml.push(`<ul class="sslist">`+cad.assemblies.map(a=>
       `<li data-asm="${a.id}" style="cursor:pointer"><b>${a.name}</b><span>${a.features.length} features${a.note?' · '+a.note:''}</span>

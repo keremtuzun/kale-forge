@@ -320,8 +320,24 @@ def test_degenerate_prompts_do_not_build(prompt):
 
 
 def test_very_long_prompt_is_still_bounded():
-    spec = build("27x27 swerve robot with intake and shooter " + ("very " * 800))
-    assert spec["cad"]["feature_total"] < 400
+    """800 words of padding must not grow the model.
+
+    This used to assert a bare `feature_total < 400`, which measured the size of a robot
+    rather than the effect of the prompt — so it broke the day the control system started
+    being modelled as real devices and a wiring harness instead of one box per component,
+    even though nothing about prompt handling had changed. Comparing the padded prompt against
+    the same prompt unpadded tests the thing the name claims, and cannot drift with the
+    fidelity of the compiler.
+    """
+    base = build("27x27 swerve robot with intake and shooter")["cad"]["feature_total"]
+    padded = build("27x27 swerve robot with intake and shooter "
+                   + ("very " * 800))["cad"]["feature_total"]
+    # Not exact equality: the padding does perturb the design a little (a few features either
+    # way), and asserting bit-identical output would be claiming a property the compiler does
+    # not promise. What it does promise is that padding cannot INFLATE the model.
+    assert padded <= base * 1.1 + 10, (padded, base)
+    # And an absolute ceiling well clear of a fully detailed robot, to catch runaway growth.
+    assert padded < 1200
 
 
 @pytest.mark.parametrize("prompt", [
@@ -437,3 +453,36 @@ def test_viewer_pauses_when_hidden_and_respects_reduced_motion():
     assert "visibilitychange" in viewer
     # the highlight clone leak: every deselect must release its cloned material
     assert "highlightMat.dispose()" in viewer
+
+
+# ── per-domain branding ─────────────────────────────────────────────────────
+def _studio_module():
+    import importlib.util
+    import pathlib
+    import sys
+    site = pathlib.Path(__file__).resolve().parents[4] / "apps" / "site"
+    sys.path.insert(0, str(site))
+    spec = importlib.util.spec_from_file_location("_studio_brand", site / "api" / "studio.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_studio_is_branded_per_domain():
+    """One deployment, two front doors. A separate build per brand means one falls behind."""
+    studio = _studio_module()
+    rams = studio._brand(studio.PAGE, "forge.frcrams.com")
+    kale = studio._brand(studio.PAGE, "kaleai.vercel.app")
+    # The Rams page must be byte-identical to the unbranded page: no substitution runs.
+    assert rams == studio.PAGE
+    assert "Kale Forge" in kale and "Rams Forge" not in kale
+    assert "KALE <b>FORGE</b>" in kale and "RAMS <b>FORGE</b>" not in kale
+    # Same engine either way — only the name changes.
+    assert len(kale) == len(studio.PAGE) + kale.count("Kale Forge") * 0
+
+
+def test_an_unknown_host_keeps_the_rams_brand():
+    studio = _studio_module()
+    for host in ("localhost:8899", "", "example.com", "forge.frcrams.com"):
+        assert studio._brand(studio.PAGE, host) == studio.PAGE, host
+    assert studio._is_kale("www.kale.ai") and studio._is_kale("KALEAI.vercel.app")
