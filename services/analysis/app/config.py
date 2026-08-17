@@ -26,6 +26,9 @@ class Settings(BaseModel):
     bootstrap_api_token: str = ""
     inference_url: str = "http://localhost:8001"
     inference_timeout_seconds: float = 30.0
+    # Ask the model to PROPOSE one subsystem's geometry; the CAD contract decides whether it
+    # ships. Off by default: a CAD generation is ~1500-2600 tokens, minutes on CPU serving.
+    model_geometry: bool = False
     model_version: str = "dev"
     session_secure_cookie: bool = False
     session_days: int = 30
@@ -66,6 +69,7 @@ def _load() -> Settings:
         bootstrap_api_token=os.getenv("BOOTSTRAP_API_TOKEN", ""),
         inference_url=os.getenv("INFERENCE_URL", "http://localhost:8001"),
         inference_timeout_seconds=float(os.getenv("INFERENCE_TIMEOUT_SECONDS", "30")),
+        model_geometry=os.getenv("MODEL_GEOMETRY", "false").lower() in {"1", "true", "yes"},
         model_version=os.getenv("KALE_MODEL_VERSION", "dev"),
         session_secure_cookie=os.getenv("SESSION_SECURE_COOKIE", "false").lower() in {"1", "true", "yes"},
         session_days=int(os.getenv("SESSION_DAYS", "30")),

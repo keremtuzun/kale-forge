@@ -1,0 +1,97 @@
+# Kale Forge backend, off the laptop: llama-server + inference API + Caddy TLS.
+#
+# Mirrors what scripts/serve-v18.py supervises on the laptop, as three restart-on-failure
+# containers. The model runs out of process (the llama-server lesson: a C++ fault must not
+# kill the API), Caddy terminates TLS on a stable hostname, and INFERENCE_URL on Vercel
+# points here ONCE — no more per-boot tunnel hostname churn.
+services:
+  llama:
+    # Multi-arch (works on the Always Free ARM shape). Same flags the laptop supervisor
+    # uses: conservative 4 threads, 8192 context.
+    image: ghcr.io/ggml-org/llama.cpp:server
+    restart: unless-stopped
+    command: >
+      -m /models/kale-design-v18-q4_k_m.gguf
+      -c ${KALE_LLAMA_CTX:-8192}
+      -t ${KALE_LLAMA_THREADS:-4}
+      --host 0.0.0.0 --port 8010
+    volumes:
+      - ./models:/models:ro
+    expose:
+      - "8010"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8010/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    depends_on:
+      - llama
+    environment:
+      KALE_INFERENCE_PROVIDER: local_llamaserver
+      KALE_LLAMA_SERVER_URL: http://llama:8010/v1
+      # A geometry proposal is ~2600 tokens: at CPU speed that is minutes, and a shorter
+      # provider timeout turns every long generation into "llama-server unreachable".
+      KALE_LLAMA_SERVER_TIMEOUT: "900"
+      KALE_MODEL_VERSION: ${KALE_MODEL_VERSION:-kale-design-qwen3-4b-v18-cad-repair-50}
+      # Set in .env. With a stable public hostname, unauthenticated generate/export would
+      # let anyone spend the box; every route but /health requires this bearer.
+      KALE_API_TOKEN: ${KALE_API_TOKEN:?set KALE_API_TOKEN in .env}
+    expose:
+      - "8001"
+
+  # The recovered "Kale.ai — Hardware Engineering AI" app. Its own AI now runs on v18 next
+  # door instead of the 1.5B model the old VM baked in. Optional: `--profile app` starts it.
+  kaleai:
+    build:
+      context: ./kaleai-src
+      dockerfile: Dockerfile.kaleai
+    restart: unless-stopped
+    profiles: ["app"]
+    depends_on:
+      - api
+    # The app's ORIGINAL secrets, recovered from the old VM's disk: the admin username +
+    # password hash, the session/cookie secrets. Supplying them means the existing login
+    # keeps working here (ensure_bootstrap_admin re-creates the same admin), and auth stays
+    # ON exactly as it is in production — a fresh install would otherwise start wide open.
+    env_file:
+      - ./kaleai.env
+    environment:
+      # These win over the env_file: the app's AI now runs on v18 next door.
+      INFERENCE_URL: http://api:8001
+      INFERENCE_TOKEN: ${KALE_API_TOKEN:?set KALE_API_TOKEN in .env}
+      INFERENCE_TIMEOUT_SECONDS: "240"
+      CORS_ORIGINS: https://${KALEAI_HOST:-localhost}
+    volumes:
+      - kaleai-data:/data/kale
+    expose:
+      - "7860"
+      - "8000"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      KALE_HOST: ${KALE_HOST:?set KALE_HOST in .env}
+      KALEAI_HOST: ${KALEAI_HOST:-kaleai.invalid}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  caddy-data:
+  caddy-config:
+  kaleai-data:

@@ -1,20 +1,26 @@
 """Closed CAD contract between the design model and deterministic Onshape compiler."""
 from __future__ import annotations
 
+import json
 import math
 from copy import deepcopy
 from typing import Any
 
 ALLOWED_FEATURES = frozenset({
     "actuator", "bearing", "belt", "bevel", "bolts", "brake", "cable",
-    "chain_track", "component", "drum", "envelope", "gear", "gearbox", "gusset",
-    "hardstop", "hood", "hook", "motor", "pawl", "plate", "polycarb", "pulley",
-    "rope", "sensor", "shaft", "slide", "sprocket", "standoff", "tensioner",
-    "tube", "wheel",
+    "chain_track", "component", "decal", "drum", "envelope", "fabric", "gear", "gearbox",
+    "gusset", "hardstop", "hood", "hook", "motor", "noodle", "noodle_corner", "pawl", "plate",
+    "polycarb", "pulley", "rib", "rope", "sensor", "shaft", "slide", "sprocket",
+    "standoff", "tensioner", "tube", "wheel",
 })
 CATALOG_SECTIONS = frozenset({
     (2.0, 1.0), (1.0, 1.0), (2.0, 2.0), (1.5, 1.5), (1.5, 0.5),
 })
+
+# Pitch diameters are emitted as round(pd, 3), so anything beyond half a thousandth is a real
+# disagreement rather than a rounding artefact.  The bound is shared by all three toothed parts.
+_PITCH_TOLERANCE = 0.011
+_DEFAULT_CHAIN_PITCH_IN = 0.25
 
 
 class CadContractError(ValueError):
@@ -40,6 +46,11 @@ def normalize_cad(cad: dict[str, Any]) -> dict[str, Any]:
             assembly["id"] = f"{original_id}-{assembly_ids[original_id]}"
         names: dict[str, int] = {}
         for feature in assembly.get("features") or []:
+            # Model-authored lists can contain things that are not feature objects at all — a
+            # bare string turned this into an AttributeError and a 500. Normalization skips
+            # them; validation still rejects them ("object required"), so nothing is hidden.
+            if not isinstance(feature, dict):
+                continue
             original_name = str(feature.get("n") or feature.get("t") or "part").strip()
             key = original_name.casefold()
             names[key] = names.get(key, 0) + 1
@@ -59,6 +70,149 @@ def _numbers(value: Any):
     elif isinstance(value, (list, tuple)):
         for item in value:
             yield from _numbers(item)
+
+
+def _floats(value: Any, count: int) -> list[float] | None:
+    """Coerce a list of exactly `count` real numbers, or return None.
+
+    Everything reaching this validator may be model-authored, so a malformed value has to
+    become a contract error.  Coercing inline with float() would raise out of validate_cad and
+    turn a rejected design into a 500.
+    """
+    if not isinstance(value, (list, tuple)) or len(value) != count:
+        return None
+    out: list[float] = []
+    for item in value:
+        if isinstance(item, bool) or not isinstance(item, (int, float)):
+            return None
+        number = float(item)
+        if not math.isfinite(number):
+            return None
+        out.append(number)
+    return out
+
+
+_EXPR_OK = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_ .+-*/()")
+
+
+def _expr_errors(expr: Any, path: str) -> list[str]:
+    """`expr` values are pasted verbatim into exported FeatureScript.
+
+    Only our own generators write them today, but a design document round-trips through the
+    store and through the model on a revision, so the charset is checked rather than trusted:
+    an expression is arithmetic over named variables, and nothing else belongs in one.
+    """
+    if expr is None:
+        return []
+    if not isinstance(expr, dict):
+        return [f"{path}.expr: object required"]
+    out: list[str] = []
+    for key, text in expr.items():
+        if not isinstance(key, str) or not isinstance(text, str):
+            out.append(f"{path}.expr: names and expressions must be strings")
+            break
+        if not text or len(text) > 120 or set(text) - _EXPR_OK:
+            out.append(f"{path}.expr.{key}: not a plain arithmetic expression")
+    return out
+
+
+def _canonical_section(sec: Any) -> tuple[float, float] | None:
+    """Stock is a physical extrusion, so 1x2 and 2x1 are the same tube rotated.
+
+    The catalog is stored widest-first; a section is looked up in that orientation rather than
+    rejected for arriving transposed.
+    """
+    values = _floats(sec, 2)
+    if values is None:
+        return None
+    ordered = sorted((round(values[0], 3), round(values[1], 3)), reverse=True)
+    return (ordered[0], ordered[1])
+
+
+def _toothed_pitch_error(feature: dict[str, Any]) -> str | None:
+    """Pitch diameter follows from tooth count; a part that disagrees could not be cut."""
+    kind = feature.get("t")
+    teeth, pd = feature.get("teeth"), feature.get("pd")
+    if isinstance(teeth, bool) or not isinstance(teeth, int) or teeth <= 0:
+        return None
+    if isinstance(pd, bool) or not isinstance(pd, (int, float)) or not math.isfinite(float(pd)):
+        return None
+    if kind == "pulley":
+        pitch = feature.get("pitch_mm")
+        if not isinstance(pitch, (int, float)) or isinstance(pitch, bool):
+            return None
+        expected = teeth * float(pitch) / math.pi / 25.4
+    elif kind == "gear":
+        dp = feature.get("dp")
+        if isinstance(dp, bool) or not isinstance(dp, (int, float)) or float(dp) <= 0:
+            return None
+        expected = teeth / float(dp)
+    elif kind == "sprocket":
+        pitch_in = feature.get("pitch_in", _DEFAULT_CHAIN_PITCH_IN)
+        if isinstance(pitch_in, bool) or not isinstance(pitch_in, (int, float)) or float(pitch_in) <= 0:
+            return None
+        if teeth < 3:
+            return "teeth: a sprocket needs at least three teeth"
+        expected = float(pitch_in) / math.sin(math.pi / teeth)
+    else:
+        return None
+    if abs(float(pd) - expected) > _PITCH_TOLERANCE:
+        return f"pd: {pd} disagrees with {teeth} teeth (expected {expected:.3f})"
+    return None
+
+
+_MIRROR_AXES = {"x": 0, "y": 1, "z": 2}
+
+
+def mirrored_copy(feature: dict[str, Any]) -> dict[str, Any]:
+    """The reflected twin of a mirrored feature, in the same assembly frame.
+
+    Reflection across the plane normal to the axis: the position component negates, and of the
+    XYZ Euler angles the rotation ABOUT the mirror axis survives while the other two negate
+    (conjugating each elemental rotation by the reflection). Exact for the placement; the
+    primitives themselves are achiral boxes and cylinders, so nothing is lost to handedness.
+    """
+    axis = _MIRROR_AXES[feature["mirror"]]
+    twin = deepcopy(feature)
+    twin.pop("mirror", None)
+    twin["n"] = f"{feature.get('n', 'part')} mirror"
+    for key in ("at", "to"):
+        if isinstance(twin.get(key), list) and len(twin[key]) == 3:
+            twin[key][axis] = -twin[key][axis]
+    rot = twin.get("rot")
+    if isinstance(rot, list) and len(rot) == 3:
+        twin["rot"] = [value if index == axis else -value for index, value in enumerate(rot)]
+    return twin
+
+
+def expand_mirrors(features: list[Any]) -> list[dict[str, Any]]:
+    """Features with every `mirror` resolved into its two bodies.
+
+    Every consumer that turns features into physical things — FeatureScript, the cut list, the
+    viewer — must count a mirrored pair as two parts, or the BOM lies by half. This is the one
+    place that expansion is defined.
+    """
+    out: list[dict[str, Any]] = []
+    for feature in features:
+        if not isinstance(feature, dict):
+            continue
+        if feature.get("mirror") in _MIRROR_AXES:
+            original = {k: v for k, v in feature.items() if k != "mirror"}
+            out.append(original)
+            out.append(mirrored_copy(feature))
+        else:
+            out.append(feature)
+    return out
+
+
+def _coincidence_key(feature: dict[str, Any]) -> str:
+    """Everything that decides where a body is and what it is, ignoring only its label.
+
+    Two features matching on this key are the same solid in the same place.  The deterministic
+    compiler never emits one; a model looping on a feature emits dozens.
+    """
+    return json.dumps({k: v for k, v in feature.items() if k != "n"},
+                      sort_keys=True, default=str)
 
 
 def validate_cad(cad: dict[str, Any]) -> list[str]:
@@ -105,8 +259,11 @@ def validate_cad(cad: dict[str, Any]) -> list[str]:
             at = feature.get("at")
             if not isinstance(at, list) or len(at) != 3:
                 errors.append(f"{fp}.at: exactly three coordinates required")
+            # `bores` carry positions in the plate's own frame, which are signed — a hole
+            # left of centre has a negative x. They are validated on their own terms below
+            # rather than by the all-dimensions-are-positive sweep.
             for number in _numbers({k: v for k, v in feature.items()
-                                    if k not in {"rot", "at", "to", "rep"}}):
+                                    if k not in {"rot", "at", "to", "rep", "bores", "expr"}}):
                 if not math.isfinite(number):
                     errors.append(f"{fp}: dimensions must be finite")
                     break
@@ -118,29 +275,113 @@ def validate_cad(cad: dict[str, Any]) -> list[str]:
                     break
             if kind == "tube":
                 sec = feature.get("sec")
-                if not isinstance(sec, list) or len(sec) != 2 or tuple(map(float, sec)) not in CATALOG_SECTIONS:
+                if _canonical_section(sec) not in CATALOG_SECTIONS:
                     errors.append(f"{fp}.sec: non-catalog tube section {sec!r}")
-                if float(feature.get("len", 0) or 0) <= 0:
+                length = feature.get("len")
+                if (isinstance(length, bool) or not isinstance(length, (int, float))
+                        or not math.isfinite(float(length)) or float(length) <= 0):
                     errors.append(f"{fp}.len: tube length must be positive")
-            if kind == "pulley":
-                teeth = feature.get("teeth")
-                pitch = feature.get("pitch_mm")
-                pd = feature.get("pd")
-                if pitch != 5.0:
-                    errors.append(f"{fp}.pitch_mm: only HTD 5 mm is allowed")
-                if isinstance(teeth, int) and isinstance(pd, (int, float)):
-                    expected = teeth * 5.0 / math.pi / 25.4
-                    if abs(float(pd) - expected) > 0.011:
-                        errors.append(f"{fp}.pd: inconsistent with tooth count and pitch")
+            bores = feature.get("bores")
+            if bores is not None:
+                size = _floats(feature.get("size"), 3)
+                if not isinstance(bores, list):
+                    errors.append(f"{fp}.bores: array required")
+                elif len(bores) > 64:
+                    errors.append(f"{fp}.bores: bounded to 64 holes")
+                else:
+                    for bi, hole in enumerate(bores):
+                        bp = f"{fp}.bores[{bi}]"
+                        if not isinstance(hole, dict):
+                            errors.append(f"{bp}: object required")
+                            continue
+                        dia = hole.get("d")
+                        if (isinstance(dia, bool) or not isinstance(dia, (int, float))
+                                or not math.isfinite(float(dia)) or float(dia) <= 0):
+                            errors.append(f"{bp}.d: hole diameter must be positive")
+                            continue
+                        # A hole bigger than the plate is not a hole, it is the absence of a
+                        # plate — and it is the shape of mistake a generator makes when a
+                        # bearing OD is read in the wrong unit.
+                        if size and (float(dia) >= size[0] or float(dia) >= size[2]):
+                            errors.append(f"{bp}.d: hole is wider than the plate it is in")
+                        errors += _expr_errors(hole.get("expr"), bp)
+            errors += _expr_errors(feature.get("expr"), fp)
+            if kind == "pulley" and feature.get("pitch_mm") != 5.0:
+                errors.append(f"{fp}.pitch_mm: only HTD 5 mm is allowed")
+            pitch_error = _toothed_pitch_error(feature)
+            if pitch_error:
+                errors.append(f"{fp}.{pitch_error}")
+            mirror = feature.get("mirror")
+            if mirror is not None:
+                # `mirror` exists because "dual X" was being modeled as two copies at one
+                # position — the reflected twin is derived, so it cannot be wrong. A feature
+                # sitting ON the mirror plane would reflect onto itself, which is the exact
+                # coincident-body defect the field was added to prevent.
+                if mirror not in _MIRROR_AXES:
+                    errors.append(f"{fp}.mirror: axis must be one of x, y, z")
+                else:
+                    position = _floats(at, 3)
+                    if position is not None and abs(position[_MIRROR_AXES[mirror]]) < 0.05:
+                        errors.append(f"{fp}.mirror: feature sits on the mirror plane and "
+                                      f"would reflect onto itself")
             rep = feature.get("rep")
             if rep:
                 count = rep.get("n") if isinstance(rep, dict) else None
                 step = rep.get("step") if isinstance(rep, dict) else None
-                if not isinstance(count, int) or not 1 <= count <= 64:
+                if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 64:
                     errors.append(f"{fp}.rep.n: repetition must be bounded to 1..64")
-                if count and count > 1 and (not isinstance(step, list) or len(step) != 3
-                                            or not any(float(x) != 0 for x in step)):
-                    errors.append(f"{fp}.rep.step: repeated parts need a non-zero 3D step")
+                elif count > 1:
+                    offsets = _floats(step, 3)
+                    if offsets is None or not any(value != 0 for value in offsets):
+                        errors.append(f"{fp}.rep.step: repeated parts need a non-zero 3D step")
+        errors.extend(_coincident_errors(assembly, ap))
+    errors.extend(_duplicate_assembly_errors(assemblies))
+    return errors
+
+
+def _duplicate_assembly_errors(assemblies: list[Any]) -> list[str]:
+    """Reject whole assemblies that are copies of each other.
+
+    normalize_cad gives a repeated assembly a fresh id, which is right when a robot genuinely
+    carries four of the same swerve module — those differ by origin.  Two assemblies with the
+    same origin and the same features are one mechanism emitted twice, and renaming the second
+    would compile it invisibly on top of the first.
+    """
+    seen: dict[str, str] = {}
+    errors: list[str] = []
+    for index, assembly in enumerate(assemblies):
+        if not isinstance(assembly, dict):
+            continue
+        key = json.dumps({k: v for k, v in assembly.items() if k != "id"},
+                         sort_keys=True, default=str)
+        if key in seen:
+            errors.append(f"$.assemblies[{index}]: identical in content and position to "
+                          f"{seen[key]!r}")
+        else:
+            seen[key] = str(assembly.get("id"))
+    return errors
+
+
+def _coincident_errors(assembly: dict[str, Any], ap: str) -> list[str]:
+    """Reject bodies that occupy the same place with the same dimensions.
+
+    This is the degenerate-repetition failure mode: a model that loses the thread emits one
+    feature over and over at a fixed position until it runs out of tokens.  Renaming those
+    duplicates would satisfy every other check while compiling a stack of solids into a single
+    point, so they are rejected here rather than normalised away.
+    """
+    seen: dict[str, int] = {}
+    for feature in assembly.get("features") or []:
+        if not isinstance(feature, dict):
+            continue
+        key = _coincidence_key(feature)
+        seen[key] = seen.get(key, 0) + 1
+    errors: list[str] = []
+    for key, count in seen.items():
+        if count > 1:
+            name = json.loads(key).get("t", "feature")
+            errors.append(f"{ap}: {count} coincident {name!r} bodies share one position "
+                          f"and geometry")
     return errors
 
 
@@ -151,6 +392,617 @@ def require_valid_cad(cad: dict[str, Any]) -> dict[str, Any]:
     return cad
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Structural integrity: nothing floats.
+#
+# Every body gets a conservative world-space box from the SAME conventions the viewer, the
+# FeatureScript compiler and the STEP worker share: feature `rot` is XYZ Euler degrees with
+# R = Rx·Ry·Rz, a tube's length runs along local Z, every turned part's axis is local Y, and
+# the assembly origin is a pure translation. Two bodies whose boxes come within CONTACT_TOL
+# are in contact; a body in contact with nothing, or an assembly with no contact path back
+# to the chassis, is floating — the defect this module exists to name.
+# ─────────────────────────────────────────────────────────────────────────────
+CONTACT_TOL_IN = 0.08
+
+# Runs (belts, ropes, cables) and reserved volumes are not structure; a body may not claim
+# support from them.
+_NON_STRUCTURAL = frozenset({"belt", "rope", "cable", "envelope"})
+
+# Turned parts: cylinder along local Y with (radius, half-height) from these keys.
+_TURNED = {
+    "shaft": ("dia", "len"), "noodle": ("dia", "len"), "standoff": ("dia", "len"),
+    "motor": ("dia", "len"), "bearing": ("od", "w"), "wheel": ("dia", "w"),
+    "gear": ("pd", "face"), "bevel": ("pd", "face"), "pulley": ("pd", "w"),
+    "sprocket": ("pd", "w"), "drum": ("dia", "w"), "brake": ("dia", "w"),
+    "tensioner": ("dia", "w"),
+}
+
+
+def _f(value: Any, default: float) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return default
+    number = float(value)
+    return number if math.isfinite(number) else default
+
+
+def _local_extents(feature: dict[str, Any]) -> list[float] | None:
+    """Half-extents of the primitive in its own frame, before `rot`. None → unplaceable."""
+    kind = feature.get("t")
+    if kind == "tube":
+        sec = feature.get("sec") or [1.0, 1.0]
+        return [_f(sec[1], 1.0) / 2 if len(sec) > 1 else 0.5,
+                _f(sec[0], 1.0) / 2, _f(feature.get("len"), 1.0) / 2]
+    if kind == "gusset":
+        size = feature.get("size") or [2.0, 2.0]
+        return [_f(size[0], 2.0) / 2, _f(feature.get("th"), 0.09) / 2,
+                _f(size[1] if len(size) > 1 else 2.0, 2.0) / 2]
+    if kind == "hood":
+        r = _f(feature.get("r"), 2.0)
+        return [_f(feature.get("w"), 2.0) / 2, r, r]
+    if kind == "rib":
+        # A formed rib is an arc segment: thin along its own X, out to the arc radius in the
+        # plane. Boxing it by the full circle is conservative in the direction that matters
+        # (it never claims to reach further than the arc does).
+        r = _f(feature.get("r"), 2.0)
+        return [_f(feature.get("th"), 0.19) / 2, r, r]
+    if kind == "fabric" and feature.get("bend"):
+        # A corner wrap is a quarter-bend, so its `size` carries no straight length. Box it
+        # by its section the way a corner noodle is boxed — deliberately smaller than the
+        # swept arc, because an oversized box would manufacture contacts the audit is
+        # supposed to be looking for.
+        size = _floats(feature.get("size"), 3) or [0.0, 5.0, 3.3]
+        return [size[2] / 2, size[1] / 2, size[2] / 2]
+    if kind == "bolts":
+        dia = _f(feature.get("dia"), 0.19)
+        length = _f(feature.get("len"), 0.75)
+        ext = [dia, dia, length * 0.6]
+        rep = feature.get("rep")
+        if isinstance(rep, dict):
+            count = rep.get("n")
+            step = _floats(rep.get("step"), 3) or [0.0, 0.0, 0.0]
+            if isinstance(count, int) and count > 1:
+                for axis in range(3):
+                    ext[axis] += abs(step[axis]) * (count - 1) / 2
+        return ext
+    if kind in _TURNED:
+        dia_key, len_key = _TURNED[kind]
+        radius = _f(feature.get(dia_key), 1.0) / 2
+        return [radius, _f(feature.get(len_key), radius * 2) / 2, radius]
+    size = feature.get("size")
+    values = _floats(size, 3)
+    if values is not None:
+        return [values[0] / 2, values[1] / 2, values[2] / 2]
+    if isinstance(size, (list, tuple)) and len(size) == 2:
+        return [_f(size[0], 1.0) / 2, 0.05, _f(size[1], 1.0) / 2]
+    dia = feature.get("dia")
+    if dia is not None:
+        radius = _f(dia, 1.0) / 2
+        return [radius, _f(feature.get("len"), radius * 2) / 2, radius]
+    return [0.4, 0.4, 0.4]
+
+
+def _rot_matrix(rot: Any) -> list[list[float]] | None:
+    """R for R = Rx·Ry·Rz — the signed matrix, not |R|.
+
+    `_abs_rot` gives the absolute matrix, which is all an AABB needs and all the structural
+    audit ever wanted. Interference needs to know which way a part actually points.
+    """
+    values = _floats(rot, 3)
+    if values is None or not any(values):
+        return None
+    rx, ry, rz = (math.radians(v) for v in values)
+    cx, sx = math.cos(rx), math.sin(rx)
+    cy, sy = math.cos(ry), math.sin(ry)
+    cz, sz = math.cos(rz), math.sin(rz)
+    return [[cy * cz, -cy * sz, sy],
+            [cx * sz + sx * sy * cz, cx * cz - sx * sy * sz, -sx * cy],
+            [sx * sz - cx * sy * cz, sx * cz + cx * sy * sz, cx * cy]]
+
+
+def _obb(feature: dict[str, Any], origin: list[float]):
+    """(centre, half-extents, axes) for a body, in world space. None → unplaceable."""
+    at = _floats(feature.get("at"), 3)
+    ext = _local_extents(feature)
+    if at is None or ext is None:
+        return None
+    rotation = _rot_matrix(feature.get("rot"))
+    axes = ([[rotation[r][c] for r in range(3)] for c in range(3)] if rotation
+            else [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+    return ([origin[i] + at[i] for i in range(3)], ext, axes)
+
+
+def _obb_penetration(a, b) -> float:
+    """How deep two oriented boxes interpenetrate, by the separating axis theorem.
+
+    Returns the smallest overlap over the 15 candidate axes, or 0.0 if any axis separates
+    them. The AABB version of this reports a tilted panel as the whole block of air its
+    corners span — a bumper funnel raked 35° boxes several inches thick — so half the
+    interferences it found were between parts that never come near each other.
+    """
+    (ca, ea, aa), (cb, eb, ab) = a, b
+    delta = [cb[i] - ca[i] for i in range(3)]
+    candidates = list(aa) + list(ab)
+    for i in range(3):
+        for j in range(3):
+            axis = [aa[i][1] * ab[j][2] - aa[i][2] * ab[j][1],
+                    aa[i][2] * ab[j][0] - aa[i][0] * ab[j][2],
+                    aa[i][0] * ab[j][1] - aa[i][1] * ab[j][0]]
+            if axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2] > 1e-9:
+                candidates.append(axis)
+    best = float("inf")
+    for axis in candidates:
+        norm = math.sqrt(sum(v * v for v in axis))
+        if norm < 1e-9:
+            continue
+        unit = [v / norm for v in axis]
+        centre_gap = abs(sum(delta[i] * unit[i] for i in range(3)))
+        reach = (sum(ea[k] * abs(sum(aa[k][i] * unit[i] for i in range(3))) for k in range(3))
+                 + sum(eb[k] * abs(sum(ab[k][i] * unit[i] for i in range(3))) for k in range(3)))
+        overlap = reach - centre_gap
+        if overlap <= 0.0:
+            return 0.0
+        best = min(best, overlap)
+    return 0.0 if best is float("inf") else best
+
+
+def _abs_rot(rot: Any) -> list[list[float]] | None:
+    """|R| for R = Rx·Ry·Rz (the shared Euler convention), or None for no rotation."""
+    values = _floats(rot, 3)
+    if values is None or not any(values):
+        return None
+    rx, ry, rz = (math.radians(v) for v in values)
+    cx, sx = math.cos(rx), math.sin(rx)
+    cy, sy = math.cos(ry), math.sin(ry)
+    cz, sz = math.cos(rz), math.sin(rz)
+    # R = Rx @ Ry @ Rz
+    r = [[cy * cz, -cy * sz, sy],
+         [cx * sz + sx * sy * cz, cx * cz - sx * sy * sz, -sx * cy],
+         [sx * sz - cx * sy * cz, sx * cz + cx * sy * sz, cx * cy]]
+    return [[abs(v) for v in row] for row in r]
+
+
+def _world_box(feature: dict[str, Any], origin: list[float]) -> tuple[list[float], list[float]] | None:
+    at = _floats(feature.get("at"), 3)
+    if at is None:
+        return None
+    ext = _local_extents(feature)
+    if ext is None:
+        return None
+    rot = _abs_rot(feature.get("rot"))
+    if rot is not None:
+        ext = [sum(rot[i][j] * ext[j] for j in range(3)) for i in range(3)]
+    centre = [origin[i] + at[i] for i in range(3)]
+    return ([centre[i] - ext[i] for i in range(3)],
+            [centre[i] + ext[i] for i in range(3)])
+
+
+def _boxes_touch(a: tuple[list[float], list[float]], b: tuple[list[float], list[float]],
+                 tol: float = CONTACT_TOL_IN) -> bool:
+    return all(a[0][i] - tol <= b[1][i] and b[0][i] - tol <= a[1][i] for i in range(3))
+
+
+def _structural_bodies(cad: dict[str, Any]) -> list[dict[str, Any]]:
+    bodies: list[dict[str, Any]] = []
+    for assembly in cad.get("assemblies") or []:
+        if not isinstance(assembly, dict):
+            continue
+        aid = str(assembly.get("id") or "assembly")
+        origin = _floats(assembly.get("origin"), 3) or [0.0, 0.0, 0.0]
+        for feature in expand_mirrors(assembly.get("features") or []):
+            if feature.get("t") in _NON_STRUCTURAL or feature.get("to") is not None:
+                continue
+            box = _world_box(feature, origin)
+            if box is None:
+                continue
+            bodies.append({"aid": aid, "name": str(feature.get("n") or feature.get("t")),
+                           "t": feature.get("t"), "kind": feature.get("kind"), "box": box,
+                           # The oriented box as well as the axis-aligned one: the AABB is
+                           # what "does this touch anything" wants (conservative never
+                           # misses a float), the OBB is what "is this inside that" wants.
+                           "obb": _obb(feature, origin)})
+    return bodies
+
+
+def structural_report(cad: dict[str, Any]) -> dict[str, Any]:
+    """The contact audit: which bodies touch nothing, which assemblies never reach the frame.
+
+    Boxes are conservative (a rotated part's box only grows), so a reported FLOAT is real to
+    within the tolerance, while a pass is a strong AABB-level claim, not a proof of bolted
+    fit — the caveat string carries that nuance.
+    """
+    bodies = _structural_bodies(cad)
+    n = len(bodies)
+    touched = [False] * n
+    assembly_ids = {body["aid"] for body in bodies}
+    # Union-find over assemblies, seeded by body-to-body contact.
+    parent: dict[str, str] = {aid: aid for aid in assembly_ids}
+
+    def find(aid: str) -> str:
+        while parent[aid] != aid:
+            parent[aid] = parent[parent[aid]]
+            aid = parent[aid]
+        return aid
+
+    contacts = 0
+    for i in range(n):
+        for j in range(i + 1, n):
+            if _boxes_touch(bodies[i]["box"], bodies[j]["box"]):
+                touched[i] = touched[j] = True
+                contacts += 1
+                ra, rb = find(bodies[i]["aid"]), find(bodies[j]["aid"])
+                if ra != rb:
+                    parent[ra] = rb
+    floating = [f"{bodies[i]['aid']}/{bodies[i]['name']}" for i in range(n)
+                if not touched[i] and n > 1]
+    root = "chassis" if "chassis" in assembly_ids else (bodies[0]["aid"] if bodies else "")
+    unreached = sorted(aid for aid in assembly_ids if root and find(aid) != find(root))
+    return {"version": "kale-integrity-1.0", "tolerance_in": CONTACT_TOL_IN,
+            "bodies": n, "contacts": contacts,
+            "floating": sorted(floating), "unreached_assemblies": unreached,
+            "ok": not floating and not unreached,
+            "caveat": ("AABB contact audit at ±%.2f in against the shared geometry "
+                       "conventions. A pass means every body touches structure and every "
+                       "assembly chains back to the chassis; it is packaging-level, not a "
+                       "fastener-torque claim." % CONTACT_TOL_IN)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Interference: nothing occupies the same space.
+#
+# The structural audit asks whether every body touches something. It never asked whether two
+# bodies are INSIDE each other, so a turret and an elevator tower could be driven through one
+# another and the design would still report "nothing floats" — the overlap reads as contact,
+# which is the one thing the audit was looking for.
+#
+# Only bodies in DIFFERENT assemblies are compared. Inside one assembly a designer overlaps
+# parts on purpose all the time (a bolt through a plate, a bearing in a bore); between two
+# mechanisms it means the packaging is wrong.
+# ─────────────────────────────────────────────────────────────────────────────
+# Boxes are conservative — a rotated part's AABB only grows — so the threshold has to be
+# generous enough that a near-miss on a diagonal member is not reported as a collision.
+PENETRATION_TOL_IN = 0.60
+
+# Kinds that legitimately pass through, lie on or wrap around other assemblies' bodies:
+# fasteners tie two mechanisms together, cloth and foam deform, runs are not solids, and the
+# electrical harness is routed around everything by definition.
+_PASSES_THROUGH = frozenset({
+    "bolts", "standoff", "decal", "fabric", "noodle", "noodle_corner", "belt", "rope",
+    "cable", "envelope", "slide", "chain_track", "sensor", "component", "hardstop", "pawl",
+})
+
+# Two mechanisms that are SUPPOSED to share space. The intake's last roller sits in the
+# hopper's mouth because that is the handover, and a climber that rides the elevator is
+# bolted to it. Exempting them by name is honest; widening the tolerance until they stopped
+# being reported would have hidden the real collisions too.
+_INTENDED_PAIRS = frozenset({frozenset({"intake", "hopper"}),
+                             frozenset({"climber", "elevator"})})
+
+
+def _sweep_bodies(cad: dict[str, Any], bodies: list[dict[str, Any]]) -> None:
+    """Grow every body of a rotating assembly to the volume it sweeps.
+
+    A turret is the case that matters. Checked in its drawn pose, a turret that clips an
+    elevator tower by a quarter inch looks almost fine; in the pose it reaches a second later
+    it has driven the whole head through the tower. The static box is the wrong question for
+    anything on a slew bearing, so the box becomes the swept cylinder's own AABB.
+    """
+    for assembly in cad.get("assemblies") or []:
+        sweep = (assembly or {}).get("sweep") if isinstance(assembly, dict) else None
+        if not sweep:
+            continue
+        aid = str(assembly.get("id") or "")
+        origin = _floats(assembly.get("origin"), 3) or [0.0, 0.0, 0.0]
+        axis_x = origin[0] + _f(sweep.get("x"), 0.0)
+        axis_z = origin[2] + _f(sweep.get("z"), 0.0)
+        floor = origin[1] + _f(sweep.get("from_y"), 0.0)
+        for body in bodies:
+            if body["aid"] != aid:
+                continue
+            low, high = body["box"]
+            if high[1] < floor - CONTACT_TOL_IN:
+                continue                    # below the bearing: part of the base, not turning
+            radius = max(abs(low[0] - axis_x), abs(high[0] - axis_x),
+                         abs(low[2] - axis_z), abs(high[2] - axis_z))
+            body["box"] = ([axis_x - radius, low[1], axis_z - radius],
+                           [axis_x + radius, high[1], axis_z + radius])
+            body["swept"] = True
+
+
+def clearance_report(cad: dict[str, Any]) -> dict[str, Any]:
+    """Which bodies from different assemblies are driven through each other, and by how much.
+
+    `worst_in` is the smallest of the three axis overlaps for the deepest pair — the distance
+    the two would have to be pulled apart along their easiest axis to stop interfering.
+    """
+    bodies = [b for b in _structural_bodies(cad)
+              if b.get("t") not in _PASSES_THROUGH]
+    _sweep_bodies(cad, bodies)
+    clashes: list[dict[str, Any]] = []
+    for i, a in enumerate(bodies):
+        for b in bodies[i + 1:]:
+            if a["aid"] == b["aid"] or frozenset({a["aid"], b["aid"]}) in _INTENDED_PAIRS:
+                continue
+            overlap = [min(a["box"][1][k], b["box"][1][k]) - max(a["box"][0][k], b["box"][0][k])
+                       for k in range(3)]
+            depth = min(overlap)
+            if depth <= PENETRATION_TOL_IN:
+                continue                       # broad phase: the AABB never misses a hit
+            # Narrow phase on the ORIENTED boxes. A tilted panel's AABB is mostly the air its
+            # corners span — a barrel guide raked 36° or a hopper funnel raked 35° boxes
+            # several inches thick — and half the interferences the AABB found were between
+            # parts that never come near each other. A swept turret keeps the AABB, because
+            # for a body of revolution that box IS the model.
+            if not (a.get("swept") or b.get("swept")) and a.get("obb") and b.get("obb"):
+                depth = _obb_penetration(a["obb"], b["obb"])
+                if depth <= PENETRATION_TOL_IN:
+                    continue
+            clashes.append({"a": f"{a['aid']}/{a['name']}", "b": f"{b['aid']}/{b['name']}",
+                            "depth_in": round(depth, 3),
+                            "swept": bool(a.get("swept") or b.get("swept"))})
+    clashes.sort(key=lambda c: -c["depth_in"])
+    pairs = sorted({tuple(sorted((c["a"].split("/")[0], c["b"].split("/")[0])))
+                    for c in clashes})
+    return {
+        "ok": not clashes,
+        "clashes": clashes[:40],
+        "clash_count": len(clashes),
+        "assembly_pairs": ["%s ∩ %s" % pair for pair in pairs],
+        "worst_in": clashes[0]["depth_in"] if clashes else 0.0,
+        "checked": (f"solid bodies in different assemblies, interfering by more than "
+                    f"{PENETRATION_TOL_IN} in on every axis; fasteners, cloth, foam, runs "
+                    f"and the harness are exempt because they are meant to pass through"),
+    }
+
+
+def clearance_errors(cad: dict[str, Any]) -> list[str]:
+    """The report as contract-style error strings, for gates and tests."""
+    return [f"$.clearance: {c['a']} is inside {c['b']} by {c['depth_in']} in"
+            for c in clearance_report(cad)["clashes"]]
+
+
+def geometry_envelope(cad: dict[str, Any]) -> dict[str, Any]:
+    """The real bounding box of everything that was actually generated, in inches.
+
+    This exists because declaring `maxHeight` in FeatureScript is not validation. The height
+    that matters is the one the solids occupy, so it is measured here from the same
+    world-space boxes the contact audit uses — including the bumpers and the wheels, which is
+    what puts the floor at the bottom of the box rather than the bellypan.
+    """
+    bodies = _structural_bodies(cad)
+    if not bodies:
+        return {"bodies": 0, "measured": False}
+    lo = [min(b["box"][0][i] for b in bodies) for i in range(3)]
+    hi = [max(b["box"][1][i] for b in bodies) for i in range(3)]
+    # The floor is the plane the robot STANDS on, i.e. the wheel contact patch — not simply
+    # the lowest solid. Measuring from the lowest solid conflates height with a modelling
+    # fault: an arm drawn dipping through the carpet made a legal robot read 4 in too tall.
+    # Anything below the wheels is reported separately as a ground-clearance problem.
+    # Only DRIVE wheels define the ground plane. An intake roller or a gripper's compliant
+    # wheels are also `wheel` features and sit well off the carpet; letting one of those set
+    # the floor moved the datum and made the robot read metres tall.
+    wheels = [b for b in bodies
+              if b.get("t") == "wheel"
+              and (b["aid"].startswith("swerve") or b["aid"] == "drivetrain")
+              and "drive" in b["name"].lower()]
+    ground = min((b["box"][0][1] for b in wheels), default=lo[1])
+    below = [{"part": f"{b['aid']}/{b['name']}", "below_in": round(ground - b["box"][0][1], 3)}
+             for b in bodies if b["box"][0][1] < ground - 0.05]
+    tallest = max(bodies, key=lambda b: b["box"][1][1])
+    return {
+        "bodies": len(bodies), "measured": True,
+        "min_in": [round(v, 3) for v in lo], "max_in": [round(v, 3) for v in hi],
+        "width_in": round(hi[0] - lo[0], 3),
+        "depth_in": round(hi[2] - lo[2], 3),
+        "height_in": round(hi[1] - ground, 3),
+        "ground_y_in": round(ground, 3),
+        "tallest_part": tallest["name"],
+        "tallest_part_top_in": round(tallest["box"][1][1] - ground, 3),
+        "below_floor": sorted(below, key=lambda x: -x["below_in"])[:8],
+    }
+
+
+def season_rule_report(spec: dict[str, Any]) -> dict[str, Any]:
+    """Check the generated geometry against the season's published limits.
+
+    Every check names the rule it came from and reports the measured value, so a failure can
+    say *what* broke it and by how much rather than "invalid design". Checks whose inputs are
+    estimates (mass) are marked `estimated` and never reported as a pass/fail certification.
+    """
+    season = spec.get("season") or {}
+    limits = season.get("limits") or season.get("rules") or {}
+    cad = spec.get("cad") or {}
+    env = geometry_envelope(cad)
+    frame = spec.get("frame") or {}
+    checks: list[dict[str, Any]] = []
+
+    def add(rule: str, name: str, measured, limit, unit: str, ok: bool,
+            kind: str = "automatic", detail: str = "") -> None:
+        checks.append({"rule": rule or "-", "check": name, "measured": measured,
+                       "limit": limit, "unit": unit, "ok": bool(ok), "kind": kind,
+                       "detail": detail})
+
+    if env.get("measured"):
+        max_h = limits.get("max_height_in")
+        if max_h:
+            over = env["height_in"] - float(max_h)
+            add(limits.get("max_height_rule", "height"), "total height",
+                env["height_in"], float(max_h), "in", over <= 1e-6,
+                detail=(f"{limits.get('max_height_rule', 'height rule')} failed: "
+                        f"{env['tallest_part']} reaches {env['tallest_part_top_in']:.1f} in, "
+                        f"exceeding the {float(max_h):.1f} in total-height limit by "
+                        f"{over:.1f} in." if over > 1e-6 else
+                        f"tallest solid ({env['tallest_part']}) at "
+                        f"{env['tallest_part_top_in']:.1f} in"))
+        per = limits.get("perimeter_in")
+        if per and frame.get("width_in") and frame.get("length_in"):
+            measured = 2 * (float(frame["width_in"]) + float(frame["length_in"]))
+            add(limits.get("perimeter_rule", "perimeter"), "frame perimeter",
+                round(measured, 2), float(per), "in", measured <= float(per) + 1e-6,
+                detail=f"{frame['width_in']:g} x {frame['length_in']:g} in frame")
+        ext = limits.get("extension_in")
+        if ext and frame.get("width_in") and frame.get("length_in"):
+            out_x = env["width_in"] / 2 - float(frame["width_in"]) / 2
+            out_z = env["depth_in"] / 2 - float(frame["length_in"]) / 2
+            worst = round(max(out_x, out_z), 2)
+            add(limits.get("extension_rule", "extension"), "horizontal extension",
+                worst, float(ext), "in", worst <= float(ext) + 1e-6,
+                detail="measured from the frame perimeter to the outermost solid")
+
+    if env.get("measured") and env.get("below_floor"):
+        worst = env["below_floor"][0]
+        add("-", "ground clearance", worst["below_in"], 0.0, "in", False,
+            detail=(f"{worst['part']} is modelled {worst['below_in']:.1f} in below the wheel "
+                    "contact plane — it would be through the carpet."))
+
+    # Bumper rules. These are worth checking automatically precisely because they are the
+    # ones a team loses a match to: they are measured with a ruler at inspection, they are
+    # easy to get wrong by half an inch, and none of them show up as anything odd in a
+    # render. Every number here comes from the geometry the compiler actually emitted.
+    bumper = spec.get("bumper") or {}
+    if bumper.get("thickness_in"):
+        zone = bumper.get("zone_in") or [2.5, 5.75]
+        bottom = float(bumper.get("floor_to_bottom_in", 0.0))
+        top = float(bumper.get("floor_to_top_in", 0.0))
+        add("R405", "bumper zone filled", [round(bottom, 2), round(top, 2)],
+            [zone[0], zone[1]], "in off the floor",
+            bottom <= zone[0] + 1e-6 and top >= zone[1] - 1e-6,
+            detail=(f"padding and backing span {bottom:.2f}–{top:.2f} in off the carpet; the "
+                    f"zone is {zone[0]:g}–{zone[1]:g} in"))
+        add("R402", "backing height", bumper.get("height_in"), 4.5, "in",
+            float(bumper.get("height_in", 0)) >= 4.5 - 1e-6,
+            detail=f"{bumper.get('plywood_in')} in plywood, {bumper.get('height_in')} in tall")
+        add("R402", "padding depth", bumper.get("noodle_in"), 2.25, "in",
+            float(bumper.get("noodle_in", 0)) >= 2.25 - 1e-6,
+            detail=f"{bumper.get('noodles_per_segment')} stacked "
+                   f"Ø{bumper.get('noodle_dia_in')} in noodles")
+        hard_out = float(bumper.get("hard_part_out_in", 0.0))
+        proud = float(bumper.get("padding_proud_of_hard_in", 0.0))
+        add("R404", "hard part setback", round(hard_out, 2), 1.25, "in",
+            hard_out <= 1.25 + 1e-6,
+            detail="outermost hard bumper part, measured from the frame perimeter")
+        add("R404", "padding proud of hard parts", round(proud, 2), 2.0, "in",
+            proud >= 2.0 - 1e-6, detail="foam standing beyond the plywood face")
+        add("R406", "corner padding", bumper.get("corner_padding_in"), 2.25, "in",
+            float(bumper.get("corner_padding_in", 0)) >= 2.25 - 1e-6,
+            detail="continuous quarter-bend of noodle at each level, cloth over it")
+        numerals = [f for a in (cad.get("assemblies") or [])
+                    for f in (a.get("features") or []) if f.get("t") == "decal"]
+        if numerals:
+            height = min(_f(f.get("size", [0, 0, 0])[1], 0.0) for f in numerals)
+            stroke = min(_f(f.get("stroke"), 0.0) for f in numerals)
+            add("R412", "team number height", round(height, 2), 3.75, "in",
+                height >= 3.75 - 1e-6,
+                detail=f"{len(numerals)} numerals modelled, {round(stroke, 3):g} in stroke "
+                       f"against a 0.5 in minimum")
+            add("R412", "team number placements", len(numerals), 3, "faces",
+                len(numerals) >= 3 and stroke >= 0.5 - 1e-6,
+                detail="white numerals, one per bumper face, about 90° apart")
+
+    mass = (spec.get("mass_estimate") or {}).get("total_lb")
+    weight_limit = limits.get("weight_lb")
+    if mass and weight_limit:
+        add(limits.get("weight_rule", "weight"), "estimated mass", mass, float(weight_limit),
+            "lb", float(mass) <= float(weight_limit) + 1e-6, kind="estimated",
+            detail="summed from modelled part volumes; not a scale reading")
+
+    hard_failures = [c for c in checks if not c["ok"] and c["kind"] == "automatic"]
+    return {
+        "version": "kale-rules-1.0",
+        "season": season.get("label", ""),
+        "envelope": env,
+        "checks": checks,
+        "passed": [c for c in checks if c["ok"]],
+        "failed": hard_failures,
+        "estimated": [c for c in checks if c["kind"] == "estimated"],
+        "ok": not hard_failures,
+        "export_blocked": bool(hard_failures),
+        "caveat": ("Automatic checks measured against the generated solids. They are not an "
+                   "inspection: weight is estimated from modelled volumes, and anything not "
+                   "listed here was not checked."),
+    }
+
+
+# Per-feature-kind modelling fidelity. This is the single source of truth the
+# UI, the exports and the marketing copy all quote, so the claim can never
+# outrun the geometry again.
+#   detailed — true governing dimensions AND functional form (teeth, bores,
+#              wall sections, tread) are modelled;
+#   concept  — true path/section but simplified form (a belt is a smooth wrapped
+#              loop, not individual cogs; chain has no links);
+#   envelope — catalog outer dimensions only; internals are not modelled;
+#   layout   — a reserved volume, no part geometry at all.
+FIDELITY_LEVELS = ("detailed", "concept", "envelope", "layout")
+_FIDELITY_BY_KIND = {
+    "tube": "detailed", "plate": "detailed", "gusset": "detailed", "shaft": "detailed",
+    "gear": "detailed", "sprocket": "detailed", "pulley": "detailed", "bearing": "detailed",
+    "wheel": "detailed", "polycarb": "detailed", "bolts": "detailed", "standoff": "detailed",
+    "hardstop": "detailed", "hook": "detailed", "drum": "detailed", "hood": "detailed",
+    "rib": "detailed",
+    "belt": "concept", "rope": "concept", "cable": "concept", "noodle": "concept",
+    "noodle_corner": "concept",
+    # A decal carries its true height, stroke and placement — the three things R412 is
+    # measured on — but the glyph outlines are a raster, not a modelled profile. That is a
+    # concept part by this table's own definition, and calling it detailed would be the
+    # marketing copy outrunning the geometry again.
+    "decal": "concept",
+    "fabric": "concept", "bevel": "concept", "pawl": "concept", "slide": "concept",
+    "brake": "concept", "tensioner": "concept", "chain_track": "concept",
+    "motor": "envelope", "gearbox": "envelope", "component": "envelope",
+    "sensor": "envelope", "actuator": "envelope",
+    "envelope": "layout",
+}
+
+
+def feature_fidelity(kind: str) -> str:
+    return _FIDELITY_BY_KIND.get(kind, "concept")
+
+
+def fidelity_report(cad: dict[str, Any]) -> dict[str, Any]:
+    """Count what is actually modelled at each fidelity level.
+
+    `overall` is the lowest level present among non-layout parts — the honest
+    one-word answer to "how real is this CAD?".
+    """
+    counts = dict.fromkeys(FIDELITY_LEVELS, 0)
+    for asm in cad.get("assemblies") or []:
+        for f in asm.get("features") or []:
+            n = int((f.get("rep") or {}).get("n", 1))
+            counts[feature_fidelity(f.get("t", ""))] += n
+    present = [level for level in FIDELITY_LEVELS if counts[level]]
+    # One level → that level. Several → "mixed": a design whose motors are catalog
+    # envelopes must not summarise itself by its most detailed part.
+    overall = present[0] if len(present) == 1 else ("mixed" if present else "layout")
+    return {
+        "levels": counts,
+        "overall": overall,
+        "statement": ("Structure, gearing and wheels carry true dimensions, teeth and bores; "
+                      "belts and chains are smooth wrapped loops; motors, gearboxes and "
+                      "electronics are catalog outer envelopes without internals."),
+    }
+
+
+def transmission_report(cad: dict[str, Any]) -> dict[str, Any]:
+    """Measure gear meshes and belt wraps in the generated geometry."""
+    from app.services.transmission_geom import transmission_issues  # noqa: PLC0415 — import cycle
+    issues = transmission_issues(cad.get("assemblies") or [])
+    return {
+        "ok": not issues,
+        "issues": issues,
+        "checked": ("gear pairs must sit at the sum of their pitch radii; "
+                    "belt and chain endpoints must land on pulley or sprocket centres"),
+    }
+
+
+def structural_errors(cad: dict[str, Any]) -> list[str]:
+    """The report as contract-style error strings, for gates and tests."""
+    report = structural_report(cad)
+    errors = [f"$.integrity: {name} touches nothing within {CONTACT_TOL_IN} in"
+              for name in report["floating"]]
+    errors.extend(f"$.integrity: assembly {aid!r} has no contact path to the chassis"
+                  for aid in report["unreached_assemblies"])
+    return errors
+
+
 def editable_manifest(cad: dict[str, Any]) -> dict[str, Any]:
     """Stable, deterministic mapping used by Onshape publishing and later edits."""
     parts: list[dict[str, Any]] = []
@@ -159,7 +1011,8 @@ def editable_manifest(cad: dict[str, Any]) -> dict[str, Any]:
         aid = assembly["id"]
         for index, feature in enumerate(assembly["features"]):
             dimensions = {key: value for key, value in feature.items()
-                          if key not in {"t", "n", "at", "rot", "to", "rep", "mat", "kind", "key"}}
+                          if key not in {"t", "n", "at", "rot", "to", "rep", "mat", "kind",
+                                         "key", "mirror"}}
             parts.append({"id": f"{aid}:part:{index + 1}", "assembly_id": aid,
                           "name": feature["n"], "feature_type": feature["t"],
                           "dimensions": dimensions})

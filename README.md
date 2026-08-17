@@ -32,9 +32,36 @@ embeddings and reranking. **No external AI APIs are used for anything** — see
 
 ### Design Studio — prompt to hardware
 
-The Design Studio generates PCB and FRC robot concepts from a prompt. **You pick the season
-first** — 2026 REBUILT or 2025 REEFSCAPE — and that choice is what makes the robot a robot
-*for a game* rather than a generic chassis. See
+The Design Studio generates engineering artifacts from a prompt, at whatever scale the request
+is written at:
+
+| Ask for | You get |
+| --- | --- |
+| `Design a bearing block for a 1/2 in hex shaft.` | one machined part, dimensioned from the bearing outward |
+| `Design a gearbox plate for two Kraken X60 motors.` | a plate with real motor face patterns |
+| `Design an elevator subsystem with two stages.` | one mechanism |
+| `Design a swerve robot for the 2026 season.` | a complete robot |
+| `Design a CAN sensor PCB with 4 CAN connectors and 12V input.` | a schematic-level board |
+
+One pipeline runs all of them:
+
+```
+request → intent classifier → engineering spec → design router → engine → validation → result
+```
+
+`app/services/design_intent.py` classifies the request and decides whether an FRC season is
+even relevant — a bearing housing never asks for one. `app/services/design_router.py` picks
+the engine. Every engine emits the same closed CAD vocabulary, so the 3D viewer, the
+FeatureScript export, the STEP worker and the BOM work on a single part and a 400-part robot
+without knowing the difference.
+
+Every number in a result is labelled with where it came from: **verified** (a catalog part),
+**user provided**, **calculated**, **inferred**, **assumed**, or **unresolved**. Nothing
+critical is chosen in silence, and no manufacturer part number is ever invented — an
+unresolved component is stated as a requirement instead.
+
+**The season only appears when it governs the design**: a complete robot, a game-dependent
+subsystem, or a request that names a season. See
 [the season model](#the-season-model--what-a-game-asks-for) below.
 
 Robot synthesis is layered, most authoritative first:

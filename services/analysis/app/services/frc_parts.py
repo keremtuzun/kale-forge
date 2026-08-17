@@ -421,8 +421,9 @@ _MODULE_ALIASES = [
 ]
 
 _MOTOR_ALIASES = [
-    ("kraken_x60", (r"\bkraken\s*x?60\b", r"\bkraken\b")),
+    # Specific first: the generic \bkraken\b fallback must not swallow an explicit X44.
     ("kraken_x44", (r"\bkraken\s*x?44\b",)),
+    ("kraken_x60", (r"\bkraken\s*x?60\b", r"\bkraken\b")),
     ("neo_vortex", (r"\bvortex\b", r"\bneo\s*vortex\b")),
     ("neo_550", (r"\bneo\s*550\b", r"\b550\b")),
     ("neo", (r"\bneo\b",)),

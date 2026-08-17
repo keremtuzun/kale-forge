@@ -18,16 +18,17 @@ export default function Home() {
           <div className="flex flex-col justify-between px-6 py-14 sm:px-10 lg:border-r lg:border-border lg:px-16 lg:py-20">
             <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
               <span className="h-px w-10 bg-primary" />
-              FRC design intelligence · 2026
+              Engineering design intelligence · 2026
             </div>
             <div className="my-20 max-w-4xl">
               <h1 className="font-display max-w-4xl text-[clamp(4rem,8vw,8.5rem)] font-medium leading-[0.86] tracking-[-0.065em]">
-                Robots,<br />
+                Engineering,<br />
                 resolved.
               </h1>
               <p className="mt-10 max-w-2xl text-lg leading-8 text-muted-foreground sm:text-xl">
-                Describe the machine. Kale Forge resolves the architecture, calculations,
-                parts, interfaces, and a parametric Onshape model you can keep engineering.
+                Describe a bearing block, a mechanism, a circuit board, or a whole competition
+                robot. Kale Forge resolves the dimensions, calculations, parts and interfaces, and
+                hands back parametric source you can keep engineering.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-5">

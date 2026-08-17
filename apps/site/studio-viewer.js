@@ -1,7 +1,7 @@
-// Kale Forge — CAD-tree viewer.
+// Kale Forge - CAD-tree viewer.
 //
 // This renders `spec.cad` and nothing else. The spec's CAD tree is a list of assemblies,
-// each a list of dimensioned features — tubes with a real section and wall, plates with
+// each a list of dimensioned features - tubes with a real section and wall, plates with
 // pockets, hex shafts, flanged bearings, HTD pulleys, gears whose pitch diameter follows
 // from the tooth count, belts, wheels, motors from the catalog envelope. Every feature
 // carries its own centre and rotation in one coordinate system, so the picture you get is
@@ -10,11 +10,10 @@
 // Coordinates match frc_cad.py: inches, +X robot right, +Y up, -Z toward the front,
 // origin at the frame centre on the top face of the bellypan.
 export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, RoomEnvironment, canvas }) {
-  // preserveDrawingBuffer keeps the frame readable after the draw call, so the canvas can be
-  // saved or captured as a PNG. It costs a little performance and buys the thing people
-  // actually want from a design tool: a picture of their robot they can send someone.
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true,
-                                             preserveDrawingBuffer: true });
+  // No preserveDrawingBuffer: capture() renders explicitly right before reading the
+  // canvas, so the buffer never needs to survive between frames - and keeping it did
+  // measurable GPU memory/bandwidth damage on large robots.
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.2;
@@ -24,7 +23,11 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
-  const camera = new THREE.PerspectiveCamera(40, 1, 0.5, 6000);
+  // near/far and the orbit limits are placeholders: `applyCameraRange()` recomputes all four
+  // from the assembly's own bounding sphere after every load. A fixed 0.5 in near plane is
+  // what sliced a turret in half on screen - zoom in on a 30 in robot and the plane sweeps
+  // straight through the geometry, which reads as a modelling fault rather than a clip.
+  const camera = new THREE.PerspectiveCamera(40, 1, 0.05, 6000);
   camera.position.set(30, 26, 38);
 
   const labelRenderer = new CSS2DRenderer();
@@ -68,12 +71,22 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
     orange: mat({ color: 0xff6a13, metalness: 0.4, roughness: 0.45, emissive: 0x3a1500 }),
     redWire: mat({ color: 0xd23b30, metalness: 0.1, roughness: 0.6 }),
     blackWire: mat({ color: 0x0f1011, metalness: 0.1, roughness: 0.6 }),
+    // The control-system harness is colour-coded on the FRC wiring diagram and the colours
+    // carry meaning: yellow/green is the CAN pair, blue is the ethernet run to the radio,
+    // white is the RSL signal. Rendering the whole loom red loses the only thing that makes
+    // it readable.
+    yellowWire: mat({ color: 0xe0b830, metalness: 0.1, roughness: 0.6 }),
+    greenWire: mat({ color: 0x3f9d52, metalness: 0.1, roughness: 0.6 }),
+    blueWire: mat({ color: 0x3a6fb5, metalness: 0.1, roughness: 0.6 }),
+    whiteWire: mat({ color: 0xd9d9d2, metalness: 0.1, roughness: 0.6 }),
     rope: mat({ color: 0xd8d4c6, metalness: 0.05, roughness: 0.85 }),
     led: mat({ color: 0x35d67a, emissive: 0x1c8f4c, emissiveIntensity: 1.3, roughness: 0.4 }),
     polycarb: mat({ color: 0xbfd8cc, metalness: 0.08, roughness: 0.16, transparent: true, opacity: 0.28 }),
     // Bumper colour comes from the design (spec.bumper_color), red unless the prompt says
     // otherwise. The fabric reads matte.
     bumper: mat({ color: 0xc0392b, metalness: 0.02, roughness: 0.92 }),
+    plywood: mat({ color: 0xc9a876, metalness: 0.0, roughness: 0.85 }),
+    foam: mat({ color: 0xe4e0d2, metalness: 0.0, roughness: 0.95 }),
     envelope: new THREE.MeshStandardMaterial({ color: 0x6fc093, wireframe: true, transparent: true, opacity: 0.5 }),
   };
   // Electrical components keep their real-world colours so the layout is readable at a glance.
@@ -90,21 +103,48 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
     elevator: '#6fc093', manipulator: '#a9d0ff', climber: '#e08a5b', electrical: '#2aa0ff',
   };
 
-  // Presentation only — the CAD schema has no "bumper" material, but bumpers are the one part
-  // of a robot with a mandated colour and drawing them grey makes the whole thing hard to read.
+  // Material routing. A declared material always wins (plywood must stay plywood even when
+  // the part is named "front bumper plywood"); the /bumper/ name fallback only catches parts
+  // with no material of their own, so legacy fabric-less bumpers still read as bumpers.
   const M_OF = (name, featureName) => (
-    /bumper/.test(featureName || '') ? M.bumper : (M[name] || M.aluminium));
+    (name && M[name]) || (/bumper/.test(featureName || '') ? M.bumper : M.aluminium));
+  // The alliance colour of the current design. The number decals paint their panel in it,
+  // and they are built inside buildFeatureOf, which only ever sees one feature.
+  let bumperHex = '#c0392b';
   const box = (w, h, d, m) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
   const cyl = (rt, rb, h, m, s = 32) => new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, s), m);
   const D2R = Math.PI / 180;
 
   // ── reusable part shapes ─────────────────────────────────────────────────────
-  // A plate is extruded from a rounded outline with real pocket holes cut through it —
-  // the pockets are geometry, not a painted-on texture.
-  function makePlate(w, t, d, m, pockets) {
+  // A plate is extruded from a rounded outline. In this WEBGL PREVIEW the pockets are
+  // dark inset geometry laid over the face - a visual read, not removed material; the
+  // exported STEP/FeatureScript carry the true cut bores. The dossier's fidelity
+  // section is the honest statement of which is which.
+  function makePlate(w, t, d, m, pockets, bores) {
     const r = Math.min(0.35, w * 0.12, d * 0.12);
     const shape = new THREE.Shape();
     const hw = w / 2, hd = d / 2;
+    // Named bores are real holes in the extruded profile, not a texture: a bearing pocket
+    // that is only a number in the dossier is not a bearing pocket, and the same profile
+    // feeds the STEP body and the FeatureScript sketch.
+    const drill = (bores || []).map(b => {
+      const path = new THREE.Path();
+      const rad = (b.d || 0) / 2;
+      if (rad <= 0) return null;
+      if (b.form === 'hex') {
+        // Hex bores are given across the FLATS, which is how hex stock is specified; the
+        // circumscribed radius is what the profile needs.
+        const across = rad / Math.cos(Math.PI / 6);
+        for (let i = 0; i <= 6; i++) {
+          const a = Math.PI / 6 + i * Math.PI / 3;
+          const px = (b.x || 0) + Math.cos(a) * across, pz = (b.z || 0) + Math.sin(a) * across;
+          if (i === 0) path.moveTo(px, pz); else path.lineTo(px, pz);
+        }
+      } else {
+        path.absarc(b.x || 0, b.z || 0, rad, 0, Math.PI * 2, false);
+      }
+      return path;
+    }).filter(Boolean);
     shape.moveTo(-hw + r, -hd);
     shape.lineTo(hw - r, -hd); shape.quadraticCurveTo(hw, -hd, hw, -hd + r);
     shape.lineTo(hw, hd - r); shape.quadraticCurveTo(hw, hd, hw - r, hd);
@@ -113,7 +153,7 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
     if (pockets > 0 && w > 3.2 && d > 3.2 && pockets >= 6) {
       // A CNC-routed pocket grid, the way a real bellypan is machined: rounded-square
       // pockets in a regular grid with uniform webs between them and a solid margin at the
-      // rails — not a scatter of circles. The web and margin are fixed machining numbers;
+      // rails - not a scatter of circles. The web and margin are fixed machining numbers;
       // the pocket size falls out of the plate.
       const margin = Math.min(1.3, Math.max(0.7, Math.min(w, d) * 0.06));
       const web = 0.55;
@@ -142,7 +182,7 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
       }
     } else if (pockets > 0) {
       // Small plates (module plates, mounts) keep a modest bolt-circle of round lightening
-      // holes — at this scale that is what real plates use.
+      // holes - at this scale that is what real plates use.
       const cols = Math.max(1, Math.round(Math.sqrt(pockets * w / Math.max(d, 0.01))));
       const rows = Math.max(1, Math.round(pockets / cols));
       const cw = w / cols, cd = d / rows;
@@ -157,6 +197,8 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
         }
       }
     }
+    // Named bores go on last so they survive whichever lightening pattern ran above.
+    for (const path of drill) shape.holes.push(path);
     const geo = new THREE.ExtrudeGeometry(shape, { depth: t, bevelEnabled: false, steps: 1 });
     geo.rotateX(-Math.PI / 2); geo.translate(0, t / 2, 0); geo.center();
     return new THREE.Mesh(geo, m);
@@ -350,30 +392,93 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
       const hub = makePlate(r * 1.0, width * 1.02, r * 1.0, M.hub, 4);
       hub.rotation.x = Math.PI / 2; g.add(hub);
     }
-    spinList.push({ obj: g, axis: 'y', speed: (name && /flywheel/.test(name)) ? 9 : 3.2 });
+    // Compliant (green) rollers do not free-spin 360° in the animation - their motion is the
+    // intake's limited deploy arc toward the front, driven by the assembly's articulation.
+    // Flywheels and treaded drive wheels genuinely spin, so they keep their spinners.
+    if (kind !== 'compliant') {
+      spinList.push({ obj: g, axis: 'y', speed: (name && /flywheel/.test(name)) ? 9 : 3.2 });
+    }
     return g;
   }
 
   // ── feature dispatch ─────────────────────────────────────────────────────────
   // One builder per CAD feature type. Anything unknown falls through to a labelled box
   // rather than disappearing, so a schema addition is visible instead of silent.
+  // The same policy covers malformed features: one bad part in a 200-feature robot is a
+  // defect to look at, never a TypeError that blanks the whole viewer.
+  function unmodelledBox(f, m) {
+    const ok = v => Array.isArray(v) && v.length === 3 && v.every(Number.isFinite);
+    const s = ok(f.size) ? f.size : (f.dia ? [f.dia, f.len || f.dia, f.dia] : [1, 1, 1]);
+    return box(Math.max(s[0], 0.2), Math.max(s[1], 0.2), Math.max(s[2], 0.2), m);
+  }
   function buildFeature(f, spin) {
     const m = M_OF(f.mat, f.n);
+    try {
+      return buildFeatureOf(f, spin, m);
+    } catch (err) {
+      console.warn('kale viewer: could not build', f && f.t, f && f.n, err);
+      return unmodelledBox(f, m);
+    }
+  }
+  function buildFeatureOf(f, spin, m) {
     switch (f.t) {
       case 'tube': {
         const g = makeTube(f.sec[1], f.sec[0], f.len, f.wall || 0.1, m, f.bolt_pitch || 0, f.pockets);
         return g;
       }
       case 'plate':
-        return makePlate(f.size[0], f.size[1], f.size[2], m, f.pockets || 0);
+        return makePlate(f.size[0], f.size[1], f.size[2], m, f.pockets || 0, f.bores);
       case 'gusset': {
         const g = new THREE.Group();
-        const tri = new THREE.Shape();
-        tri.moveTo(0, 0); tri.lineTo(f.size[0], 0); tri.lineTo(0, f.size[1]); tri.closePath();
-        const geo = new THREE.ExtrudeGeometry(tri, { depth: f.th || 0.09, bevelEnabled: false });
+        const th = f.th || 0.09;
+        if (f.form === 'angle') {
+          // Bent sheet: a flat leg lying in the local XZ plane and a second leg turned down
+          // 90° at its outboard edge, which is the whole point of the part - one blank
+          // catching two faces of the tube instead of a flat plate catching one.
+          const leg = f.leg || Math.min(f.size[0], f.size[1]) * 0.66;
+          const flat = box(f.size[0], th, f.size[1], m);
+          flat.position.y = -th / 2;
+          const bent = box(f.size[0], leg, th, m);
+          bent.position.set(0, -leg / 2, f.size[1] / 2 - th / 2);
+          g.add(flat, bent);
+          // Only if the blank is actually punched. THREE.Object3D.add() with no arguments
+          // is an error, not a no-op, so spreading an empty row logs on every unpunched
+          // bracket - four of them per robot, straight into the console.
+          const holes = holeRow(f.size[0], f.pitch, th, -th / 2, f.size[1] / 2 - 0.4);
+          if (holes.length) g.add(...holes);
+          return g;
+        }
+        const shape = new THREE.Shape();
+        if (f.form === 'triangle') {
+          shape.moveTo(0, 0); shape.lineTo(f.size[0], 0); shape.lineTo(0, f.size[1]);
+        } else {
+          // The default corner gusset is a plate with the unloaded corner clipped - the
+          // shape a waterjet actually cuts, not a bare right triangle.
+          const c = Math.min(f.size[0], f.size[1]) * 0.42;
+          shape.moveTo(0, 0); shape.lineTo(f.size[0], 0); shape.lineTo(f.size[0], f.size[1] - c);
+          shape.lineTo(f.size[0] - c, f.size[1]); shape.lineTo(0, f.size[1]);
+        }
+        shape.closePath();
+        const geo = new THREE.ExtrudeGeometry(shape, { depth: th, bevelEnabled: false });
         geo.rotateX(-Math.PI / 2); geo.center();
-        g.add(new THREE.Mesh(geo, M.aluminium));
+        g.add(new THREE.Mesh(geo, m));
         return g;
+      }
+      case 'decal': {
+        // The team number, at the height and stroke R412 measures. It is a part in the tree,
+        // so it is drawn from the tree - the renderer no longer invents its own size.
+        return makeNumberPanel(f.text, f.size[0], f.size[1], f.stroke || 0.5);
+      }
+      case 'rib': {
+        // A formed rib: the curved profile a hood or a shell is actually built from, rather
+        // than one smooth surface pretending to be sheet metal.
+        const arc = new THREE.Shape();
+        const r = f.r || 3, sweep = (f.arc || 90) * D2R, start = (f.start || 0) * D2R;
+        arc.absarc(0, 0, r, start, start + sweep, false);
+        arc.absarc(0, 0, Math.max(0.05, r - (f.web || 0.6)), start + sweep, start, true);
+        const geo = new THREE.ExtrudeGeometry(arc, { depth: f.th || 0.19, bevelEnabled: false });
+        geo.translate(0, 0, -(f.th || 0.19) / 2); geo.rotateY(Math.PI / 2);
+        return new THREE.Mesh(geo, m);
       }
       case 'shaft':
         return makeShaft(f.dia, f.len, f.form);
@@ -399,6 +504,52 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
       }
       case 'wheel':
         return makeWheel(f.dia, f.w, f.kind, spin, f.n);
+      case 'noodle_corner': {
+        // Quarter-bend of noodle at a bumper corner: the ring is continuous around
+        // the corner, matching the course's swept-ring bumper. Torus arc lies flat
+        // (about Y); f.rot picks the quadrant.
+        const geo = new THREE.TorusGeometry(f.bend, f.dia / 2, 10, 14, Math.PI / 2);
+        geo.rotateX(Math.PI / 2);
+        return new THREE.Mesh(geo, M.foam);
+      }
+      case 'noodle': {
+        // A pool noodle: foam cylinder along local Y (the shaft convention - the feature's
+        // rot lays it along its segment), with the moulded centre bore visible at the ends.
+        const g = new THREE.Group();
+        g.add(cyl(f.dia / 2, f.dia / 2, f.len, M.foam, 26));
+        g.add(cyl(f.dia * 0.14, f.dia * 0.14, f.len * 1.004, M.pocket, 12));
+        return g;
+      }
+      case 'fabric': {
+        // The bumper wrap: an outer skin with top and bottom returns - a U-channel of cloth
+        // closing over the noodle stack. size = [length, height, wrapped depth]; the skin
+        // faces local +Z and the segment's rot turns it outward.
+        const g = new THREE.Group();
+        if (f.bend) {
+          // A corner is the same channel swept through 90°, so the cloth stays continuous
+          // over the corner noodles instead of stopping at the tangent point and leaving
+          // foam showing. A quarter-annulus, standing the wrap's full height: the arc runs
+          // +X → +Z and the feature's rot picks the quadrant, matching the corner noodles.
+          const [, ch, cd] = f.size, skin = 0.05;
+          const rOut = f.bend + cd / 2;
+          const q = new THREE.Shape();
+          q.absarc(0, 0, rOut, 0, Math.PI / 2, false);
+          q.absarc(0, 0, Math.max(0.05, rOut - skin), Math.PI / 2, 0, true);
+          const geo = new THREE.ExtrudeGeometry(q, { depth: ch, bevelEnabled: false });
+          geo.rotateX(Math.PI / 2); geo.translate(0, ch / 2, 0);
+          g.add(new THREE.Mesh(geo, M.bumper));
+          return g;
+        }
+        const [len, h, d] = f.size, skin = 0.05;
+        const face = box(len, h, skin, M.bumper); face.position.z = d / 2 - skin / 2; g.add(face);
+        for (const sy of [-1, 1]) {
+          const ret = box(len, skin, d, M.bumper); ret.position.y = sy * (h / 2 - skin / 2); g.add(ret);
+        }
+        for (const sx of [-1, 1]) {          // end closures so a corner never shows raw foam
+          const end = box(skin, h, d, M.bumper); end.position.x = sx * (len / 2 - skin / 2); g.add(end);
+        }
+        return g;
+      }
       case 'motor':
         return makeMotor(f.dia, f.len);
       case 'gearbox':
@@ -476,10 +627,27 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
         return g;
       }
       case 'hood': {
-        const geo = new THREE.CylinderGeometry(f.r, f.r, f.w, 26, 1, true, 0, Math.PI);
-        const hood = new THREE.Mesh(geo, mat({ color: 0x9aa0a6, metalness: 0.86, roughness: 0.34, side: THREE.DoubleSide }));
-        hood.rotation.z = Math.PI / 2;
-        return hood;
+        // Honour the emitted wrap. A hood that always drew a full half-cylinder put a lot of
+        // metal behind the flywheels that no shooter has.
+        // Formed sheet, with a thickness. It used to be an open-ended CylinderGeometry - a
+        // zero-thickness surface drawn DoubleSide - so the camera saw straight through the
+        // skin into its own inside, and the hood read on screen as a part sliced in half.
+        // That is the "turret is divided" report: not a modelling fault, a shell with no wall.
+        //
+        // An annulus sector extruded across the hood's width gives it a real wall and closes
+        // the ends, so it reads as the formed part it is. The orientation matches what the
+        // cylinder did: arc in the YZ plane, width along X.
+        const sweep = (f.arc || 180) * D2R, from = (f.start || 0) * D2R;
+        const th = f.th || 0.098;
+        const shape = new THREE.Shape();
+        shape.absarc(0, 0, f.r, from, from + sweep, false);
+        shape.absarc(0, 0, Math.max(f.r - th, 0.02), from + sweep, from, true);
+        const geo = new THREE.ExtrudeGeometry(shape, { depth: f.w, bevelEnabled: false });
+        geo.translate(0, 0, -f.w / 2);
+        // Extrusion runs along +Z and the arc sits in XY; rotate so the width runs along X and
+        // the arc stands in YZ, which is where the cylinder version put it.
+        geo.rotateY(Math.PI / 2);
+        return new THREE.Mesh(geo, mat({ color: 0x9aa0a6, metalness: 0.86, roughness: 0.34 }));
       }
       case 'envelope':
         return new THREE.Mesh(new THREE.BoxGeometry(f.size[0], f.size[1], f.size[2]), M.envelope);
@@ -520,65 +688,58 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
         return g;
       }
       default:
-        return null;
+        console.warn('kale viewer: unmodelled feature type', f.t, f.n);
+        return unmodelledBox(f, m);
     }
   }
 
-  // Team numbers go on all four bumpers. They are decals, not parts, so they are drawn here
-  // from spec.team_number rather than carried in the CAD tree — putting them in the geometry
-  // would change every chassis assembly the design model was trained on.
+  // The team number is a `decal` feature in the CAD tree now, so it is placed by the
+  // compiler and drawn here at whatever size the compiler emitted. That matters: R412 sets a
+  // 3.75 in minimum height and a 0.5 in minimum stroke, and while these numbers lived only
+  // in the renderer they were 1.95 in tall - a bit over half legal - with nothing in the
+  // pipeline in a position to measure them.
+  //
   // The plane is sized to the digits and the canvas is sized to the plane, at one pixel
-  // density. Any mismatch between those two aspect ratios shows up as stretched type, which
-  // is what a 2:1 canvas mapped onto a 7:1 plane was doing.
-  function makeBumperNumber(number, bumperColor) {
-    const text = String(number);
-    const DIGIT_W = 1.30, HEIGHT = 1.95;     // inches; a tall digit on a 2.5 in bumper face
-    const width = text.length * DIGIT_W;
+  // density. Any mismatch between those two aspect ratios shows up as stretched type.
+  function makeNumberPanel(text, width, height, stroke) {
+    const label = String(text == null ? '' : text);
     const PX = 128;
     const canvas = document.createElement('canvas');
-    canvas.width = Math.round(width * PX);
-    canvas.height = Math.round(HEIGHT * PX);
+    canvas.width = Math.max(2, Math.round(width * PX));
+    canvas.height = Math.max(2, Math.round(height * PX));
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = bumperColor; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    // Condensed weights are what teams actually cut; it also keeps four digits inside the
-    // panel without squeezing the glyphs.
-    ctx.font = `bold ${Math.round(canvas.height * 0.78)}px "Helvetica Neue", Inter, Arial, sans-serif`;
+    ctx.fillStyle = bumperHex; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Condensed bold is what teams cut vinyl in; it also keeps four digits inside the panel
+    // without squeezing the glyphs. The cap height is the rule-bearing dimension, so the
+    // glyphs fill the panel rather than sitting in it with leading.
+    ctx.font = `bold ${Math.round(canvas.height * 0.92)}px "Helvetica Neue", Inter, Arial, sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = readableOn(bumperColor);
-    ctx.fillText(text, canvas.width / 2, canvas.height / 2 + canvas.height * 0.03,
-                 canvas.width * 0.94);
+    // R412 says white. On an alliance bumper that is always the readable choice anyway, and
+    // picking a "more readable" dark numeral for a light bumper would be drawing an illegal
+    // robot - the earlier contrast-matching behaviour did exactly that.
+    ctx.fillStyle = '#ffffff';
+    ctx.lineWidth = Math.max(1, stroke * PX * 0.12);
+    ctx.fillText(label, canvas.width / 2, canvas.height / 2 + canvas.height * 0.03,
+                 canvas.width * 0.96);
     const texture = new THREE.CanvasTexture(canvas);
     texture.anisotropy = 8; texture.colorSpace = THREE.SRGBColorSpace;
     return new THREE.Mesh(
-      new THREE.PlaneGeometry(width, HEIGHT),
+      new THREE.PlaneGeometry(width, height),
       new THREE.MeshBasicMaterial({ map: texture, clippingPlanes: [sectionPlane] }));
   }
 
-  // White on a dark bumper, near-black on a light one. A fixed white number disappears on
-  // white or yellow bumpers, which teams do run.
-  function readableOn(hex) {
-    const c = new THREE.Color(hex);
-    const luma = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
-    return luma > 0.6 ? '#15181b' : '#ffffff';
-  }
-
-  function addBumperNumbers(group, number, colour, W, L) {
-    const halfW = W / 2 + 0.6, halfL = L / 2 + 0.6;
-    const face = 0.42;                       // just proud of the bumper so it never z-fights
-    const y = 2.0;
-    const places = [
-      { at: [0, y, -(halfL + face)], rot: [0, Math.PI, 0] },
-      { at: [0, y, halfL + face], rot: [0, 0, 0] },
-      { at: [-(halfW + face), y, 0], rot: [0, -Math.PI / 2, 0] },
-      { at: [halfW + face, y, 0], rot: [0, Math.PI / 2, 0] },
-    ];
-    for (const p of places) {
-      const mesh = makeBumperNumber(number, colour);
-      mesh.position.set(p.at[0], p.at[1], p.at[2]);
-      mesh.rotation.set(p.rot[0], p.rot[1], p.rot[2]);
-      mesh.userData.part = 'chassis';
-      group.add(mesh);
+  // The punched hole row a bolt-on bracket is cut with. Drawn as through-pockets so a gusset
+  // reads as something that lands on the rail's existing holes rather than a blank slab.
+  function holeRow(span, pitch, th, y, z) {
+    if (!pitch || pitch <= 0) return [];
+    const n = Math.max(0, Math.floor((span - 0.6) / pitch) + 1);
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const h = cyl(0.1, 0.1, th * 3, M.pocket, 10);
+      h.position.set((i - (n - 1) / 2) * pitch, y, z);
+      out.push(h);
     }
+    return out;
   }
 
   // Belts, cables and ropes connect two points, so they are placed by their endpoints
@@ -587,29 +748,76 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
     const a = new THREE.Vector3(f.at[0], f.at[1], f.at[2]);
     const b = new THREE.Vector3(f.to[0], f.to[1], f.to[2]);
     if (f.t === 'belt') {
-      const g = new THREE.Group();
       const dir = b.clone().sub(a);
-      const len = dir.length();
-      if (len < 0.01) return null;
-      // A belt is a loop: two runs on either side of the pulley centres, not a single bar.
-      // The offset has to be perpendicular to the run, or a horizontal belt separates along
-      // the wrong axis and reads as one thick bar.
-      const axis = dir.clone().normalize();
-      const up = Math.abs(axis.y) > 0.9 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0);
-      const perp = new THREE.Vector3().crossVectors(axis, up).normalize();
+      const d = dir.length();
+      if (d < 0.01) return null;
+      const run = dir.clone().normalize();
+      const mat = /chain/.test(f.kind || '') ? M.steel : M.black;
+      const w = 0.05 + (f.w || 0.35);
+      // A belt is a loop that WRAPS its pulleys: two tangent runs joined by arcs at
+      // the pitch radii the enrichment pass resolved from the endpoint features. The
+      // loop plane's normal is the pulley axis, carried in the data (f.axis).
+      if (f.r1 && f.r2 && d > Math.abs(f.r1 - f.r2) + 0.05) {
+        const half = (f.thick || 0.12) / 2;
+        let axis = f.axis ? new THREE.Vector3(f.axis[0], f.axis[1], f.axis[2]) : null;
+        if (!axis || axis.lengthSq() < 0.5 || Math.abs(axis.clone().normalize().dot(run)) > 0.95) {
+          const up = Math.abs(run.y) > 0.9 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0);
+          axis = new THREE.Vector3().crossVectors(run, up);
+        }
+        axis.addScaledVector(run, -axis.dot(run)).normalize();  // exactly ⊥ the run
+        const perp = new THREE.Vector3().crossVectors(axis, run).normalize();
+        const phi = Math.acos(Math.max(-1, Math.min(1, (f.r1 - f.r2) / d)));
+        const SEG = 20;
+        const boundary = (r1, r2) => {
+          const pts = [];
+          for (let k = 0; k <= SEG; k++) { const ang = phi + (Math.PI * 2 - 2 * phi) * k / SEG; pts.push([Math.cos(ang) * r1, Math.sin(ang) * r1]); }
+          for (let k = 0; k <= SEG; k++) { const ang = -phi + 2 * phi * k / SEG; pts.push([d + Math.cos(ang) * r2, Math.sin(ang) * r2]); }
+          return pts;
+        };
+        const shape = new THREE.Shape();
+        const o = boundary(f.r1 + half, f.r2 + half);
+        shape.moveTo(o[0][0], o[0][1]);
+        for (let i = 1; i < o.length; i++) shape.lineTo(o[i][0], o[i][1]);
+        shape.closePath();
+        const holePts = boundary(Math.max(f.r1 - half, 0.02), Math.max(f.r2 - half, 0.02));
+        const hole = new THREE.Path();
+        hole.moveTo(holePts[0][0], holePts[0][1]);
+        for (let i = 1; i < holePts.length; i++) hole.lineTo(holePts[i][0], holePts[i][1]);
+        hole.closePath();
+        shape.holes.push(hole);
+        const geo = new THREE.ExtrudeGeometry(shape, { depth: w, bevelEnabled: false });
+        geo.translate(0, 0, -w / 2);
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.applyMatrix4(new THREE.Matrix4().makeBasis(run, perp, axis));
+        mesh.position.copy(a);
+        const g = new THREE.Group(); g.add(mesh);
+        return g;
+      }
+      // Endpoints that resolved to nothing fall back to the flat two-run read; the
+      // transmission report names them, so the gap is visible, never silent.
+      const g = new THREE.Group();
+      const up = Math.abs(run.y) > 0.9 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0);
+      const perp = new THREE.Vector3().crossVectors(run, up).normalize();
       const gap = ((f.w || 0.35) * 1.6) / 2;
       const mid = a.clone().lerp(b, 0.5);
       for (const side of [-1, 1]) {
-        const run = box(0.10, len, 0.05 + (f.w || 0.35), /chain/.test(f.kind || '') ? M.steel : M.black);
-        run.position.copy(mid).addScaledVector(perp, side * gap);
-        run.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis);
-        g.add(run);
+        const bar = box(0.10, d, w, mat);
+        bar.position.copy(mid).addScaledVector(perp, side * gap);
+        bar.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), run);
+        g.add(bar);
       }
       return g;
     }
-    const material = f.t === 'rope' ? M.rope : (f.polarity === '-' ? M.blackWire : M.redWire);
+    const WIRE = { red: M.redWire, black: M.blackWire, yellow: M.yellowWire,
+                   green: M.greenWire, blue: M.blueWire, white: M.whiteWire };
+    const material = f.t === 'rope' ? M.rope
+      : (WIRE[f.colour] || (f.polarity === '-' ? M.blackWire : M.redWire));
     const radius = f.t === 'rope' ? (f.dia || 0.125) / 2 : (f.dia || 0.26) / 2;
-    const mid = a.clone().lerp(b, 0.5); mid.y -= Math.min(1.2, a.distanceTo(b) * 0.12);
+    // Cables lie on the bellypan; a deep sag put them below the pan and through the floor.
+    // A signal wire sags less than a 6 AWG battery lead, so the sag scales with the gauge -
+    // otherwise the whole loom droops identically and reads as one moulded part.
+    const mid = a.clone().lerp(b, 0.5);
+    mid.y -= Math.min(0.35, a.distanceTo(b) * 0.05) * Math.min(1, (f.dia || 0.26) / 0.26);
     const curve = new THREE.QuadraticBezierCurve3(a, mid, b);
     return new THREE.Mesh(new THREE.TubeGeometry(curve, 18, radius, 8, false), material);
   }
@@ -618,28 +826,30 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
   let world = new THREE.Group(); scene.add(world);
   let assemblies = [];     // {id, group, base, explode, label}
   let spinners = [];
+  let artics = [];         // {group, deg:[min,max], phase} - limited-arc mechanism motion
   let clickable = [];
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), new THREE.ShadowMaterial({ opacity: 0.2 }));
   ground.rotation.x = -Math.PI / 2; ground.position.y = -0.7; ground.receiveShadow = true; scene.add(ground);
 
-  function label(text, sub, dot, anchor) {
-    const el = document.createElement('div');
-    el.className = 'lbl'; el.style.setProperty('--dot', dot || '#6fc093');
-    el.innerHTML = sub ? `${text} <small>${sub}</small>` : text;
-    const obj = new CSS2DObject(el); obj.position.copy(anchor); return obj;
-  }
-
   function clearWorld() {
-    // CSS2D labels live in the label renderer's DOM, not the scene graph — removing the
-    // group alone leaves the previous design's labels on screen.
+    // Floating assembly labels were removed; the traversal stays because a CSS2D object from
+    // an older cached build would otherwise outlive the group it belonged to.
     world.traverse(o => {
       if (o.isCSS2DObject && o.element && o.element.parentNode) o.element.parentNode.removeChild(o.element);
       if (o.isMesh && o.geometry) o.geometry.dispose();
+      // Highlight clones belong to one mesh; the shared palette materials do not and
+      // must survive into the next design.
+      if (o.isMesh && origMats.has(o) && o.material !== origMats.get(o)) o.material.dispose();
+      // Bumper-number planes own their CanvasTexture and material; nothing else
+      // references them, and un-disposed textures accumulate GPU memory per revision.
+      if (o.isMesh && o.material && o.material.map && o.material.map.isCanvasTexture){
+        o.material.map.dispose(); o.material.dispose();
+      }
     });
     scene.remove(world);
     while (labelRenderer.domElement.firstChild) labelRenderer.domElement.removeChild(labelRenderer.domElement.firstChild);
     world = new THREE.Group(); scene.add(world);
-    assemblies = []; spinners = []; clickable = []; origMats.clear(); selected = null;
+    assemblies = []; spinners = []; artics = []; clickable = []; origMats.clear(); selected = null;
   }
 
   function load(spec) {
@@ -648,17 +858,62 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
     if (!cad || !cad.assemblies) { frameView(); return; }
     const frame = spec.frame || {};
     const W = frame.width_in || 28, L = frame.length_in || 28;
-    const bumperHex = (spec.bumper_color && spec.bumper_color.hex) || '#c0392b';
+    bumperHex = (spec.bumper_color && spec.bumper_color.hex) || '#c0392b';
     M.bumper.color.set(bumperHex);
     let tallest = 12;
 
     cad.assemblies.forEach(asm => {
       const group = new THREE.Group();
-      group.position.set(asm.origin[0], asm.origin[1], asm.origin[2]);
+      const org = (Array.isArray(asm.origin) && asm.origin.length === 3) ? asm.origin : [0, 0, 0];
+      group.position.set(org[0], org[1], org[2]);
       const spin = [];
       let top = 0;
 
+      // A mechanism with an articulation block moves as a rigid body about a real axle over
+      // a limited arc - the intake deploying toward the front, never a 360° spin. Moving
+      // features go into a pivot subgroup centred on the axle; parts named in `static`
+      // (towers, bearings, the dead axle itself) stay on the frame.
+      const art = asm.articulation;
+      let pivotGroup = null, staticNames = null;
+      if (art && art.type === 'pivot') {
+        pivotGroup = new THREE.Group();
+        pivotGroup.position.set(art.at[0], art.at[1], art.at[2]);
+        group.add(pivotGroup);
+        staticNames = new Set(art.static || []);
+        artics.push({ group: pivotGroup, deg: art.deg || [0, 60], phase: Math.random() * 0.4 });
+      }
+      const attach = (obj, f) => {
+        const moving = pivotGroup && !staticNames.has(f.n) &&
+                       !staticNames.has((f.n || '').replace(/ mirror$/, ''));
+        if (moving) {
+          obj.position.sub(new THREE.Vector3(art.at[0], art.at[1], art.at[2]));
+          pivotGroup.add(obj);
+        } else {
+          group.add(obj);
+        }
+      };
+
+      // A feature with mirror:'x'|'y'|'z' is a left/right pair authored once: the reflected
+      // twin is derived here (position component negated; of the XYZ Euler angles the one
+      // about the mirror axis survives, the other two negate). Same expansion the cut list
+      // and FeatureScript do - the viewer must show both bodies or the picture lies.
+      const MIRROR_AXIS = { x: 0, y: 1, z: 2 };
+      const expanded = [];
       asm.features.forEach(f => {
+        const axis = MIRROR_AXIS[f.mirror];
+        if (axis === undefined) { expanded.push(f); return; }
+        const base = { ...f }; delete base.mirror;
+        expanded.push(base);
+        const twin = JSON.parse(JSON.stringify(base));
+        twin.n = (f.n || 'part') + ' mirror';
+        twin.at = [...twin.at]; twin.at[axis] = -twin.at[axis];
+        if (twin.to) { twin.to = [...twin.to]; twin.to[axis] = -twin.to[axis]; }
+        if (twin.rot) twin.rot = twin.rot.map((v, i) => (i === axis ? v : -v));
+        expanded.push(twin);
+      });
+      expanded.forEach(f => {
+        // A feature that cannot be placed cannot be drawn; skip it rather than crash the world.
+        if (!Array.isArray(f.at) || f.at.length !== 3) return;
         const obj = f.to ? buildLink(f) : buildFeature(f, spin);
         if (!obj) return;
         if (!f.to) {
@@ -673,39 +928,28 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
           o.userData.part = asm.id; o.userData.feature = f;
           clickable.push(o);
         });
-        group.add(obj);
+        attach(obj, f);
         top = Math.max(top, f.at[1] + 1.5);
       });
 
       world.add(group);
       const dot = DOT[asm.id] || (asm.id.startsWith('swerve') ? DOT.drivetrain : '#8bd0a9');
-      const showLabel = !asm.id.startsWith('swerve') || asm.id === 'swerve_0';
       const entry = {
         id: asm.id, group, base: group.position.clone(),
         explode: explodeVector(asm, W, L),
       };
-      if (showLabel) {
-        // Anchor the label on the assembly's own bounding box, so a tall tower labels at
-        // its top and a flat control system labels just above the bellypan.
-        const bounds = new THREE.Box3().setFromObject(group);
-        const anchor = new THREE.Vector3(0, bounds.max.y - group.position.y + 1.2, 0);
-        const sub = (asm.note || '').slice(0, 42);
-        const lab = label(asm.name, sub, dot, anchor);
-        group.add(lab); entry.label = lab;
-      }
-      if (asm.id === 'chassis') {
-        addBumperNumbers(group, spec.team_number || 8159, bumperHex, W, L);
-      }
       assemblies.push(entry);
       spin.forEach(s => spinners.push(s));
-      tallest = Math.max(tallest, asm.origin[1] + top + 2);
+      tallest = Math.max(tallest, org[1] + top + 2);
     });
 
-    // Fit to what was actually built, not to the frame size — a climber tower or a barrel
+    // Fit to what was actually built, not to the frame size - a climber tower or a barrel
     // shooter reaches well outside the chassis and still has to be in shot.
     worldBounds = new THREE.Box3().setFromObject(world);
+    // The ground meets the robot's actual lowest point (the wheel patches), so the robot
+    // stands ON the floor instead of hovering over it or sinking through it.
+    ground.position.y = worldBounds.min.y - 0.01;
     frameView();
-    setLabels(labelsOn);
     setCut(cut);
   }
 
@@ -733,9 +977,14 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
       if (on) {
         if (!origMats.has(o)) origMats.set(o, o.material);
         o.material = o.material.clone();
-        o.material.emissive = new THREE.Color(0x2a7d4f); o.material.emissiveIntensity = 0.34;
+        o.material.emissive = new THREE.Color(0xffd600); o.material.emissiveIntensity = 0.30;
       } else if (origMats.has(o)) {
+        // The clone made above is this mesh's own material and nothing else uses it, so it
+        // has to be released here. Without this, every part the user clicks leaves a
+        // material (and its compiled shader program) behind for the life of the page.
+        const highlightMat = o.material;
         o.material = origMats.get(o);
+        if (highlightMat !== o.material) highlightMat.dispose();
       }
     });
   }
@@ -758,9 +1007,8 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
   });
 
   // ── view state ───────────────────────────────────────────────────────────────
-  let labelsOn = true, explodeTarget = 0, exploded = 0, running = false, cut = 0;
+  let explodeTarget = 0, exploded = 0, running = false, cut = 0, articTime = 0;
   let worldBounds = new THREE.Box3(new THREE.Vector3(-14, 0, -14), new THREE.Vector3(14, 12, 14));
-  function setLabels(on) { labelsOn = on; assemblies.forEach(a => { if (a.label) a.label.visible = on; }); return on; }
   function setCut(v) {
     cut = v;
     // 0% is the whole robot; sweeping right drives a real section plane in from +X.
@@ -768,37 +1016,87 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
     sectionPlane.constant = v <= 0.01 ? 999 : halfW - v * (halfW - worldBounds.min.x + 2);
   }
 
-  // Distance at which the whole bounding sphere fits both the vertical and horizontal FOV.
-  function fitDistance() {
+  // Padding left around the robot when a view is framed. 1.0 would put the bounding sphere
+  // exactly on the frame edge, which reads as "cut off" even when every part is technically
+  // in shot.
+  const FIT_MARGIN = 1.16;
+
+  // The bounding sphere of everything that was actually built. Every camera decision - fit
+  // distance, orbit limits, near and far - is derived from this, so a 24 in kitbot and a
+  // robot with a climber tower over the bumpers both frame correctly.
+  function boundingSphere() {
+    const c = worldBounds.getCenter(new THREE.Vector3());
     const size = worldBounds.getSize(new THREE.Vector3());
-    const radius = Math.max(size.length() / 2, 6);
+    // Sphere through the box corners: never smaller than the geometry, whatever its aspect.
+    return { centre: c, radius: Math.max(size.length() / 2, 1) };
+  }
+
+  // Distance at which the whole bounding sphere fits both the vertical and horizontal FOV.
+  function fitDistance(margin = FIT_MARGIN) {
+    const { radius } = boundingSphere();
     const vFov = camera.fov * D2R;
     const hFov = 2 * Math.atan(Math.tan(vFov / 2) * Math.max(camera.aspect, 0.4));
-    return radius / Math.sin(Math.min(vFov, hFov) / 2) * 0.62;
+    return (radius / Math.sin(Math.min(vFov, hFov) / 2)) * margin;
+  }
+
+  // Clipping planes and orbit limits sized to the assembly rather than hardcoded. The far
+  // plane has to clear the fully zoomed-out distance or a big robot disappears; the near
+  // plane has to stay well inside the closest the user can orbit or it saws through parts.
+  // far/near stays around 2e4, which a 24-bit depth buffer resolves without z-fighting.
+  function applyCameraRange() {
+    const { radius } = boundingSphere();
+    controls.minDistance = Math.max(radius * 0.10, 0.5);
+    controls.maxDistance = Math.max(fitDistance() * 3.5, radius * 8);
+    camera.near = Math.max(controls.minDistance / 80, 0.01);
+    camera.far = controls.maxDistance * 4 + radius * 4;
+    camera.updateProjectionMatrix();
+    // The shadow frustum is fixed at ±90 in / 320 in deep, which silently drops the shadow of
+    // anything taller or wider than that. Size it to the robot too.
+    const s = Math.max(radius * 1.6, 40);
+    Object.assign(key.shadow.camera,
+                  { near: 1, far: s * 6, left: -s, right: s, top: s, bottom: -s });
+    key.shadow.camera.updateProjectionMatrix();
   }
 
   let camTarget = null, ctrlTarget = null;
+  // The true centre of the geometry, on all three axes. Pinning X and Z to the frame origin
+  // is what pushed the robot into a corner of the viewport: an over-bumper intake and a
+  // shooter hanging off the front move the real centroid several inches forward of the frame
+  // centre, and orbiting about the frame centre framed mostly empty carpet.
   function centre() {
-    const c = worldBounds.getCenter(new THREE.Vector3());
-    return new THREE.Vector3(0, c.y, 0);
+    return boundingSphere().centre;
   }
+
+  // Unit view directions, so the camera always ends up exactly `fitDistance()` from the
+  // target. The old code scaled a non-unit offset by the fit distance, which landed the
+  // camera ~36% closer than the distance that actually fits and clipped the robot at the
+  // viewport edges on every single view.
+  const VIEW_DIRS = {
+    iso: new THREE.Vector3(0.62, 0.48, 0.72).normalize(),
+    top: new THREE.Vector3(0.001, 1, 0.001).normalize(),
+    front: new THREE.Vector3(0, 0.16, -1).normalize(),
+    side: new THREE.Vector3(1, 0.16, 0.001).normalize(),
+  };
+
   function frameView() {
+    applyCameraRange();
     const d = fitDistance(), c = centre();
-    camera.position.set(d * 0.62, c.y + d * 0.48, d * 0.72);
+    camera.position.copy(c).addScaledVector(VIEW_DIRS.iso, d);
     controls.target.copy(c);
     camTarget = null; ctrlTarget = null;
+    controls.update();
   }
   function setView(v) {
+    applyCameraRange();
     const d = fitDistance(), c = centre();
     ctrlTarget = c.clone();
-    if (v === 'top') { camTarget = new THREE.Vector3(0.01, c.y + d * 1.15, 0.01); ctrlTarget = new THREE.Vector3(0, 0, 0); }
-    else if (v === 'front') camTarget = new THREE.Vector3(0, c.y + d * 0.16, -d);
-    else if (v === 'side') camTarget = new THREE.Vector3(d, c.y + d * 0.16, 0.01);
-    else camTarget = new THREE.Vector3(d * 0.62, c.y + d * 0.48, d * 0.72);
+    camTarget = c.clone().addScaledVector(VIEW_DIRS[v] || VIEW_DIRS.iso, d);
   }
 
   function resize() {
     const r = canvas.parentElement.getBoundingClientRect();
+    // A hidden pane measures 0×0; keeping the previous size beats a NaN aspect ratio.
+    if (r.width < 2 || r.height < 2) return;
     renderer.setSize(r.width, r.height, false);
     labelRenderer.setSize(r.width, r.height);
     camera.aspect = r.width / r.height; camera.updateProjectionMatrix();
@@ -806,49 +1104,114 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
   addEventListener('resize', resize); resize();
 
   const clock = new THREE.Clock();
-  (function tick() {
+  // Someone who asked for reduced motion still needs to see the design change when they
+  // explode it or switch view - so the transitions snap to their end state instead of
+  // easing. Content is never withheld, only the animation between states.
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  // A hidden pane must not burn a core on frames nobody sees: rAF keeps firing in some
+  // embedders even when nothing composites.
+  let hidden = document.hidden;
+  document.addEventListener('visibilitychange', () => {
+    hidden = document.hidden;
+    if (!hidden) { clock.getDelta(); requestAnimationFrame(tick); }
+  });
+  function tick() {
+    if (hidden) return;                       // resumed by the visibilitychange handler
     const dt = clock.getDelta();
-    exploded += (explodeTarget - exploded) * Math.min(1, dt * 4);
+    const ease = reduceMotion.matches ? 1 : null;   // 1 = jump straight to the target
+    exploded += (explodeTarget - exploded) * (ease || Math.min(1, dt * 4));
     assemblies.forEach(a => {
       const t = a.base.clone().addScaledVector(a.explode, exploded);
-      a.group.position.lerp(t, Math.min(1, dt * 6));
+      a.group.position.lerp(t, ease || Math.min(1, dt * 6));
     });
     if (running) spinners.forEach(s => { if (s.obj.parent) s.obj.rotation[s.axis] += s.speed * dt; });
+    // Articulated mechanisms sweep their limited arc - deploy toward the front, pause, stow,
+    // pause - instead of spinning. The eased triangle wave reads as a real pneumatic/motor
+    // deploy rather than a metronome.
+    articTime = running ? articTime + dt : articTime;
+    artics.forEach(a => {
+      const period = 3.6, t = ((articTime / period) + a.phase) % 1;
+      const up = t < 0.5 ? t * 2 : (1 - t) * 2;               // 0→1→0 triangle
+      const eased = up * up * (3 - 2 * up);                    // smoothstep both ways
+      const ang = (a.deg[0] + (a.deg[1] - a.deg[0]) * eased) * D2R;
+      a.group.rotation.x = ang;
+    });
     if (camTarget) {
-      camera.position.lerp(camTarget, Math.min(1, dt * 3));
+      camera.position.lerp(camTarget, ease || Math.min(1, dt * 3));
       if (camera.position.distanceTo(camTarget) < 0.5) camTarget = null;
     }
     if (ctrlTarget) {
-      controls.target.lerp(ctrlTarget, Math.min(1, dt * 3));
+      controls.target.lerp(ctrlTarget, ease || Math.min(1, dt * 3));
       if (controls.target.distanceTo(ctrlTarget) < 0.4) ctrlTarget = null;
     }
     controls.update();
     renderer.render(scene, camera);
     labelRenderer.render(scene, camera);
     requestAnimationFrame(tick);
-  })();
+  }
+  tick();
 
   return {
     load,
     setView,
-    toggleLabels: () => setLabels(!labelsOn),
     toggleExplode: () => { explodeTarget = explodeTarget ? 0 : 1; return !!explodeTarget; },
     toggleRun: () => { running = !running; return running; },
     setCut,
     select,
     onPick: (fn) => { onPick = fn; },
+    // Dolly along the current view vector. The scroll wheel already does this, but a wheel is
+    // not discoverable and is awkward on a trackpad or a touchscreen, where the gesture is
+    // usually taken by the page instead of the canvas.
+    //
+    // Clamped to the orbit controls' own limits so the buttons and the wheel cannot disagree
+    // about how close is too close, and cancels any in-flight view animation - otherwise the
+    // tick loop keeps lerping toward the old target and immediately undoes the zoom.
+    // Read-only camera distance. Separate from zoom() because zoom() cancels an in-flight view
+    // animation, so using it to *measure* would stop the thing being measured.
+    distance: () => Math.round(camera.position.distanceTo(controls.target)),
+    zoom(factor) {
+      camTarget = null;
+      const offset = camera.position.clone().sub(controls.target);
+      const distance = Math.min(controls.maxDistance,
+                                Math.max(controls.minDistance, offset.length() * factor));
+      camera.position.copy(controls.target).add(offset.setLength(distance));
+      camera.updateProjectionMatrix();
+      return Math.round(distance);
+    },
     // Render on demand and hand back a PNG. Reading the canvas between animation frames is
-    // unreliable — the drawing buffer can be empty even while the page looks right — so this
+    // unreliable - the drawing buffer can be empty even while the page looks right - so this
     // draws first and reads immediately, in the same call. `scale` renders above display
     // resolution for a print- or poster-quality export, then restores the view size.
-    capture(scale = 1, background = '#f6f3ea', margin = 1.12) {
-      const r = canvas.parentElement.getBoundingClientRect();
+    // Assemblies and bounds, for scripted verification (nothing user-facing reads this).
+    // camera and controls included so a scripted check can prove the framing claim: project
+    // the assembly's corners and confirm every one is inside the frustum.
+    _debug: () => ({ world, bounds: worldBounds, assemblies, artics, spinners,
+                     camera, controls }),
+    // Immediate view set for scripted capture: the animated lerp needs rAF ticks, and a
+    // hidden pane never gets any.
+    jumpView(v) {
+      setView(v);
+      if (camTarget) { camera.position.copy(camTarget); camTarget = null; }
+      if (ctrlTarget) { controls.target.copy(ctrlTarget); ctrlTarget = null; }
+      controls.update();
+    },
+    // Drive the articulation to a phase (0 = deployed, 1 = stowed) without the clock, so a
+    // scripted capture can show the intake mid-arc.
+    poseArtics(t) {
+      artics.forEach(a => { a.group.rotation.x = (a.deg[0] + (a.deg[1] - a.deg[0]) * t) * D2R; });
+    },
+    capture(scale = 1, background = '#080800', margin = 1.12) {
+      let r = canvas.parentElement.getBoundingClientRect();
+      // A hidden pane measures 0×0; capture still has to produce a real image.
+      if (r.width < 50 || r.height < 50) r = { width: 1280, height: 800 };
       const prevBg = scene.background;
       // The canvas is alpha:true so the page background shows through on screen. An exported
-      // PNG has no page behind it, so without this it is transparent — which reads as black
+      // PNG has no page behind it, so without this it is transparent - which reads as black
       // on one site and white on another. Bake the background in.
       if (background) scene.background = new THREE.Color(background);
-      if (scale !== 1) renderer.setSize(r.width * scale, r.height * scale, false);
+      const prevAspect = camera.aspect;
+      camera.aspect = r.width / r.height;
+      renderer.setSize(r.width * scale, r.height * scale, false);
       // Pull back slightly so nothing clips at the frame edge; a tower touching the top of
       // the image looks like a mistake even when the framing is technically correct.
       const target = controls.target.clone();
@@ -858,8 +1221,9 @@ export function buildScene({ THREE, OrbitControls, CSS2DRenderer, CSS2DObject, R
       renderer.render(scene, camera);
       const url = canvas.toDataURL('image/png');
       camera.position.copy(target).add(offset.divideScalar(margin));
+      camera.aspect = prevAspect;
       camera.updateProjectionMatrix();
-      if (scale !== 1) renderer.setSize(r.width, r.height, false);
+      renderer.setSize(r.width, r.height, false);
       scene.background = prevBg;
       return url;
     },

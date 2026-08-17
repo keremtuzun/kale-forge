@@ -153,6 +153,13 @@ SEASONS: dict[str, dict[str, Any]] = {
             "weight_with_bumpers_lb": 135.0, "bumper_weight_rule": "R408",
             "bumper_zone_in": [2.5, 5.75], "bumper_rule": "R405",
             "propulsion_motors": 4, "propulsion_rule": "R502",
+            # Provenance: which document these numbers were transcribed from, and when.
+            # Team updates revise the manual mid-season; a checker that cannot say where
+            # its limits came from cannot be argued with — or corrected.
+            "source": {"document": "2026 FIRST Robotics Competition Game Manual (REBUILT)",
+                       "url": "https://www.firstinspires.org/resource-library/frc/competition-manual-qa-system",
+                       "transcribed": "2026-08-06",
+                       "note": "verify against the current manual and team updates before build"},
         },
         "frame": (27.0, 27.0),
         "starting_height_in": 29.0,
@@ -249,6 +256,10 @@ SEASONS: dict[str, dict[str, Any]] = {
             "weight_with_bumpers_lb": 135.0, "bumper_weight_rule": "R408",
             "bumper_zone_in": [2.5, 5.75], "bumper_rule": "R405",
             "propulsion_motors": 4, "propulsion_rule": "R502",
+            "source": {"document": "2025 FIRST Robotics Competition Game Manual (REEFSCAPE)",
+                       "url": "https://www.firstinspires.org/resource-library/frc/competition-manual-qa-system",
+                       "transcribed": "2026-08-06",
+                       "note": "historical season; retained for comparison"},
         },
         "frame": (28.0, 28.0),
         "starting_height_in": 41.0,

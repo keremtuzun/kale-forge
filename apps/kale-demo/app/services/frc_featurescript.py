@@ -26,9 +26,10 @@ from __future__ import annotations
 
 import math
 import os
+import re
 from typing import Any
 
-FS_VERSION = "kale-fs-1.2"
+FS_VERSION = "kale-fs-1.3"
 
 # The FeatureScript language/std-library version the generated source declares.
 #
@@ -50,13 +51,27 @@ def _num(value: Any, default: float = 0.0) -> float:
 
 
 def _ident(name: str, used: dict[str, int]) -> str:
-    """A stable, unique, FeatureScript-safe identifier for a feature id string."""
+    """A stable, unique, FeatureScript-safe identifier for a feature id string.
+
+    Uniqueness must hold across the WHOLE set of issued identifiers, not per base
+    name: "module standoff 2" sanitises to module_standoff_2, which is exactly what
+    the third "module standoff" used to receive from its de-dup counter. Onshape
+    aborts the entire robot's regeneration on one duplicate feature id, so `used`
+    doubles as the set of every identifier ever handed out.
+    """
     safe = "".join(ch if ch.isalnum() else "_" for ch in name).strip("_") or "part"
     if safe[0].isdigit():
         safe = "p" + safe
-    count = used.get(safe, 0)
-    used[safe] = count + 1
-    return safe if count == 0 else f"{safe}_{count}"
+    candidate, n = safe, used.get(safe, 0)
+    while True:
+        if n:
+            candidate = f"{safe}_{n}"
+        if candidate not in used:
+            break
+        n += 1
+    used[safe] = n + 1
+    used[candidate] = used.get(candidate, 0)
+    return candidate
 
 
 def _vec(at: list[float]) -> str:
@@ -86,10 +101,20 @@ def _g(value: Any) -> str:
     return f"{round(_num(value), 4):g}"
 
 
-def _dims(fid: str, pairs: list[tuple[str, Any]]) -> tuple[str, dict[str, str]]:
-    """One `var` line naming every dimensional measure of a part."""
+def _dims(fid: str, pairs: list[tuple[str, Any]],
+          expr: dict[str, str] | None = None) -> tuple[str, dict[str, str]]:
+    """One `var` line naming every dimensional measure of a part.
+
+    Where the generator supplied the expression behind a number, the expression is emitted
+    instead of the number — so the exported source carries the design intent ("the block is
+    the pocket plus two walls") and editing the driving parameter rebuilds the part, rather
+    than leaving the user to find every literal that has to change with it.
+    """
     names = {key: f"{fid}_{key}" for key, _ in pairs}
-    decl = " ".join(f"var {names[key]} = {_g(value)};" for key, value in pairs)
+    expr = expr or {}
+    decl = " ".join(
+        f"var {names[key]} = {expr[key] if key in expr else _g(value)};"
+        for key, value in pairs)
     return f"    {decl}", names
 
 
@@ -149,11 +174,35 @@ def _tube(fid: str, f: dict[str, Any]) -> list[str]:
 
 def _plate(fid: str, f: dict[str, Any]) -> list[str]:
     sx, sy, sz = (_num(v) for v in (f.get("size") or [1, 0.09, 1])[:3])
-    dims, v = _dims(fid, [("sx", sx), ("sy", sy), ("sz", sz)])
+    dims, v = _dims(fid, [("sx", sx), ("sy", sy), ("sz", sz)], f.get("expr"))
     pos, at = _pos(fid, f)
-    return [f'    // {f.get("n", "plate")}', dims, pos,
-            f'    kaleBox(context, id + "{fid}", {v["sx"]}, {v["sy"]}, {v["sz"]}, '
-            f'{at}, {_rot(f.get("rot"))});']
+    bores = f.get("bores") or []
+    if not bores:
+        return [f'    // {f.get("n", "plate")}', dims, pos,
+                f'    kaleBox(context, id + "{fid}", {v["sx"]}, {v["sy"]}, {v["sz"]}, '
+                f'{at}, {_rot(f.get("rot"))});']
+    # Every hole gets its own named diameter, position and depth. That is the difference
+    # between an export you can edit and an export you can only look at: moving a bolt hole
+    # in Onshape is changing one number here.
+    lines = [f'    // {f.get("n", "plate")} — {len(bores)} hole'
+             f'{"s" if len(bores) != 1 else ""}', dims, pos]
+    entries = []
+    for i, b in enumerate(bores):
+        hid = f"{fid}_h{i + 1}"
+        be = b.get("expr") or {}
+        val = lambda k, d: be[k] if k in be else _g(b.get(k, d))  # noqa: E731
+        decl = (f'    var {hid}_d = {val("d", 0.25)}; var {hid}_x = {val("x", 0)}; '
+                f'var {hid}_z = {val("z", 0)}; var {hid}_depth = {val("depth", 0)};')
+        note = b.get("note")
+        lines.append(f"    // {note}" if note else decl)
+        if note:
+            lines.append(decl)
+        entries.append(f'{{ "d" : {hid}_d, "x" : {hid}_x, "z" : {hid}_z, '
+                       f'"depth" : {hid}_depth, "form" : "{b.get("form", "round")}" }}')
+    lines.append(f'    var {fid}_holes = [{", ".join(entries)}];')
+    lines.append(f'    kalePlate(context, id + "{fid}", {v["sx"]}, {v["sy"]}, {v["sz"]}, '
+                 f'{fid}_holes, {at}, {_rot(f.get("rot"))});')
+    return lines
 
 
 def _shaft(fid: str, f: dict[str, Any]) -> list[str]:
@@ -201,7 +250,9 @@ def _toothed(fid: str, f: dict[str, Any], kind: str) -> list[str]:
         pitch_in = _num(f.get("pitch_in"), 0.25)
         dims, v = _dims(fid, [("teeth", teeth), ("pitch_in", pitch_in), ("w", width),
                               ("bore", bore)])
-        pd_expr = f'{v["pitch_in"]} / sin(PI / {v["teeth"]})'
+        # sin() takes an angle, not a number: the unitless form regenerates as an
+        # execution error the moment the first sprocket builds in Onshape.
+        pd_expr = f'{v["pitch_in"]} / sin(PI / {v["teeth"]} * radian)'
         comment = f"{teeth}T #{int(round(1 / pitch_in * 6.25))} chain → PD {_num(f.get('pd')):.3f} in"
     pos, at = _pos(fid, f)
     return [f'    // {f.get("n", kind)} — {comment}', dims, pos,
@@ -235,6 +286,15 @@ def _boxlike(fid: str, f: dict[str, Any], default: tuple[float, float, float]) -
             f'{at}, {_rot(f.get("rot"))});']
 
 
+def _noodle_corner(fid: str, f: dict[str, Any]) -> list[str]:
+    dims, v = _dims(fid, [("dia", _num(f.get("dia"), 2.5)), ("bend", _num(f.get("bend"), 3.0))])
+    pos, at = _pos(fid, f)
+    return [f'    // {f.get("n", "bumper corner noodle")} — quarter-bend, continuous ring',
+            dims, pos,
+            f'    kaleNoodleCorner(context, id + "{fid}", {v["dia"]}, {v["bend"]}, '
+            f'{at}, {_rot(f.get("rot"))});']
+
+
 def _disclike(fid: str, f: dict[str, Any], label: str, dia_key: str, dia_default: float,
               w_key: str, w_default: float, bore: float, note: str = "") -> list[str]:
     dims, v = _dims(fid, [("dia", _num(f.get(dia_key), dia_default)),
@@ -247,10 +307,49 @@ def _disclike(fid: str, f: dict[str, Any], label: str, dia_key: str, dia_default
 
 def _gusset(fid: str, f: dict[str, Any]) -> list[str]:
     a, b = (_num(v) for v in (f.get("size") or [3, 3])[:2])
-    dims, v = _dims(fid, [("a", a), ("b", b), ("th", _num(f.get("th"), 0.09))])
+    th = _num(f.get("th"), 0.09)
+    if f.get("form") == "angle":
+        # A folded blank is one part, not two plates that happen to meet, so it is emitted as
+        # one feature. The alloy rides in the comment because it is a real constraint on the
+        # part: 5052 bends where 6061 cracks.
+        dims, v = _dims(fid, [("a", a), ("b", b), ("leg", _num(f.get("leg"), b * 0.66)),
+                              ("th", th)])
+        pos, at = _pos(fid, f)
+        return [f'    // {f.get("n", "gusset")} — folded 90°, '
+                f'{f.get("alloy", "5052")} sheet', dims, pos,
+                f'    kaleAngle(context, id + "{fid}", {v["a"]}, {v["b"]}, {v["leg"]}, '
+                f'{v["th"]}, {at}, {_rot(f.get("rot"))});']
+    dims, v = _dims(fid, [("a", a), ("b", b), ("th", th)])
     pos, at = _pos(fid, f)
     return [f'    // {f.get("n", "gusset")}', dims, pos,
             f'    kaleGusset(context, id + "{fid}", {v["a"]}, {v["b"]}, {v["th"]}, '
+            f'{at}, {_rot(f.get("rot"))});']
+
+
+def _rib(fid: str, f: dict[str, Any]) -> list[str]:
+    start = _num(f.get("start"), 0.0)
+    dims, v = _dims(fid, [("r", _num(f.get("r"), 3.0)), ("web", _num(f.get("web"), 0.6)),
+                          ("th", _num(f.get("th"), 0.19)), ("fromDeg", start),
+                          ("toDeg", start + _num(f.get("arc"), 90.0))])
+    pos, at = _pos(fid, f)
+    return [f'    // {f.get("n", "rib")} — formed arc rib', dims, pos,
+            f'    kaleRib(context, id + "{fid}", {v["r"]}, {v["web"]}, {v["th"]}, '
+            f'{v["fromDeg"]}, {v["toDeg"]}, {at}, {_rot(f.get("rot"))});']
+
+
+def _decal(fid: str, f: dict[str, Any]) -> list[str]:
+    """The team number, as the applied panel it is.
+
+    Onshape has no text-on-a-surface primitive worth exporting to STEP, so the numeral panel
+    is emitted as the thin applique it physically is, with the text and the two dimensions an
+    inspector actually measures written into the comment beside it.
+    """
+    sx, sy, sz = (_num(v) for v in (f.get("size") or [6, 4, 0.02])[:3])
+    dims, v = _dims(fid, [("sx", sx), ("sy", sy), ("sz", sz)])
+    pos, at = _pos(fid, f)
+    return [f'    // {f.get("n", "decal")} — "{f.get("text", "")}", {sy:g} in tall, '
+            f'{_num(f.get("stroke"), 0.5):g} in stroke, white (R412)', dims, pos,
+            f'    kaleBox(context, id + "{fid}", {v["sx"]}, {v["sy"]}, {v["sz"]}, '
             f'{at}, {_rot(f.get("rot"))});']
 
 
@@ -308,6 +407,18 @@ _EMITTERS = {
     # The hood is a swept arc the gamepiece rides against, so it is emitted as a real arc
     # rather than a block — its radius is what sets the exit angle.
     "hood": _hood,
+    # Bumper construction: the noodle is a real foam cylinder and the fabric wrap is its
+    # editable envelope — both dimensioned, so the bumper stays a construction in Onshape too.
+    "noodle": lambda i, f: _shaft(i, {**f, "form": "round"}),
+    # The course sweeps the bumper as one continuous ring: each corner is a real
+    # quarter-bend of noodle, revolved 90° about the corner's vertical axis.
+    "noodle_corner": lambda i, f: _noodle_corner(i, f),
+    # A straight wrap is a channel; a corner wrap is the same channel swept 90°, so it goes
+    # out through the same quarter-revolve the corner noodle uses, at the wrap's own section.
+    "fabric": lambda i, f: (_noodle_corner(i, {**f, "dia": (f.get("size") or [0, 5, 3.31])[2]})
+                            if f.get("bend") else _boxlike(i, f, (27.0, 5.06, 3.31))),
+    "decal": _decal,
+    "rib": _rib,
     "polycarb": lambda i, f: _boxlike(i, f, (1, 0.093, 1)),
     "hardstop": lambda i, f: _boxlike(i, f, (0.75, 0.5, 0.75)),
     "gearbox": lambda i, f: _boxlike(i, f, (2, 2, 1.2)),
@@ -392,6 +503,62 @@ function kaleBox(context is Context, id is Id, sx is number, sy is number, sz is
     kaleMove(context, id, qCreatedBy(id + "solid", EntityType.BODY), at, rot);
 }
 
+// A plate with holes in it. Each bore is a real cut, not an annotation: `depth` 0 goes through,
+// anything else is a blind pocket measured down from the top face, and "hex" cuts across the
+// flats so a hub on a hex shaft is the shape it has to be. The x/z of each hole stay editable,
+// so moving a hole in Onshape is moving a number rather than re-cutting a mesh.
+function kalePlate(context is Context, id is Id, sx is number, sy is number, sz is number,
+                   bores is array, at is Vector, rot is Vector)
+{
+    fCuboid(context, id + "solid", {
+            "corner1" : vector(-sx / 2, -sy / 2, -sz / 2) * inch,
+            "corner2" : vector(sx / 2, sy / 2, sz / 2) * inch
+    });
+    for (var i = 0; i < size(bores); i += 1)
+    {
+        var b = bores[i];
+        var bid = id + ("hole" ~ i);
+        var blind = b.depth > 0;
+        // Through holes overshoot both faces so the cut is unambiguous; a blind pocket starts
+        // at the top face and stops at its stated depth, which is how a machinist reads it.
+        var top = sy / 2 + 0.1;
+        var bottom = blind ? sy / 2 - b.depth : -sy / 2 - 0.1;
+        if (b.form == "hex")
+        {
+            var sketch = newSketchOnPlane(context, bid + "sk", {
+                    "sketchPlane" : plane(vector(b.x, top, b.z) * inch, vector(0, 1, 0))
+            });
+            // A hex bore is specified across the flats; the sketch wants a vertex radius.
+            skRegularPolygon(sketch, "hex", {
+                    "center" : vector(0, 0) * inch,
+                    "firstVertex" : vector(b.d / 2 / cos(30 * degree), 0) * inch,
+                    "sides" : 6
+            });
+            skSolve(sketch);
+            opExtrude(context, bid + "cut", {
+                    "entities" : qSketchRegion(bid + "sk"),
+                    "direction" : vector(0, -1, 0),
+                    "endBound" : BoundingType.BLIND,
+                    "endDepth" : (top - bottom) * inch
+            });
+        }
+        else
+        {
+            fCylinder(context, bid + "cut", {
+                    "topCenter" : vector(b.x, top, b.z) * inch,
+                    "bottomCenter" : vector(b.x, bottom, b.z) * inch,
+                    "radius" : (b.d / 2) * inch
+            });
+        }
+        opBoolean(context, bid + "sub", {
+                "tools" : qCreatedBy(bid + "cut", EntityType.BODY),
+                "targets" : qCreatedBy(id + "solid", EntityType.BODY),
+                "operationType" : BooleanOperationType.SUBTRACTION
+        });
+    }
+    kaleMove(context, id, qCreatedBy(id + "solid", EntityType.BODY), at, rot);
+}
+
 // A tube is the outer section minus the inner section: the wall is a dimension you can edit,
 // which is the entire difference between this and an imported mesh.
 function kaleTube(context is Context, id is Id, w is number, h is number, len is number,
@@ -428,6 +595,26 @@ function kaleCylinder(context is Context, id is Id, dia is number, len is number
 }
 
 // 1/2 in hex is the FRC default shaft; modelled as a real hexagon so a bore cut from it fits.
+// A quarter-bend of bumper noodle: the course models the bumper as one ring swept
+// around a rounded-corner path, so corners are continuous foam, not butted ends.
+// The circle is revolved 90 degrees about the corner's vertical axis; the arc spans
+// the +X to +Z quadrant and `rot` walks it around the frame.
+function kaleNoodleCorner(context is Context, id is Id, dia is number, bend is number,
+                          at is Vector, rot is Vector)
+{
+    var sketch = newSketchOnPlane(context, id + "sk", {
+            "sketchPlane" : plane(vector(0, 0, 0) * inch, vector(0, 0, -1), vector(1, 0, 0))
+    });
+    skCircle(sketch, "c", { "center" : vector(bend, 0) * inch, "radius" : dia / 2 * inch });
+    skSolve(sketch);
+    opRevolve(context, id + "rev", {
+            "entities" : qSketchRegion(id + "sk"),
+            "axis" : line(vector(0, 0, 0) * inch, vector(0, -1, 0)),
+            "angleForward" : 90 * degree
+    });
+    kaleMove(context, id, qCreatedBy(id + "rev", EntityType.BODY), at, rot);
+}
+
 function kaleHexShaft(context is Context, id is Id, acrossFlats is number, len is number,
                       at is Vector, rot is Vector)
 {
@@ -500,6 +687,73 @@ function kaleGusset(context is Context, id is Id, a is number, b is number,
     opExtrude(context, id + "ext", {
             "entities" : qSketchRegion(id + "sk"),
             "direction" : vector(0, 1, 0),
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : th * inch
+    });
+    kaleMove(context, id, qCreatedBy(id + "ext", EntityType.BODY), at, rot);
+}
+
+// A folded bracket: one blank, one 90 degree bend, two tube faces caught. `leg` is how far
+// the bent leg comes down off the flat one. It is one part on purpose — modelling it as two
+// plates loses the thing that makes it stiff.
+function kaleAngle(context is Context, id is Id, a is number, b is number,
+                   leg is number, th is number, at is Vector, rot is Vector)
+{
+    fCuboid(context, id + "flat", {
+            "corner1" : vector(-a / 2, -th, -b / 2) * inch,
+            "corner2" : vector(a / 2, 0, b / 2) * inch
+    });
+    fCuboid(context, id + "bent", {
+            "corner1" : vector(-a / 2, -leg, b / 2 - th) * inch,
+            "corner2" : vector(a / 2, 0, b / 2) * inch
+    });
+    opBoolean(context, id + "weld", {
+            "tools" : qUnion([qCreatedBy(id + "flat", EntityType.BODY),
+                              qCreatedBy(id + "bent", EntityType.BODY)]),
+            "operationType" : BooleanOperationType.UNION
+    });
+    kaleMove(context, id, qCreatedBy(id + "flat", EntityType.BODY), at, rot);
+}
+
+// A formed rib: the cut arc a hood or shell is built on. `web` is how deep the rib is
+// radially, which is the dimension that decides whether it holds its shape.
+function kaleRib(context is Context, id is Id, radius is number, web is number,
+                 th is number, fromDeg is number, toDeg is number,
+                 at is Vector, rot is Vector)
+{
+    var span = max(abs(toDeg - fromDeg), 10);
+    var sketch = newSketchOnPlane(context, id + "sk", {
+            "sketchPlane" : plane(vector(-th / 2, 0, 0) * inch, vector(1, 0, 0))
+    });
+    var a0 = fromDeg * degree;
+    var a1 = (fromDeg + span) * degree;
+    var am = (fromDeg + span / 2) * degree;
+    var rOut = radius * inch;
+    var rIn = max(radius - web, 0.05) * inch;
+    // Centre/start/end angles do not make an arc here — skArc wants three points, and the
+    // centre-radius form quietly creates nothing at all.
+    skArc(sketch, "outer", {
+            "start" : vector(cos(a0), sin(a0)) * rOut,
+            "mid" : vector(cos(am), sin(am)) * rOut,
+            "end" : vector(cos(a1), sin(a1)) * rOut
+    });
+    skArc(sketch, "inner", {
+            "start" : vector(cos(a0), sin(a0)) * rIn,
+            "mid" : vector(cos(am), sin(am)) * rIn,
+            "end" : vector(cos(a1), sin(a1)) * rIn
+    });
+    skLineSegment(sketch, "capA", {
+            "start" : vector(cos(a0), sin(a0)) * rIn,
+            "end" : vector(cos(a0), sin(a0)) * rOut
+    });
+    skLineSegment(sketch, "capB", {
+            "start" : vector(cos(a1), sin(a1)) * rIn,
+            "end" : vector(cos(a1), sin(a1)) * rOut
+    });
+    skSolve(sketch);
+    opExtrude(context, id + "ext", {
+            "entities" : qSketchRegion(id + "sk"),
+            "direction" : vector(1, 0, 0),
             "endBound" : BoundingType.BLIND,
             "endDepth" : th * inch
     });
@@ -602,9 +856,140 @@ def _gamepiece_note(season: dict[str, Any]) -> str:
     return f" · gamepiece {piece}" if piece else ""
 
 
+_PART_TYPES = {"mechanical_part", "mechanical_assembly", "enclosure", "other"}
+_TOKEN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _driving_parameters(assemblies: list[dict[str, Any]],
+                        parameters: dict[str, Any]) -> list[tuple[str, float]]:
+    """The parameters that actually drive geometry, in declaration order.
+
+    A dialog field that changes nothing is worse than no dialog at all, so a parameter only
+    earns a place here if some feature's expression names it.
+    """
+    referenced: set[str] = set()
+    for asm in assemblies:
+        for f in asm.get("features") or []:
+            for text in list((f.get("expr") or {}).values()):
+                referenced.update(_TOKEN.findall(text))
+            for hole in f.get("bores") or []:
+                for text in list((hole.get("expr") or {}).values()):
+                    referenced.update(_TOKEN.findall(text))
+    out: list[tuple[str, float]] = []
+    for key, value in parameters.items():
+        if key in referenced and isinstance(value, (int, float)) and not isinstance(value, bool):
+            out.append((key, float(value)))
+    return out
+
+
+def _part_featurescript(spec: dict[str, Any], name: str, cad: dict[str, Any]) -> str:
+    """A single part (or a small assembly of them) as its own parametric feature.
+
+    Deliberately not the robot emitter with the robot bits switched off: a bearing block has
+    no frame, no subsystem gates and no season, and a dialog offering those would be a lie
+    about what the model is.
+    """
+    assemblies = cad.get("assemblies") or []
+    parameters = spec.get("parameters") or {}
+    driving = _driving_parameters(assemblies, parameters)
+    part_type = str(spec.get("partType") or "part").replace("_", " ")
+    feature_name = name or "Kale Part"
+    ident = "kale" + "".join(w.capitalize() for w in _TOKEN.findall(feature_name))[:40] or "kalePart"
+
+    out: list[str] = [
+        f"FeatureScript {_FS_STD};",
+        f'import(path : "onshape/std/common.fs", version : "{_FS_STD}.0");',
+        "",
+        f"// {feature_name}",
+        f"// Generated by Kale Forge ({FS_VERSION}) — {part_type}.",
+        f"// {cad.get('feature_total', 0)} bodies. Units are inches.",
+        "//",
+        "// The dimensions below are named variables, and the ones the design is actually",
+        "// driven by are exposed in the feature dialog. Change one and the part rebuilds:",
+        "// the relationships between them are expressions here, not baked-in numbers.",
+        "//",
+        "// Dimensioned concept geometry. Fits, wall thicknesses and hole positions are",
+        "// consistent with each other and with the parts catalog; none has been checked",
+        "// against a vendor drawing or a load case.",
+        "",
+        _HELPERS,
+        "",
+        f'annotation {{ "Feature Type Name" : "{feature_name}" }}',
+        f"export const {ident} = defineFeature(function(context is Context, id is Id, "
+        "definition is map)",
+        "    precondition",
+        "    {",
+    ]
+    if driving:
+        for key, value in driving:
+            lo = max(0.01, round(value * 0.2, 4))
+            hi = max(round(value * 5, 4), value + 1)
+            label = re.sub(r"(?<!^)(?=[A-Z])", " ", key).capitalize()
+            out.append(f'        annotation {{ "Name" : "{label}" }} '
+                       f'isLength(definition.{key}, {{ (inch) : [{lo:g}, {value:g}, {hi:g}] }} '
+                       "as LengthBoundSpec);")
+    else:
+        # Honest empty dialog rather than fields that drive nothing.
+        out.append('        annotation { "Name" : "Build this part", "Default" : true } '
+                   "definition.doBuild is boolean;")
+    out += [
+        "    }",
+        "    {",
+    ]
+    if driving:
+        out.append("        // Driving dimensions, straight from the dialog.")
+        for key, _ in driving:
+            out.append(f"        var {key} = definition.{key} / inch;")
+    for key, value in parameters.items():
+        if any(key == k for k, _ in driving):
+            continue
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            out.append(f"        var {key} = {_g(value)};   // reference dimension")
+    out += [
+        "        // A part has no frame to stretch; these keep the emitter on one code path.",
+        "        var scaleX = 1; var scaleZ = 1;",
+        "",
+    ]
+    if not driving:
+        out.append("        if (definition.doBuild)")
+        out.append("        {")
+    used: dict[str, int] = {}
+    from app.services.cad_contract import expand_mirrors  # noqa: PLC0415
+    for asm in assemblies:
+        origin = asm.get("origin") or [0, 0, 0]
+        out.append(f"        // ── {asm.get('name', 'part')} "
+                   f"({len(asm.get('features') or [])} bodies) ──")
+        for f in expand_mirrors(asm.get("features") or []):
+            if "at" not in f:
+                continue
+            placed = dict(f)
+            placed["at"] = [_num(f["at"][i]) + _num(origin[i]) for i in range(3)]
+            if placed.get("to"):
+                placed["to"] = [_num(placed["to"][i]) + _num(origin[i]) for i in range(3)]
+            out += ["    " + line for line in _feature_lines(placed, used)]
+        out.append("")
+    if not driving:
+        out.append("        }")
+    out += ["    }, {"]
+    if driving:
+        out.append(",\n".join(f"        {key} : {value:g} * inch" for key, value in driving))
+    else:
+        out.append("        doBuild : true")
+    out += ["    });", ""]
+    return "\n".join(out) + "\n"
+
+
 def build_featurescript(spec: dict[str, Any], name: str = "Kale FRC Robot") -> str:
-    """Emit the whole robot as one parametric Feature Studio source file."""
+    """Emit the design as one parametric Feature Studio source file.
+
+    Two shapes, one entry point: a robot gets the frame-driven robot feature, and anything
+    the mechanical engine made gets a part feature driven by its own dimensions.
+    """
+    from app.services.cad_contract import require_valid_cad
     cad = spec.get("cad") or {}
+    require_valid_cad(cad)
+    if spec.get("engine") == "mechanical" or spec.get("designType") in _PART_TYPES:
+        return _part_featurescript(spec, name or str(spec.get("name") or "Kale Part"), cad)
     assemblies = cad.get("assemblies") or []
     frame = spec.get("frame") or {}
     season = spec.get("season") or {}
@@ -612,6 +997,10 @@ def build_featurescript(spec: dict[str, Any], name: str = "Kale FRC Robot") -> s
 
     width = _num(frame.get("width_in"), 27.0)
     length = _num(frame.get("length_in"), 27.0)
+    # Needed by both the precondition (dialog defaults) and the defaults map below.
+    _has_mech = bool([n for n in ("intake", "hopper", "shooter", "elevator",
+                                  "manipulator", "climber")
+                      if (spec.get(n) or {}).get("included")])
 
     out: list[str] = [
         f"FeatureScript {_FS_STD};",
@@ -642,12 +1031,21 @@ def build_featurescript(spec: dict[str, Any], name: str = "Kale FRC Robot") -> s
         "export const kaleRobot = defineFeature(function(context is Context, id is Id, definition is map)",
         "    precondition",
         "    {",
-        '        annotation { "Name" : "Frame width" } isLength(definition.frameWidth, LENGTH_BOUNDS);',
-        '        annotation { "Name" : "Frame length" } isLength(definition.frameLength, LENGTH_BOUNDS);',
-        '        annotation { "Name" : "Build chassis" } definition.doChassis is boolean;',
-        '        annotation { "Name" : "Build drivetrain" } definition.doDrivetrain is boolean;',
-        '        annotation { "Name" : "Build mechanisms" } definition.doMechanisms is boolean;',
-        '        annotation { "Name" : "Build electrical" } definition.doElectrical is boolean;',
+        # Dialog defaults live HERE, not in defineFeature's defaults map: the map only
+        # fills absent parameters at regeneration, while the dialog reads the bound
+        # spec's middle value and the "Default" annotation. Without these, the feature
+        # opened at 2.5 cm with every subsystem unchecked — an empty robot.
+        f'        annotation {{ "Name" : "Frame width" }} isLength(definition.frameWidth, '
+        f'{{ (inch) : [6, {width:g}, 60] }} as LengthBoundSpec);',
+        f'        annotation {{ "Name" : "Frame length" }} isLength(definition.frameLength, '
+        f'{{ (inch) : [6, {length:g}, 60] }} as LengthBoundSpec);',
+        '        annotation { "Name" : "Build chassis", "Default" : true } definition.doChassis is boolean;',
+        f'        annotation {{ "Name" : "Build drivetrain", "Default" : '
+        f'{"true" if spec.get("include_drivetrain", True) else "false"} }} definition.doDrivetrain is boolean;',
+        f'        annotation {{ "Name" : "Build mechanisms", "Default" : '
+        f'{"true" if _has_mech else "false"} }} definition.doMechanisms is boolean;',
+        f'        annotation {{ "Name" : "Build electrical", "Default" : '
+        f'{"true" if spec.get("include_electrical", True) else "false"} }} definition.doElectrical is boolean;',
         "    }",
         "    {",
         f"        // Design values: {width:g} x {length:g} in frame.",
@@ -677,7 +1075,10 @@ def build_featurescript(spec: dict[str, Any], name: str = "Kale FRC Robot") -> s
             f"        if (definition.{gate})",
             "        {",
         ]
-        for f in asm.get("features") or []:
+        # Expansion happens in assembly coordinates, BEFORE the origin offset below: a mirror
+        # reflects across the assembly's own centreline, not across the robot's.
+        from app.services.cad_contract import expand_mirrors  # noqa: PLC0415
+        for f in expand_mirrors(asm.get("features") or []):
             if "at" not in f:
                 continue
             placed = dict(f)
@@ -691,14 +1092,18 @@ def build_featurescript(spec: dict[str, Any], name: str = "Kale FRC Robot") -> s
             out += ["    " + line for line in _feature_lines(placed, used)]
         out += ["        }", ""]
 
+    # The default configuration has to match the scope that was actually requested. It used
+    # to be hardcoded true, so a chassis-only design still shipped `doMechanisms : true` and
+    # rebuilt every mechanism the moment the feature was regenerated in Onshape.
+    _flag = lambda value: "true" if value else "false"  # noqa: E731
     out += [
         "    }, {",
         f"        frameWidth : {width:g} * inch,",
         f"        frameLength : {length:g} * inch,",
         "        doChassis : true,",
-        "        doDrivetrain : true,",
-        "        doMechanisms : true,",
-        "        doElectrical : true",
+        f"        doDrivetrain : {_flag(spec.get('include_drivetrain', True))},",
+        f"        doMechanisms : {_flag(_has_mech)},",
+        f"        doElectrical : {_flag(spec.get('include_electrical', True))}",
         "    });",
         "",
     ]
